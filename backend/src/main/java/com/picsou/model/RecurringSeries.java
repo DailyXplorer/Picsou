@@ -63,4 +63,39 @@ public class RecurringSeries extends AuditableEntity {
     @Column(nullable = false, columnDefinition = "recurring_status")
     @Builder.Default
     private RecurringStatus status = RecurringStatus.SUGGESTED;
+
+    // ─── Detection v2 (M3) ──────────────────────────────────────────────────────
+
+    /** Detector confidence in [0,1] (regularity + amount stability + occurrence count); null when manually declared. */
+    @Column(precision = 4, scale = 3)
+    private BigDecimal confidence;
+
+    /** Smallest / largest observed occurrence amount (signed), describing the series' amount envelope. */
+    @Column(name = "amount_min", precision = 20, scale = 2)
+    private BigDecimal amountMin;
+
+    @Column(name = "amount_max", precision = 20, scale = 2)
+    private BigDecimal amountMax;
+
+    /** True when the amount legitimately drifts each period (e.g. a utility bill) rather than being fixed. */
+    @Column(name = "is_variable", nullable = false)
+    @Builder.Default
+    private boolean isVariable = false;
+
+    /** The expected amount before the last detected price change; null when the price has never moved. */
+    @Column(name = "previous_amount", precision = 20, scale = 2)
+    private BigDecimal previousAmount;
+
+    /** When {@link #expectedAmount} last changed; drives the "price changed" activity-feed alert. */
+    @Column(name = "price_changed_at")
+    private LocalDate priceChangedAt;
+
+    /**
+     * True when the detector confirmed this series <em>silently</em> (high confidence) rather than the
+     * user confirming it. The activity feed surfaces these and {@code undo} reverses them — the safety
+     * net for "auto-confirmed ≠ unexplained".
+     */
+    @Column(name = "auto_confirmed", nullable = false)
+    @Builder.Default
+    private boolean autoConfirmed = false;
 }

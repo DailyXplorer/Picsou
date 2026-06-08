@@ -1,5 +1,6 @@
 package com.picsou.controller;
 
+import com.picsou.dto.RecurringActivityResponse;
 import com.picsou.dto.RecurringOccurrenceResponse;
 import com.picsou.dto.RecurringSeriesRequest;
 import com.picsou.dto.RecurringSeriesResponse;
@@ -41,7 +42,16 @@ public class RecurringController {
     /** List series, optionally filtered by status (SUGGESTED / CONFIRMED / IGNORED). */
     @GetMapping
     public List<RecurringSeriesResponse> findAll(@RequestParam(required = false) RecurringStatus status) {
-        return seriesService.findAll(userContext.currentMemberId(), status);
+        return seriesService.findAll(userContext.currentMemberId(), status, LocalDate.now());
+    }
+
+    /**
+     * The "what changed" activity feed — series the detector auto-confirmed or re-priced recently,
+     * newest first. The safety net for silent auto-confirmation; each entry is reversible via undo.
+     */
+    @GetMapping("/activity")
+    public List<RecurringActivityResponse> activity() {
+        return seriesService.activity(userContext.currentMemberId(), LocalDate.now());
     }
 
     /** Projected charges from today through the next {@code horizonDays} days (default 60). */
@@ -71,6 +81,15 @@ public class RecurringController {
     @PostMapping("/{id}/ignore")
     public RecurringSeriesResponse ignore(@PathVariable Long id) {
         return seriesService.ignore(id, userContext.currentMemberId());
+    }
+
+    /**
+     * Reverse a recent activity-feed change: acknowledge a price step (keep the new amount, clear the
+     * alert) or reject a silent auto-confirm (send the series to IGNORED).
+     */
+    @PostMapping("/{id}/undo")
+    public RecurringSeriesResponse undo(@PathVariable Long id) {
+        return seriesService.undo(id, userContext.currentMemberId(), LocalDate.now());
     }
 
     @DeleteMapping("/{id}")

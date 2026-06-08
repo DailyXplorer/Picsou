@@ -16,8 +16,11 @@ public interface RecurringSeriesRepository extends JpaRepository<RecurringSeries
 
     Optional<RecurringSeries> findByIdAndMemberId(Long id, Long memberId);
 
-    /** Detection key: re-find an existing series for the same counterparty (any status). */
-    Optional<RecurringSeries> findByMemberIdAndCounterpartyIgnoreCase(Long memberId, String counterparty);
+    /**
+     * Detection identity (v2): re-find an existing series by its stable clean label (any status).
+     * Backed by the unique index {@code (member_id, lower(label))}.
+     */
+    Optional<RecurringSeries> findByMemberIdAndLabelIgnoreCase(Long memberId, String label);
 
     /** Confirmed series whose projected due date has fallen within the calendar window. */
     List<RecurringSeries> findAllByMemberIdAndStatusAndNextDueDateLessThanEqualOrderByNextDueDateAsc(

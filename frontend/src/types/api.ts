@@ -364,6 +364,10 @@ export type RuleMatchType = 'COUNTERPARTY' | 'KEYWORD'
 export type RuleSource = 'USER' | 'AUTO'
 export type RecurringCadence = 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
 export type RecurringStatus = 'SUGGESTED' | 'CONFIRMED' | 'IGNORED'
+/** Computed (never stored) urgency of a series' next due date — drives the late / due-soon badges. */
+export type RecurringRuntimeStatus = 'LATE' | 'DUE_SOON' | 'SCHEDULED'
+/** The kind of change surfaced in the recurring "what changed" activity feed. */
+export type RecurringActivityType = 'AUTO_CONFIRMED' | 'PRICE_CHANGE'
 export type AssetClass = 'CURRENT' | 'SAVINGS' | 'INVESTMENT' | 'OTHER'
 export type CashflowPeriod = 'CYCLE' | 'YTD'
 
@@ -590,6 +594,15 @@ export interface RecurringSeries {
   categoryName: string | null
   categoryColor: string | null
   categoryIcon: string | null
+  // ── Detection v2 (M3) ──
+  confidence: number | null          // 0–1; null for a manually-declared series
+  amountMin: number | null           // observed amount envelope (signed)
+  amountMax: number | null
+  variable: boolean                  // amount legitimately drifts each period (e.g. a utility bill)
+  previousAmount: number | null      // expected amount before the last price step
+  priceChangedAt: string | null      // ISO date the expected amount last moved
+  autoConfirmed: boolean             // confirmed silently by the detector, not the user
+  runtimeStatus: RecurringRuntimeStatus
 }
 
 export interface RecurringSeriesRequest {
@@ -607,6 +620,25 @@ export interface RecurringOccurrence {
   counterparty: string | null
   expectedAmount: number
   dueDate: string
+  categoryId: number | null
+  categoryName: string | null
+  categoryColor: string | null
+  categoryIcon: string | null
+}
+
+/**
+ * One entry in the recurring "what changed" activity feed — derived from series state, not a stored
+ * log. {@link RecurringActivityType#PRICE_CHANGE} carries the pre-change `previousAmount`; an
+ * {@link RecurringActivityType#AUTO_CONFIRMED} entry leaves it null. Each entry is reversible.
+ */
+export interface RecurringActivity {
+  seriesId: number
+  label: string
+  type: RecurringActivityType
+  occurredOn: string | null
+  expectedAmount: number
+  previousAmount: number | null
+  cadence: RecurringCadence
   categoryId: number | null
   categoryName: string | null
   categoryColor: string | null

@@ -1,5 +1,6 @@
 package com.picsou.service.budget;
 
+import com.picsou.dto.RecurringActivityResponse;
 import com.picsou.dto.RecurringOccurrenceResponse;
 import com.picsou.dto.RecurringSeriesRequest;
 import com.picsou.dto.RecurringSeriesResponse;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -26,6 +28,9 @@ import java.util.List;
 @Service
 @Transactional(readOnly = true)
 public class RecurringSeriesService {
+
+    /** How far back the "what changed" activity feed looks for auto-confirms and price steps. */
+    static final int ACTIVITY_LOOKBACK_DAYS = 60;
 
     private final RecurringSeriesRepository seriesRepository;
     private final CategoryRepository categoryRepository;
@@ -41,12 +46,70 @@ public class RecurringSeriesService {
         this.familyMemberRepository = familyMemberRepository;
     }
 
-    /** All series for the member, optionally filtered by status, soonest due first. */
-    public List<RecurringSeriesResponse> findAll(Long memberId, RecurringStatus status) {
+    /**
+     * All series for the member, optionally filtered by status, soonest due first. {@code today}
+     * lets each response carry its runtime urgency (LATE / DUE_SOON / SCHEDULED).
+     */
+    public List<RecurringSeriesResponse> findAll(Long memberId, RecurringStatus status, LocalDate today) {
         List<RecurringSeries> series = status == null
             ? seriesRepository.findAllByMemberIdOrderByNextDueDateAsc(memberId)
             : seriesRepository.findAllByMemberIdAndStatusOrderByNextDueDateAsc(memberId, status);
-        return series.stream().map(RecurringSeriesResponse::from).toList();
+        return series.stream().map(s -> RecurringSeriesResponse.from(s, today)).toList();
+    }
+
+    /**
+     * The "what changed" activity feed: series the detector touched on the member's behalf within
+     * the last {@link #ACTIVITY_LOOKBACK_DAYS} days — silent auto-confirms and price steps — newest
+     * first. This is the safety net that keeps auto-confirmation explainable (ADR 2026-06-09); each
+     * entry is reversible via {@link #undo}. A recent price change takes precedence over the (older)
+     * auto-confirm, so a series contributes at most one entry.
+     */
+    public List<RecurringActivityResponse> activity(Long memberId, LocalDate today) {
+        LocalDate since = today.minusDays(ACTIVITY_LOOKBACK_DAYS);
+        List<RecurringActivityResponse> feed = new ArrayList<>();
+        for (RecurringSeries s : seriesRepository.findAllByMemberIdOrderByNextDueDateAsc(memberId)) {
+            RecurringActivityResponse entry = activityEntry(s, since);
+            if (entry != null) {
+                feed.add(entry);
+            }
+        }
+        feed.sort(Comparator.comparing(RecurringActivityResponse::occurredOn,
+            Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        return feed;
+    }
+
+    /** The single activity entry a series contributes, or {@code null} if nothing recent happened. */
+    private RecurringActivityResponse activityEntry(RecurringSeries s, LocalDate since) {
+        if (s.getPriceChangedAt() != null && !s.getPriceChangedAt().isBefore(since)) {
+            return RecurringActivityResponse.priceChange(s);
+        }
+        if (s.isAutoConfirmed() && s.getStatus() == RecurringStatus.CONFIRMED
+            && s.getLastSeenDate() != null && !s.getLastSeenDate().isBefore(since)) {
+            return RecurringActivityResponse.autoConfirmed(s);
+        }
+        return null;
+    }
+
+    /**
+     * Reverse a feed entry, context-aware and idempotent against re-detection:
+     * <ul>
+     *   <li>a <b>price change</b> is <em>acknowledged</em> — the new amount stays, the alert pointers
+     *       ({@code previousAmount} / {@code priceChangedAt}) are cleared;</li>
+     *   <li>a <b>silent auto-confirm</b> is <em>rejected</em> — the series goes to IGNORED (so detection
+     *       will not re-confirm it) and the {@code autoConfirmed} marker is cleared.</li>
+     * </ul>
+     */
+    @Transactional
+    public RecurringSeriesResponse undo(Long id, Long memberId, LocalDate today) {
+        RecurringSeries series = require(id, memberId);
+        if (series.getPriceChangedAt() != null) {
+            series.setPreviousAmount(null);
+            series.setPriceChangedAt(null);
+        } else if (series.isAutoConfirmed()) {
+            series.setStatus(RecurringStatus.IGNORED);
+            series.setAutoConfirmed(false);
+        }
+        return RecurringSeriesResponse.from(seriesRepository.save(series), today);
     }
 
     @Transactional

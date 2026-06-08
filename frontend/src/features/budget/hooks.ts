@@ -286,6 +286,29 @@ export function useDetectRecurring() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['budget', 'recurring'] })
       qc.invalidateQueries({ queryKey: ['budget', 'calendar'] })
+      qc.invalidateQueries({ queryKey: ['budget', 'activity'] })
+    },
+  })
+}
+
+/** The "what changed" activity feed (silent auto-confirms + price steps), newest first. */
+export function useRecurringActivity() {
+  return useQuery({
+    queryKey: ['budget', 'activity'],
+    queryFn: budgetApi.getRecurringActivity,
+    staleTime: QUERY_STALE_TIMES.budget,
+  })
+}
+
+/** Reverse a feed entry (acknowledge a price step or reject a silent auto-confirm). */
+export function useUndoRecurring() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => budgetApi.undoRecurring(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['budget', 'recurring'] })
+      qc.invalidateQueries({ queryKey: ['budget', 'calendar'] })
+      qc.invalidateQueries({ queryKey: ['budget', 'activity'] })
     },
   })
 }

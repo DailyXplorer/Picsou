@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CalendarClock, Check, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { CalendarClock, Plus, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NumericInput } from '@/components/shared/NumericInput'
@@ -21,18 +20,17 @@ import {
 } from '@/components/ui/dialog'
 import {
   useCategories,
-  useConfirmRecurring,
   useCreateRecurring,
-  useDeleteRecurring,
   useDetectRecurring,
-  useIgnoreRecurring,
   useRecurring,
   useRecurringCalendar,
 } from '@/features/budget/hooks'
-import { formatDate, getLocale, parseAmount } from '@/lib/utils'
-import type { RecurringCadence, RecurringSeries } from '@/types/api'
+import { getLocale, parseAmount } from '@/lib/utils'
+import type { RecurringCadence } from '@/types/api'
 import { ColorDot } from './budget-utils'
-import { CADENCE_LABEL_KEY, STATUS_LABEL_KEY } from './budget-meta'
+import { CADENCE_LABEL_KEY } from './budget-meta'
+import { SubscriptionCard } from './SubscriptionCard'
+import { ActivityFeed } from './ActivityFeed'
 
 const CADENCES: RecurringCadence[] = ['WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY']
 
@@ -131,52 +129,6 @@ function RecurringForm({ open, onOpenChange }: {
   )
 }
 
-function SeriesRow({ series }: { series: RecurringSeries }) {
-  const { t } = useTranslation()
-  const confirm = useConfirmRecurring()
-  const ignore = useIgnoreRecurring()
-  const remove = useDeleteRecurring()
-  const busy = confirm.isPending || ignore.isPending || remove.isPending
-
-  const statusVariant = series.status === 'CONFIRMED'
-    ? 'default' : series.status === 'SUGGESTED' ? 'secondary' : 'outline'
-
-  return (
-    <div className="flex items-center gap-3 border-b border-border py-3 last:border-0">
-      <ColorDot color={series.categoryColor} className="size-3 shrink-0 rounded-full" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">{series.label}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {t(CADENCE_LABEL_KEY[series.cadence])}
-          {series.nextDueDate && ` · ${formatDate(series.nextDueDate, getLocale())}`}
-        </p>
-      </div>
-      <Badge variant={statusVariant}>{t(STATUS_LABEL_KEY[series.status])}</Badge>
-      <span className="w-20 shrink-0 text-right text-sm tabular-nums">
-        <CurrencyDisplay value={series.expectedAmount} showSign />
-      </span>
-      <div className="flex shrink-0 items-center gap-1">
-        {series.status !== 'CONFIRMED' && (
-          <Button size="icon" variant="ghost" disabled={busy} aria-label="confirm"
-            onClick={() => confirm.mutate(series.id)}>
-            <Check className="size-4 text-emerald-600 dark:text-emerald-400" />
-          </Button>
-        )}
-        {series.status !== 'IGNORED' && (
-          <Button size="icon" variant="ghost" disabled={busy} aria-label="ignore"
-            onClick={() => ignore.mutate(series.id)}>
-            <X className="size-4 text-muted-foreground" />
-          </Button>
-        )}
-        <Button size="icon" variant="ghost" disabled={busy} aria-label="delete"
-          onClick={() => remove.mutate(series.id)}>
-          <Trash2 className="size-4" />
-        </Button>
-      </div>
-    </div>
-  )
-}
-
 /** Group upcoming occurrences by `yyyy-MM` for a compact agenda. */
 function useGroupedCalendar(horizonDays: number) {
   const { data, isLoading } = useRecurringCalendar(horizonDays)
@@ -212,6 +164,9 @@ export function RecurringTab() {
           </Button>
         </div>
       </div>
+
+      {/* "What changed" — silent auto-confirms + price steps, with per-item undo. */}
+      <ActivityFeed />
 
       {/* Upcoming agenda */}
       <Card>
@@ -269,7 +224,7 @@ export function RecurringTab() {
           )}
           {!isLoading && (series?.length ?? 0) > 0 && (
             <div>
-              {series!.map((s) => <SeriesRow key={s.id} series={s} />)}
+              {series!.map((s) => <SubscriptionCard key={s.id} series={s} />)}
             </div>
           )}
         </CardContent>

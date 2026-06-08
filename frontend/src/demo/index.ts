@@ -7,6 +7,7 @@ import { mockHoldings } from './data/holdings'
 import { mockTransactions } from './data/transactions'
 import { mockExchangeStatuses, mockWalletStatuses, mockRequisitions } from './data/sync-status'
 import {
+  mockActivity,
   mockAllocation,
   mockBudgetSettings,
   mockBudgets,
@@ -449,11 +450,18 @@ handlers.set(key('POST', '/recurring'), (config) => {
     categoryName: cat?.name ?? null, categoryColor: cat?.color ?? null, categoryIcon: null,
   }
 })
+handlers.set(key('GET', '/recurring/activity'), () => mockActivity)
 for (const s of mockRecurring) {
   handlers.set(key('PUT', `/recurring/${s.id}`), (config) => ({ ...s, ...JSON.parse(config.data || '{}') }))
   handlers.set(key('POST', `/recurring/${s.id}/confirm`), () => ({ ...s, status: 'CONFIRMED' }))
   handlers.set(key('POST', `/recurring/${s.id}/ignore`), () => ({ ...s, status: 'IGNORED' }))
   handlers.set(key('DELETE', `/recurring/${s.id}`), () => ({}))
+  // Context-aware undo, mirroring the backend: acknowledge a price step (keep the new amount,
+  // clear the alert) or reject a silent auto-confirm (send the series back to IGNORED).
+  handlers.set(key('POST', `/recurring/${s.id}/undo`), () =>
+    s.priceChangedAt != null
+      ? { ...s, previousAmount: null, priceChangedAt: null }
+      : { ...s, status: 'IGNORED', autoConfirmed: false })
 }
 handlers.set(key('POST', '/recurring/detect'), () => ({ detected: 2 }))
 

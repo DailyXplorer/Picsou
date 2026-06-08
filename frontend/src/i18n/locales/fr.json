@@ -444,10 +444,26 @@
       "category": "Catégorie",
       "noCategory": "Sans catégorie",
       "formHint": "Ajoutez manuellement un prélèvement récurrent.",
+      "variable": "Montant variable",
+      "autoConfirmedConfident": "Auto-confirmé · {{percent}} % de confiance",
+      "priceFromTo": "{{from}} → {{to}}",
+      "undo": "Annuler",
       "status": {
         "suggested": "Suggéré",
         "confirmed": "Confirmé",
         "ignored": "Ignoré"
+      },
+      "runtime": {
+        "late": "En retard",
+        "dueSoon": "Bientôt dû"
+      },
+      "activity": {
+        "title": "Ce qui a changé",
+        "autoConfirmed": "Auto-confirmé",
+        "priceChange": "Variation de prix",
+        "autoConfirmedDesc": "Détecté et confirmé automatiquement",
+        "priceChangeDesc": "Prix passé de {{from}} à {{to}}",
+        "acknowledge": "OK"
       }
     },
     "categorize": {

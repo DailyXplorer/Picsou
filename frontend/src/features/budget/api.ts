@@ -13,6 +13,7 @@ import type {
   CategorizationRuleRequest,
   CategoryRequest,
   CategorizeRequest,
+  RecurringActivity,
   RecurringOccurrence,
   RecurringSeries,
   RecurringSeriesRequest,
@@ -101,4 +102,9 @@ export const budgetApi = {
   deleteRecurring: (id: number) => api.delete(`/recurring/${id}`),
   detectRecurring: () =>
     api.post<{ detected: number }>('/recurring/detect').then(r => r.data),
+  // "What changed" feed (auto-confirms + price steps, member-scoped) and its context-aware undo.
+  getRecurringActivity: () =>
+    api.get<RecurringActivity[]>('/recurring/activity').then(r => r.data),
+  undoRecurring: (id: number) =>
+    api.post<RecurringSeries>(`/recurring/${id}/undo`).then(r => r.data),
 }

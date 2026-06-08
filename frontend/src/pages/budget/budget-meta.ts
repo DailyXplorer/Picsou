@@ -1,4 +1,11 @@
-import type { AssetClass, CategoryKind, RecurringCadence, RecurringStatus } from '@/types/api'
+import type {
+  AssetClass,
+  CategoryKind,
+  RecurringActivityType,
+  RecurringCadence,
+  RecurringRuntimeStatus,
+  RecurringStatus,
+} from '@/types/api'
 
 /**
  * Static lookup tables for the Budget module — kept in a component-free file so
@@ -28,6 +35,29 @@ export const STATUS_LABEL_KEY: Record<RecurringStatus, string> = {
   SUGGESTED: 'budget.recurring.status.suggested',
   CONFIRMED: 'budget.recurring.status.confirmed',
   IGNORED: 'budget.recurring.status.ignored',
+}
+
+/**
+ * Runtime urgency badge presentation. SCHEDULED is the quiet default and renders no badge, so it
+ * carries no label key — only LATE and DUE_SOON surface a chip on the subscription card.
+ */
+export const RUNTIME_STATUS_META: Record<
+  Exclude<RecurringRuntimeStatus, 'SCHEDULED'>,
+  { labelKey: string; className: string }
+> = {
+  LATE: {
+    labelKey: 'budget.recurring.runtime.late',
+    className: 'border-transparent bg-rose-500/15 text-rose-600 dark:text-rose-400',
+  },
+  DUE_SOON: {
+    labelKey: 'budget.recurring.runtime.dueSoon',
+    className: 'border-transparent bg-amber-500/15 text-amber-600 dark:text-amber-400',
+  },
+}
+
+export const ACTIVITY_TYPE_LABEL_KEY: Record<RecurringActivityType, string> = {
+  AUTO_CONFIRMED: 'budget.recurring.activity.autoConfirmed',
+  PRICE_CHANGE: 'budget.recurring.activity.priceChange',
 }
 
 export const ASSET_CLASS_LABEL_KEY: Record<AssetClass, string> = {

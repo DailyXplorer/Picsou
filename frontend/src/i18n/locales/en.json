@@ -444,10 +444,26 @@
       "category": "Category",
       "noCategory": "No category",
       "formHint": "Manually add a recurring payment.",
+      "variable": "Variable amount",
+      "autoConfirmedConfident": "Auto-confirmed · {{percent}}% confidence",
+      "priceFromTo": "{{from}} → {{to}}",
+      "undo": "Undo",
       "status": {
         "suggested": "Suggested",
         "confirmed": "Confirmed",
         "ignored": "Ignored"
+      },
+      "runtime": {
+        "late": "Late",
+        "dueSoon": "Due soon"
+      },
+      "activity": {
+        "title": "What changed",
+        "autoConfirmed": "Auto-confirmed",
+        "priceChange": "Price change",
+        "autoConfirmedDesc": "Detected and confirmed automatically",
+        "priceChangeDesc": "Price went from {{from}} to {{to}}",
+        "acknowledge": "Got it"
       }
     },
     "categorize": {

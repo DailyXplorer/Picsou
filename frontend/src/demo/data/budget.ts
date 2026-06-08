@@ -11,6 +11,7 @@ import type {
   CategorySpend,
   FlowLink,
   FlowNode,
+  RecurringActivity,
   RecurringOccurrence,
   RecurringSeries,
   SpendingByCategoryResponse,
@@ -199,12 +200,27 @@ export function mockAllocation(period: CashflowPeriod): AllocationResponse {
 
 // ── Recurring ─────────────────────────────────────────────────────────────────
 
+// v2 fields tell the "why" story: Netflix was silently auto-confirmed *and* just had a price
+// step (10.99 → 13.49); the salary was auto-confirmed at high confidence; Spotify is still a
+// low-confidence suggestion (manual confirm/ignore); the car insurance is a variable-amount
+// series the user ignored. runtimeStatus is what the backend would compute from nextDueDate vs
+// today (Netflix at +6d → DUE_SOON, everything else outside the 7-day window → SCHEDULED).
 export const mockRecurring: RecurringSeries[] = [
-  { id: 1, label: 'Netflix', counterparty: 'NETFLIX.COM', expectedAmount: -13.49, cadence: 'MONTHLY', status: 'CONFIRMED', nextDueDate: daysFromNow(6), lastSeenDate: daysFromNow(-24), categoryId: 6, categoryName: 'Abonnements', categoryColor: '#8b5cf6', categoryIcon: null },
-  { id: 2, label: 'Loyer', counterparty: 'AGENCE IMMO', expectedAmount: -1100, cadence: 'MONTHLY', status: 'CONFIRMED', nextDueDate: daysFromNow(12), lastSeenDate: daysFromNow(-18), categoryId: 3, categoryName: 'Logement', categoryColor: '#6366f1', categoryIcon: null },
-  { id: 3, label: 'Spotify', counterparty: 'SPOTIFY', expectedAmount: -10.99, cadence: 'MONTHLY', status: 'SUGGESTED', nextDueDate: daysFromNow(9), lastSeenDate: daysFromNow(-21), categoryId: 6, categoryName: 'Abonnements', categoryColor: '#8b5cf6', categoryIcon: null },
-  { id: 4, label: 'Salaire', counterparty: 'EMPLOYEUR SAS', expectedAmount: 3200, cadence: 'MONTHLY', status: 'CONFIRMED', nextDueDate: daysFromNow(20), lastSeenDate: daysFromNow(-10), categoryId: 1, categoryName: 'Salaire', categoryColor: '#10b981', categoryIcon: null },
-  { id: 5, label: 'Assurance auto', counterparty: 'MAIF', expectedAmount: -42.6, cadence: 'MONTHLY', status: 'IGNORED', nextDueDate: daysFromNow(15), lastSeenDate: daysFromNow(-16), categoryId: 4, categoryName: 'Transport', categoryColor: '#0ea5e9', categoryIcon: null },
+  { id: 1, label: 'Netflix', counterparty: 'NETFLIX.COM', expectedAmount: -13.49, cadence: 'MONTHLY', status: 'CONFIRMED', nextDueDate: daysFromNow(6), lastSeenDate: daysFromNow(-24), categoryId: 6, categoryName: 'Abonnements', categoryColor: '#8b5cf6', categoryIcon: null, confidence: 0.86, amountMin: -13.49, amountMax: -13.49, variable: false, previousAmount: -10.99, priceChangedAt: daysFromNow(-3), autoConfirmed: true, runtimeStatus: 'DUE_SOON' },
+  { id: 2, label: 'Loyer', counterparty: 'AGENCE IMMO', expectedAmount: -1100, cadence: 'MONTHLY', status: 'CONFIRMED', nextDueDate: daysFromNow(12), lastSeenDate: daysFromNow(-18), categoryId: 3, categoryName: 'Logement', categoryColor: '#6366f1', categoryIcon: null, confidence: 0.92, amountMin: -1100, amountMax: -1100, variable: false, previousAmount: null, priceChangedAt: null, autoConfirmed: false, runtimeStatus: 'SCHEDULED' },
+  { id: 3, label: 'Spotify', counterparty: 'SPOTIFY', expectedAmount: -10.99, cadence: 'MONTHLY', status: 'SUGGESTED', nextDueDate: daysFromNow(9), lastSeenDate: daysFromNow(-21), categoryId: 6, categoryName: 'Abonnements', categoryColor: '#8b5cf6', categoryIcon: null, confidence: 0.74, amountMin: -10.99, amountMax: -10.99, variable: false, previousAmount: null, priceChangedAt: null, autoConfirmed: false, runtimeStatus: 'SCHEDULED' },
+  { id: 4, label: 'Salaire', counterparty: 'EMPLOYEUR SAS', expectedAmount: 3200, cadence: 'MONTHLY', status: 'CONFIRMED', nextDueDate: daysFromNow(20), lastSeenDate: daysFromNow(-5), categoryId: 1, categoryName: 'Salaire', categoryColor: '#10b981', categoryIcon: null, confidence: 0.95, amountMin: 3180, amountMax: 3220, variable: false, previousAmount: null, priceChangedAt: null, autoConfirmed: true, runtimeStatus: 'SCHEDULED' },
+  { id: 5, label: 'Assurance auto', counterparty: 'MAIF', expectedAmount: -42.6, cadence: 'MONTHLY', status: 'IGNORED', nextDueDate: daysFromNow(15), lastSeenDate: daysFromNow(-16), categoryId: 4, categoryName: 'Transport', categoryColor: '#0ea5e9', categoryIcon: null, confidence: 0.61, amountMin: -55.2, amountMax: -38.4, variable: true, previousAmount: null, priceChangedAt: null, autoConfirmed: false, runtimeStatus: 'SCHEDULED' },
+]
+
+/**
+ * The "what changed" feed, newest first — mirrors what the backend derives from series state:
+ * a recent price step (Netflix) preferred over the auto-confirm note, then a silent
+ * high-confidence auto-confirm (the salary). Drives `ActivityFeed` + the undo affordance.
+ */
+export const mockActivity: RecurringActivity[] = [
+  { seriesId: 1, label: 'Netflix', type: 'PRICE_CHANGE', occurredOn: daysFromNow(-3), expectedAmount: -13.49, previousAmount: -10.99, cadence: 'MONTHLY', categoryId: 6, categoryName: 'Abonnements', categoryColor: '#8b5cf6', categoryIcon: null },
+  { seriesId: 4, label: 'Salaire', type: 'AUTO_CONFIRMED', occurredOn: daysFromNow(-5), expectedAmount: 3200, previousAmount: null, cadence: 'MONTHLY', categoryId: 1, categoryName: 'Salaire', categoryColor: '#10b981', categoryIcon: null },
 ]
 
 /** Project upcoming occurrences from the confirmed/suggested series across the horizon. */

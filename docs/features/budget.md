@@ -41,7 +41,7 @@ A single `BudgetLayout` (segmented sub-nav on desktop, bottom bar on mobile — 
 | `/budget` (index) | `BudgetOverviewPage` | Hero "left to spend", mini-flow, Review banner (only if items), upcoming subscriptions, top categories |
 | `/budget/spending` | `SpendingPage` | Cashflow **flow diagram**: Sankey ≥ `md`, Flow Bars < `md` |
 | `/budget/spending/:categoryId` | `CategoryDetailPage` | Per-category drill: transactions with `MerchantAvatar` |
-| `/budget/subscriptions` | `SubscriptionsPage` | Recurring series *(migrated as-is; rebuilt in M3)* |
+| `/budget/subscriptions` | `SubscriptionsPage` | Recurring series **v2**: auto-confirm + runtime/price badges (`SubscriptionCard`), "what changed" feed + undo (`ActivityFeed`), upcoming agenda |
 | `/budget/envelopes` | `EnvelopesPage` | Envelopes + allocation *(migrated as-is; merged in M4)* |
 | `/budget/review` | `ReviewPage` | Uncategorized inbox — **contextual, not a permanent destination** |
 | `/budget/settings` | `BudgetSettingsPage` | Category management, pay cycle, logo opt-in |
@@ -131,6 +131,44 @@ It deliberately has no empty-rules early-out: the brand KB alone categorizes a r
   **deterministic colour derived from the name**, fully offline; switches to a proxied `<img>` only
   when `logo_fetch_enabled` (M5). Used across every transaction list.
 
+### Recurring v2 — detection, auto-confirm & the activity feed
+
+The pre-1.1.0 detector drifted on the raw `counterparty` and never auto-acted. M3 rebuilds it
+around the canonical `merchant_label` identity and lets it **confirm high-confidence series
+silently**, with a safety net so silent ≠ unexplained.
+
+- **`RecurringDetectionService`** (rewritten, pure/static core) — `analyse(transactions)` groups
+  by normalized merchant identity (not raw counterparty), then scores a `Candidate`:
+  `confidence = 0.45·regularity + 0.35·amountStability + 0.20·volume`. Amounts are classified
+  `FIXED` (≤ 0.15 spread) / `VARIABLE` (≤ 0.40) / `UNSTABLE` (rejected). A series **auto-confirms**
+  only with **≥ 3 occurrences, regular intervals, FIXED amount, and confidence ≥ 0.80**. `upsert`
+  finds by `findByMemberIdAndLabelIgnoreCase` (the `(member_id, lower(label))` unique index),
+  **never resurrects an `IGNORED` series**, auto-confirms only what is still `SUGGESTED`, and on a
+  price step stamps `previousAmount` + `priceChangedAt`. `linkTransactions` finally populates
+  `transaction.recurring_series_id` (previously always null).
+- **Price-change detection** — `isPriceChange(prev, curr)` fires only on a step that is **both**
+  ≥ 0.01 absolute **and** > 5% relative, so cent-level drift on a "fixed" subscription stays quiet.
+- **Runtime status is computed, never stored** — `recurring_status` is a native PG enum
+  (append-only), so `LATE` / `DUE_SOON` / `SCHEDULED` are derived in `RecurringSeriesResponse.from(s,
+  today)` from `nextDueDate` (DUE_SOON window = 7 days). Same for the DTO-only
+  `RecurringRuntimeStatus` / `RecurringActivityType` enums.
+- **Activity feed (the safety net)** — `RecurringSeriesService.activity(member, today)` derives a
+  newest-first "what changed" list from series state over a 60-day lookback (no new table): a recent
+  `priceChangedAt` emits a `PRICE_CHANGE` entry, else a recent silently-auto-confirmed `CONFIRMED`
+  series emits an `AUTO_CONFIRMED` entry (price change preferred; one entry per series). `undo(id)`
+  is **context-aware and idempotent**: a price change is *acknowledged* (clear `previousAmount` +
+  `priceChangedAt`, keep the new amount); a silent auto-confirm is *rejected* (→ `IGNORED`, so
+  re-detection won't re-confirm it).
+- **Endpoints** (member-scoped): `GET /api/recurring` (now carries the v2 fields + runtime status),
+  `GET /api/recurring/activity`, `POST /api/recurring/{id}/undo`, plus the existing
+  detect/confirm/ignore/CRUD.
+- **Frontend**: `SubscriptionCard` renders the v2 signals (runtime chip, "variable amount" tag,
+  silent-auto-confirm note with the confidence %, price-from→to line) over the existing
+  confirm/ignore/delete actions; `ActivityFeed` renders the feed and **nothing at all when empty**
+  (Apple principle — no permanent review chore). Both are mobile-responsive via `flex-wrap`. New
+  TanStack hooks `useRecurringActivity` / `useUndoRecurring` invalidate `['budget','activity']`
+  (also swept by `useDetectRecurring`).
+
 ### Key files
 
 **Foundation (ingestion + categorization)**
@@ -151,12 +189,19 @@ It deliberately has no empty-rules early-out: the brand KB alone categorizes a r
 (`/flow`), `controller/SpendingController.java`, DTOs `CashflowFlowResponse`,
 `SpendingByCategoryResponse`, `SpendingDetailResponse`.
 
-**Envelopes / Recurring / Allocation** (pre-1.1.0 logic, migrated under the new IA pending M3/M4):
-`model/Budget.java` + `BudgetService` + `BudgetController`; `model/RecurringSeries.java` +
-`RecurringDetectionService` + `RecurringController`; `service/budget/CashflowService.java`;
+**Recurring v2** (M3): `model/RecurringSeries.java` (+ `confidence`, `amountMin/Max`, `variable`,
+`previousAmount`, `priceChangedAt`, `autoConfirmed`); `service/budget/RecurringDetectionService.java`
+(identity/auto-confirm rewrite), `service/budget/RecurringSeriesService.java` (activity + undo +
+runtime mapping), `controller/RecurringController.java`; DTOs `RecurringSeriesResponse` (extended),
+**new** `RecurringActivityResponse`, `RecurringActivityType`, `RecurringRuntimeStatus`;
+`repository/RecurringSeriesRepository.java`; migration `V38__recurring_v2.sql`.
+
+**Envelopes / Allocation** (pre-1.1.0 logic, migrated under the new IA pending M4):
+`model/Budget.java` + `BudgetService` + `BudgetController`; `service/budget/CashflowService.java`;
 `service/budget/AllocationService.java` + `AllocationController`.
 
 **Frontend:** `pages/budget/BudgetLayout.tsx` + `budget-nav.ts` + the nested pages above;
+`pages/budget/{SubscriptionCard,ActivityFeed}.tsx` + `budget-meta.ts` (runtime/activity lookups);
 `features/budget/{api,hooks}.ts` (TanStack Query, cascade invalidations rooted at `['budget']`);
 `components/shared/{MerchantAvatar,CashflowSankey,FlowBars,flow-utils}.ts(x)`;
 `types/api.ts`; demo mocks in `demo/data/budget.ts` + `demo/index.ts`.
@@ -189,6 +234,10 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
 | Sankey ≥ `md`, Flow Bars < `md` (conditional mount) | Sankey is unreadable on phones; `ResponsiveContainer` is 0×0 under `display:none` | One chart for all sizes / CSS hide |
 | Configurable `cycleStartDay` (1–28) | Budgets track the pay cycle, not the calendar month | Fixed calendar month |
 | `CategoryKind` pivot (INCOME/EXPENSE/TRANSFER) | Transfers between own accounts must not count as spend/income | Single flat list |
+| **Silent auto-confirm** of high-confidence recurring series | Zero-config "grandmother" UX — nothing to triage in the ideal case | Always leave detections as `SUGGESTED` for manual review |
+| Safety net: activity feed + per-item undo + price alerts | Silent ≠ unexplained; every silent action is reversible and surfaced | Trust the math with no recourse |
+| Recurring identity = canonical `merchant_label` | Stable grouping; raw `counterparty` drifts (card digits, cities, dates) | Group on raw bank string |
+| Runtime status (`LATE`/`DUE_SOON`) computed in the DTO | `recurring_status` is an append-only PG enum; transient states aren't persisted | Store every transient state as an enum value |
 
 ## Gotchas / Pitfalls
 
@@ -214,8 +263,19 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
 - **Transfers are excluded** from cashflow/flow/envelopes but **feed allocation** — a transfer is a
   move between your own accounts, not spending.
 - The cycle is **not** the calendar month; `cycleStartDay` 28 clamps to a short month's last day.
-- Recurring detection needs **≥3 regular occurrences** with a stable amount (rebuilt around
-  `merchant_label` identity in M3).
+- Recurring detection needs **≥3 regular occurrences** with a stable amount; auto-confirm
+  additionally requires a **FIXED** amount class and **confidence ≥ 0.80**. Identity is the
+  canonical `merchant_label`, deduped via the `(member_id, lower(label))` unique index.
+- **`IGNORED` is durable on purpose.** Re-detection (`upsert`) skips `IGNORED` series so a user's
+  rejection — including an undone auto-confirm — is never silently re-confirmed on the next sync.
+- **Activity-feed recency keys on domain `LocalDate`s, not audit `Instant`s.** `AuditableEntity`
+  exposes `createdAt`/`updatedAt` as read-only (no setters, populated only by the JPA auditing
+  listener), so they can't be set in pure-Mockito unit tests. The feed therefore keys recency on
+  `lastSeenDate` / `priceChangedAt` (settable domain fields) — keep it that way or the service tests
+  can't construct fixtures.
+- **`undo` is context-aware *and* idempotent.** It branches on series state (price change →
+  acknowledge; silent auto-confirm → reject), not on a client-supplied action, so a double-tap or a
+  stale client can't drive it into a wrong state.
 
 ## Tests
 
@@ -224,8 +284,13 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
 - `CategorizationServiceTest` — brand fallback **after** USER/AUTO, `categoryRef` guard never
   overridden, `merchant_label` always stamped
 - `CashflowFlowServiceTest` — hierarchy, conservation invariant, `TRANSFER` exclusion
+- `RecurringDetectionServiceTest` (rewritten for v2) — stable identity, confidence math at the
+  auto-confirm threshold, FIXED/VARIABLE classification, price-step detection, `IGNORED` never
+  resurrected, `recurring_series_id` populated
+- `RecurringSeriesServiceTest` — runtime status relative to "today", activity feed (newest-first,
+  price-change preferred, stale/user-confirmed excluded), context-aware undo
 - `BudgetCycleTest`, `BudgetServiceTest`, `CashflowServiceTest`, `AllocationServiceTest`,
-  `RecurringDetectionServiceTest`, `SyncService` ingestion tests
+  `SyncService` ingestion tests
 - Frontend: `flow-utils.test.ts`, `MerchantAvatar.test.tsx`, `features/budget` hooks via
   `bunx vitest run`
 - **Postgres write-on-read test** (planned M5): seed/recategorize in a read-only transaction (H2
