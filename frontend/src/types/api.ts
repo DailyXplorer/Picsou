@@ -339,6 +339,10 @@ export interface Transaction {
   ticker: string | null
   quantity: number | null
   pricePerUnit: number | null
+  /** Clean merchant name derived offline from the raw bank fields (null until enriched). */
+  merchantLabel?: string | null
+  /** Matched brand id from the offline knowledge base, or null. */
+  merchantBrandId?: number | null
 }
 
 export interface TransactionRequest {
@@ -423,6 +427,10 @@ export interface UncategorizedTransaction {
   categoryId: number | null
   categoryName: string | null
   counterparty: string | null
+  /** Clean merchant name derived offline from the raw bank fields (null until enriched). */
+  merchantLabel: string | null
+  /** Matched brand id from the offline knowledge base, or null. */
+  merchantBrandId: number | null
 }
 
 /** A monthly envelope with its current-cycle progress (computed on read). */
@@ -474,6 +482,75 @@ export interface CashflowResponse {
   expense: number   // positive magnitude
   net: number
   series: CashflowBucket[]
+}
+
+/** Sankey node role — drives colour/position; HUB and SAVINGS/drawdown are synthetic. */
+export type FlowNodeType = 'INCOME' | 'HUB' | 'EXPENSE' | 'SAVINGS'
+
+/**
+ * One node in the income→budget→expense Sankey. `key` is `cat:<id>` for a real category,
+ * or a `__…__` sentinel for a synthetic node (hub, "other income", savings, drawdown,
+ * uncategorized, rolled-up tail). Synthetic nodes carry `label`/`color` null and are
+ * labelled/coloured on the frontend.
+ */
+export interface FlowNode {
+  key: string
+  label: string | null
+  color: string | null
+  type: FlowNodeType
+}
+
+/** A weighted edge: indices into the response's `nodes` array. */
+export interface FlowLink {
+  source: number
+  target: number
+  value: number
+}
+
+export interface CashflowFlowResponse {
+  period: CashflowPeriod
+  from: string
+  to: string
+  income: number
+  expense: number   // positive magnitude
+  net: number
+  nodes: FlowNode[]
+  links: FlowLink[]
+}
+
+/** One row of the ranked expense breakdown. `categoryId`/`slug`/`name` null = uncategorized. */
+export interface CategorySpend {
+  categoryId: number | null
+  slug: string | null
+  name: string | null
+  color: string | null
+  icon: string | null
+  amount: number    // positive magnitude
+  count: number
+  share: number     // fraction of totalExpense, 0..1 (4 decimals)
+}
+
+export interface SpendingByCategoryResponse {
+  period: CashflowPeriod
+  from: string
+  to: string
+  totalExpense: number
+  categories: CategorySpend[]
+}
+
+/** A single category's transactions over the period (the spending drill page). */
+export interface SpendingDetailResponse {
+  categoryId: number
+  slug: string | null
+  name: string
+  color: string | null
+  icon: string | null
+  period: CashflowPeriod
+  from: string
+  to: string
+  total: number     // signed sum
+  count: number
+  transactions: Transaction[]
 }
 
 export interface AllocationStock {

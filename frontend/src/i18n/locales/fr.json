@@ -376,6 +376,33 @@
       "empty": "Aucune transaction sur cette période.",
       "error": "Impossible de charger le cashflow."
     },
+    "flow": {
+      "subtitle": "Comment circule votre argent.",
+      "diagram": "Flux du cycle",
+      "breakdown": "Où part votre argent",
+      "inflows": "Entrées",
+      "outflows": "Sorties",
+      "empty": "Aucun flux à afficher sur cette période.",
+      "error": "Impossible de charger le diagramme de flux.",
+      "ariaSummary": "Diagramme de flux : {{income}} d'entrées, {{expense}} de sorties, solde net {{net}}.",
+      "transactionsCount": "{{count}} transaction",
+      "transactionsCount_other": "{{count}} transactions",
+      "node": {
+        "hub": "Budget",
+        "incomeOther": "Autres revenus",
+        "uncategorized": "Sans catégorie",
+        "moreExpenses": "Autres dépenses",
+        "savings": "Épargne",
+        "drawdown": "Épargne mobilisée"
+      }
+    },
+    "detail": {
+      "back": "Retour aux dépenses",
+      "total": "Total de la période",
+      "empty": "Aucune transaction dans cette catégorie sur la période.",
+      "error": "Impossible de charger le détail de la catégorie.",
+      "notFound": "Catégorie introuvable."
+    },
     "allocation": {
       "subtitle": "Répartition de votre épargne et de vos investissements.",
       "stock": "Encours par classe d'actif",

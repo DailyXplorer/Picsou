@@ -52,29 +52,29 @@ public class CategoryService {
      * charts read well out of the box; icons are lucide-react names the frontend maps.
      * Order here is the seeded {@code sortOrder}.
      */
-    private record DefaultCategory(String name, CategoryKind kind, String color, String icon) {}
+    private record DefaultCategory(String slug, String name, CategoryKind kind, String color, String icon) {}
 
     private static final List<DefaultCategory> DEFAULTS = List.of(
         // ── Expenses ──────────────────────────────────────────────────────────
-        new DefaultCategory("Courses", CategoryKind.EXPENSE, "#22c55e", "shopping-cart"),
-        new DefaultCategory("Restaurants", CategoryKind.EXPENSE, "#f97316", "utensils"),
-        new DefaultCategory("Transport", CategoryKind.EXPENSE, "#3b82f6", "car"),
-        new DefaultCategory("Logement", CategoryKind.EXPENSE, "#8b5cf6", "house"),
-        new DefaultCategory("Factures & énergie", CategoryKind.EXPENSE, "#eab308", "zap"),
-        new DefaultCategory("Santé", CategoryKind.EXPENSE, "#ef4444", "heart-pulse"),
-        new DefaultCategory("Loisirs", CategoryKind.EXPENSE, "#ec4899", "gamepad-2"),
-        new DefaultCategory("Shopping", CategoryKind.EXPENSE, "#14b8a6", "shopping-bag"),
-        new DefaultCategory("Abonnements", CategoryKind.EXPENSE, "#6366f1", "repeat"),
-        new DefaultCategory("Voyages", CategoryKind.EXPENSE, "#06b6d4", "plane"),
-        new DefaultCategory("Divers", CategoryKind.EXPENSE, "#94a3b8", "ellipsis"),
+        new DefaultCategory("courses", "Courses", CategoryKind.EXPENSE, "#22c55e", "shopping-cart"),
+        new DefaultCategory("restaurants", "Restaurants", CategoryKind.EXPENSE, "#f97316", "utensils"),
+        new DefaultCategory("transport", "Transport", CategoryKind.EXPENSE, "#3b82f6", "car"),
+        new DefaultCategory("logement", "Logement", CategoryKind.EXPENSE, "#8b5cf6", "house"),
+        new DefaultCategory("factures", "Factures & énergie", CategoryKind.EXPENSE, "#eab308", "zap"),
+        new DefaultCategory("sante", "Santé", CategoryKind.EXPENSE, "#ef4444", "heart-pulse"),
+        new DefaultCategory("loisirs", "Loisirs", CategoryKind.EXPENSE, "#ec4899", "gamepad-2"),
+        new DefaultCategory("shopping", "Shopping", CategoryKind.EXPENSE, "#14b8a6", "shopping-bag"),
+        new DefaultCategory("abonnements", "Abonnements", CategoryKind.EXPENSE, "#6366f1", "repeat"),
+        new DefaultCategory("voyages", "Voyages", CategoryKind.EXPENSE, "#06b6d4", "plane"),
+        new DefaultCategory("divers", "Divers", CategoryKind.EXPENSE, "#94a3b8", "ellipsis"),
         // ── Income ────────────────────────────────────────────────────────────
-        new DefaultCategory("Salaire", CategoryKind.INCOME, "#16a34a", "wallet"),
-        new DefaultCategory("Autres revenus", CategoryKind.INCOME, "#65a30d", "hand-coins"),
-        new DefaultCategory("Remboursements", CategoryKind.INCOME, "#0ea5e9", "undo-2"),
+        new DefaultCategory("salaire", "Salaire", CategoryKind.INCOME, "#16a34a", "wallet"),
+        new DefaultCategory("autres-revenus", "Autres revenus", CategoryKind.INCOME, "#65a30d", "hand-coins"),
+        new DefaultCategory("remboursements", "Remboursements", CategoryKind.INCOME, "#0ea5e9", "undo-2"),
         // ── Transfers (excluded from cashflow, feed allocation) ─────────────────
-        new DefaultCategory("Épargne", CategoryKind.TRANSFER, "#0891b2", "piggy-bank"),
-        new DefaultCategory("Investissement", CategoryKind.TRANSFER, "#7c3aed", "trending-up"),
-        new DefaultCategory("Virement interne", CategoryKind.TRANSFER, "#64748b", "arrow-left-right")
+        new DefaultCategory("epargne", "Épargne", CategoryKind.TRANSFER, "#0891b2", "piggy-bank"),
+        new DefaultCategory("investissement", "Investissement", CategoryKind.TRANSFER, "#7c3aed", "trending-up"),
+        new DefaultCategory("virement-interne", "Virement interne", CategoryKind.TRANSFER, "#64748b", "arrow-left-right")
     );
 
     /**
@@ -108,6 +108,7 @@ public class CategoryService {
         for (DefaultCategory d : DEFAULTS) {
             categoryRepository.save(Category.builder()
                 .member(member)
+                .slug(d.slug())
                 .name(d.name())
                 .kind(d.kind())
                 .color(d.color())

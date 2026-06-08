@@ -33,8 +33,29 @@ export const GoalsPage = lazy(() =>
 export const GoalCalendarPage = lazy(() =>
   import('@/pages/goals/GoalCalendarPage').then((m) => ({ default: m.GoalCalendarPage }))
 )
-export const BudgetPage = lazy(() =>
-  import('@/pages/budget/BudgetPage').then((m) => ({ default: m.BudgetPage }))
+export const BudgetLayout = lazy(() =>
+  import('@/pages/budget/BudgetLayout').then((m) => ({ default: m.BudgetLayout }))
+)
+export const BudgetOverviewPage = lazy(() =>
+  import('@/pages/budget/BudgetOverviewPage').then((m) => ({ default: m.BudgetOverviewPage }))
+)
+export const SpendingPage = lazy(() =>
+  import('@/pages/budget/SpendingPage').then((m) => ({ default: m.SpendingPage }))
+)
+export const CategoryDetailPage = lazy(() =>
+  import('@/pages/budget/CategoryDetailPage').then((m) => ({ default: m.CategoryDetailPage }))
+)
+export const SubscriptionsPage = lazy(() =>
+  import('@/pages/budget/SubscriptionsPage').then((m) => ({ default: m.SubscriptionsPage }))
+)
+export const EnvelopesPage = lazy(() =>
+  import('@/pages/budget/EnvelopesPage').then((m) => ({ default: m.EnvelopesPage }))
+)
+export const ReviewPage = lazy(() =>
+  import('@/pages/budget/ReviewPage').then((m) => ({ default: m.ReviewPage }))
+)
+export const BudgetSettingsPage = lazy(() =>
+  import('@/pages/budget/BudgetSettingsPage').then((m) => ({ default: m.BudgetSettingsPage }))
 )
 export const SyncPage = lazy(() =>
   import('@/pages/sync/SyncPage').then((m) => ({ default: m.SyncPage }))

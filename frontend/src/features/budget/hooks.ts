@@ -202,6 +202,32 @@ export function useAllocation(period: CashflowPeriod) {
   })
 }
 
+export function useCashflowFlow(period: CashflowPeriod) {
+  return useQuery({
+    queryKey: ['budget', 'flow', period],
+    queryFn: () => budgetApi.getCashflowFlow(period),
+    staleTime: QUERY_STALE_TIMES.budget,
+  })
+}
+
+// ─── Spending breakdown & drill ──────────────────────────────────────────────
+
+export function useSpendingByCategory(period: CashflowPeriod) {
+  return useQuery({
+    queryKey: ['budget', 'spending', period],
+    queryFn: () => budgetApi.getSpendingByCategory(period),
+    staleTime: QUERY_STALE_TIMES.budget,
+  })
+}
+
+export function useCategoryDetail(categoryId: number, period: CashflowPeriod) {
+  return useQuery({
+    queryKey: ['budget', 'spending', 'category', categoryId, period],
+    queryFn: () => budgetApi.getCategoryDetail(categoryId, period),
+    staleTime: QUERY_STALE_TIMES.budget,
+  })
+}
+
 // ─── Recurring series ────────────────────────────────────────────────────────
 
 export function useRecurring(status?: RecurringStatus) {

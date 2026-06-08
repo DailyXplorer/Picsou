@@ -19,10 +19,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -34,8 +36,14 @@ class CategorizationServiceTest {
     @Mock CategoryRepository categoryRepository;
     @Mock TransactionRepository transactionRepository;
     @Mock FamilyMemberRepository familyMemberRepository;
+    @Mock MerchantKnowledgeBase knowledgeBase;
+    @Mock CategoryService categoryService;
 
     @InjectMocks CategorizationService service;
+
+    private static MerchantKnowledgeBase.Brand brand(Long id, String slug, String categorySlug) {
+        return new MerchantKnowledgeBase.Brand(id, slug, slug, categorySlug, "#000000", "X", null);
+    }
 
     private static final Long MEMBER_ID = 10L;
 
@@ -142,5 +150,82 @@ class CategorizationServiceTest {
         service.learnRule("Carrefour", 1L, MEMBER_ID);
 
         verify(ruleRepository, never()).save(any());
+    }
+
+    // ─── Zero-config pipeline: enrich + brand fallback ─────────────────────────
+
+    @Test
+    void autoCategorize_assignsBrandCategory_whenNoRuleMatches() {
+        Category courses = category(1L, CategoryKind.EXPENSE, "Courses");
+        MerchantKnowledgeBase.Brand carrefour = brand(7L, "carrefour", "courses");
+        when(knowledgeBase.match(anyString())).thenReturn(Optional.of(carrefour));
+        when(knowledgeBase.findById(7L)).thenReturn(Optional.of(carrefour));
+
+        var ctx = new CategorizationService.CategorizationContext(List.of(), Map.of("courses", courses));
+        Transaction t = tx("CARREFOUR", "CB CARREFOUR PARIS");
+
+        assertThat(service.autoCategorize(t, ctx)).isTrue();
+        assertThat(t.getMerchantLabel()).isEqualTo("Carrefour");
+        assertThat(t.getMerchantBrandId()).isEqualTo(7L);
+        assertThat(t.getCategoryRef()).isEqualTo(courses);
+    }
+
+    @Test
+    void autoCategorize_userRuleWinsOverBrand_butStillEnriches() {
+        Category courses = category(1L, CategoryKind.EXPENSE, "Courses");
+        Category restaurants = category(2L, CategoryKind.EXPENSE, "Restaurants");
+        MerchantKnowledgeBase.Brand carrefour = brand(7L, "carrefour", "courses");
+        when(knowledgeBase.match(anyString())).thenReturn(Optional.of(carrefour));
+
+        // A user/learned rule maps the same merchant elsewhere — it must win over the brand.
+        var rules = List.of(rule(RuleMatchType.KEYWORD, "carrefour", restaurants, 0));
+        var ctx = new CategorizationService.CategorizationContext(rules, Map.of("courses", courses));
+        Transaction t = tx("CARREFOUR", "CB CARREFOUR");
+
+        assertThat(service.autoCategorize(t, ctx)).isTrue();
+        assertThat(t.getCategoryRef()).isEqualTo(restaurants);
+        assertThat(t.getMerchantBrandId()).isEqualTo(7L); // enrichment still happened
+        verify(knowledgeBase, never()).findById(any());   // brand fallback never reached
+    }
+
+    @Test
+    void autoCategorize_neverOverridesExistingCategory() {
+        Category existing = category(5L, CategoryKind.EXPENSE, "Manual");
+        when(knowledgeBase.match(anyString())).thenReturn(Optional.empty());
+
+        var ctx = new CategorizationService.CategorizationContext(List.of(), Map.of());
+        Transaction t = tx("CARREFOUR", "CB CARREFOUR");
+        t.setCategoryRef(existing);
+
+        assertThat(service.autoCategorize(t, ctx)).isFalse();
+        assertThat(t.getCategoryRef()).isEqualTo(existing);
+        assertThat(t.getMerchantLabel()).isEqualTo("Carrefour"); // still labelled
+    }
+
+    @Test
+    void autoCategorize_brandKnown_butMemberLacksSlug_staysUncategorized() {
+        MerchantKnowledgeBase.Brand carrefour = brand(7L, "carrefour", "courses");
+        when(knowledgeBase.match(anyString())).thenReturn(Optional.of(carrefour));
+        when(knowledgeBase.findById(7L)).thenReturn(Optional.of(carrefour));
+
+        var ctx = new CategorizationService.CategorizationContext(List.of(), Map.of()); // no "courses"
+        Transaction t = tx("CARREFOUR", "CB CARREFOUR");
+
+        assertThat(service.autoCategorize(t, ctx)).isFalse();
+        assertThat(t.getCategoryRef()).isNull();
+        assertThat(t.getMerchantBrandId()).isEqualTo(7L); // brand linked even without a category
+    }
+
+    @Test
+    void autoCategorize_unknownMerchant_staysUncategorized_butLabelled() {
+        when(knowledgeBase.match(anyString())).thenReturn(Optional.empty());
+
+        var ctx = new CategorizationService.CategorizationContext(List.of(), Map.of());
+        Transaction t = tx("BOULANGERIE DUPONT", null);
+
+        assertThat(service.autoCategorize(t, ctx)).isFalse();
+        assertThat(t.getCategoryRef()).isNull();
+        assertThat(t.getMerchantLabel()).isEqualTo("Boulangerie Dupont");
+        assertThat(t.getMerchantBrandId()).isNull();
     }
 }

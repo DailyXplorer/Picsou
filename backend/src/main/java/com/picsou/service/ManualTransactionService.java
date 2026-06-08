@@ -51,11 +51,13 @@ public class ManualTransactionService {
             .nativeCurrency(req.currency() != null ? req.currency() : "EUR")
             .build();
 
-        // Explicit category wins; otherwise let the rules engine try to assign one.
+        // Explicit category wins; otherwise run the zero-config pipeline (clean label + brand
+        // link are stamped either way, and a rule or known brand may auto-assign the category).
         if (req.categoryId() != null) {
             tx.setCategoryRef(resolveCategory(req.categoryId(), memberId));
+            categorizationService.enrich(tx);
         } else {
-            categorizationService.apply(tx, memberId);
+            categorizationService.autoCategorize(tx, memberId);
         }
 
         transactionRepository.save(tx);

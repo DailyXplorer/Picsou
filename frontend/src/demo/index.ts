@@ -13,8 +13,11 @@ import {
   mockCalendar,
   mockCashflow,
   mockCategories,
+  mockCategoryDetail,
+  mockFlow,
   mockRecurring,
   mockRules,
+  mockSpendingByCategory,
   mockUncategorized,
 } from './data/budget'
 import type { CashflowPeriod } from '@/types/api'
@@ -35,6 +38,15 @@ function key(method: string, url: string): string {
 // Auth
 handlers.set(key('POST', '/auth/login'), () => ({ username: 'demo' }))
 handlers.set(key('POST', '/auth/refresh'), () => ({ username: 'demo' }))
+
+// Family — the sidebar profile switcher fetches members on every authenticated
+// route, so an unhandled call here (which would fall back to `{}`) breaks the
+// whole shell via `members.filter`. Return a small, realistic family: the demo
+// admin (not switchable) plus one managed member the admin can impersonate.
+handlers.set(key('GET', '/family/members'), () => [
+  { id: 1, displayName: 'Demo', avatarColor: '#6366f1', managed: false, hasLogin: true, activated: true, loginName: 'demo', mfaEnabled: false },
+  { id: 2, displayName: 'Léa', avatarColor: '#ec4899', managed: true, hasLogin: false, activated: false, loginName: null, mfaEnabled: false },
+])
 
 // Dashboard
 handlers.set(key('GET', '/dashboard'), () => mockDashboard)
@@ -410,8 +422,18 @@ handlers.set(key('PUT', '/budget/settings'), (config) => {
 // Cashflow & allocation (period comes from the query string)
 handlers.set(key('GET', '/cashflow'), (config) =>
   mockCashflow(((config.params?.period as CashflowPeriod) ?? 'CYCLE')))
+handlers.set(key('GET', '/cashflow/flow'), (config) =>
+  mockFlow(((config.params?.period as CashflowPeriod) ?? 'CYCLE')))
 handlers.set(key('GET', '/allocation'), (config) =>
   mockAllocation(((config.params?.period as CashflowPeriod) ?? 'CYCLE')))
+
+// Spending breakdown & per-category drill (one handler per known category id)
+handlers.set(key('GET', '/spending/by-category'), (config) =>
+  mockSpendingByCategory(((config.params?.period as CashflowPeriod) ?? 'CYCLE')))
+for (const c of mockCategories) {
+  handlers.set(key('GET', `/spending/category/${c.id}`), (config) =>
+    mockCategoryDetail(c.id, ((config.params?.period as CashflowPeriod) ?? 'CYCLE')))
+}
 
 // Recurring series
 handlers.set(key('GET', '/recurring'), () => mockRecurring)

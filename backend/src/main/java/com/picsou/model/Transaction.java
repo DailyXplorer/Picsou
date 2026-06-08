@@ -48,6 +48,18 @@ public class Transaction {
     @Column(length = 255)
     private String counterparty;
 
+    /**
+     * Clean, human-readable merchant name derived from {@link #counterparty}/{@link #description}
+     * by {@code MerchantNormalizer}. Always populated by the categorizer; drives nice display
+     * names everywhere and is the stable identity used for recurring-payment detection.
+     */
+    @Column(name = "merchant_label", length = 255)
+    private String merchantLabel;
+
+    /** Matched {@code MerchantBrand} id from the offline knowledge base (nullable). */
+    @Column(name = "merchant_brand_id")
+    private Long merchantBrandId;
+
     /** Provider entry reference; deduplicates synced transactions. Null for manual ones. */
     @Column(name = "external_id", length = 255)
     private String externalId;

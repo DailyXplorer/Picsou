@@ -316,6 +316,11 @@ public class SyncService {
             return;
         }
 
+        // Load the member's rules + categories-by-slug once and reuse across the whole window
+        // (no per-transaction queries); each new transaction is enriched + categorized in memory.
+        CategorizationService.CategorizationContext categorization =
+            categorizationService.loadContext(member.getId());
+
         int inserted = 0;
         for (BankConnectorPort.TransactionData data : fetched) {
             if (data.externalId() != null
@@ -332,7 +337,7 @@ public class SyncService {
                 .nativeCurrency(data.currency() != null ? data.currency() : "EUR")
                 .isManual(false)
                 .build();
-            categorizationService.apply(tx, member.getId());
+            categorizationService.autoCategorize(tx, categorization);
             transactionRepository.save(tx);
             inserted++;
         }

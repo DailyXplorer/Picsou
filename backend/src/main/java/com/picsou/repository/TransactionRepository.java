@@ -58,6 +58,18 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
                                                    @Param("from") LocalDate from,
                                                    @Param("to") LocalDate to);
 
+    /** One category's transactions for a member over a range, newest first (spending drill). */
+    @Query("""
+        SELECT t FROM Transaction t
+        WHERE t.account.member.id = :memberId AND t.categoryRef.id = :categoryId
+        AND t.date BETWEEN :from AND :to
+        ORDER BY t.date DESC, t.id DESC
+        """)
+    List<Transaction> findByMemberIdAndCategoryIdAndDateBetween(@Param("memberId") Long memberId,
+                                                                @Param("categoryId") Long categoryId,
+                                                                @Param("from") LocalDate from,
+                                                                @Param("to") LocalDate to);
+
     /** Sum of (signed) amounts for one category over a date range — used by envelopes. */
     @Query("""
         SELECT COALESCE(SUM(t.amount), 0) FROM Transaction t

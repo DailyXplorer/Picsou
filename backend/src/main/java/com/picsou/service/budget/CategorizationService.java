@@ -20,17 +20,29 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
- * Assigns managed {@link Category} to transactions, three ways:
+ * Assigns managed {@link Category} to transactions. Precedence is strict and never inverted:
  * <ol>
- *   <li><b>Auto</b> — {@link #apply} runs the member's rules (highest priority first) over
- *       a transaction's counterparty/description during sync and manual entry.</li>
- *   <li><b>Manual</b> — {@link #categorize} sets a category by hand and can
- *       {@link #learnRule learn} a COUNTERPARTY rule so the next occurrence is automatic.</li>
- *   <li><b>Bulk</b> — {@link #recategorizeUncategorized} re-runs rules over everything still
- *       uncategorized (e.g. right after a new rule is created).</li>
+ *   <li><b>USER / AUTO rules</b> — {@link #apply} runs the member's rules (highest priority
+ *       first) over a transaction's counterparty/description.</li>
+ *   <li><b>BRAND</b> — when no rule matches, {@link #autoCategorize} falls back to the offline
+ *       {@link MerchantKnowledgeBase}: the matched brand's {@code default_category_slug} resolves
+ *       to the member's own category. Zero-config — works before the member tags anything.</li>
+ *   <li><b>Manual</b> — {@link #categorize} sets a category by hand and can {@link #learnRule
+ *       learn} a COUNTERPARTY rule so the next occurrence is automatic (a USER rule, which wins
+ *       over BRAND forever after).</li>
+ *   <li><b>Bulk</b> — {@link #recategorizeUncategorized} re-runs the whole pipeline over
+ *       everything still uncategorized (e.g. after a new rule, or a KB version bump).</li>
  * </ol>
+ *
+ * <p>{@link #enrich} always stamps {@code merchant_label} + {@code merchant_brand_id} regardless
+ * of whether a category is assigned, so transactions get clean names and a brand link even when
+ * they stay uncategorized. The {@code categoryRef != null} guard in {@link #apply} is the single
+ * invariant that protects a user's choice from ever being overwritten.
  */
 @Service
 @Transactional(readOnly = true)
@@ -40,17 +52,23 @@ public class CategorizationService {
     private final CategoryRepository categoryRepository;
     private final TransactionRepository transactionRepository;
     private final FamilyMemberRepository familyMemberRepository;
+    private final MerchantKnowledgeBase knowledgeBase;
+    private final CategoryService categoryService;
 
     public CategorizationService(
         CategorizationRuleRepository ruleRepository,
         CategoryRepository categoryRepository,
         TransactionRepository transactionRepository,
-        FamilyMemberRepository familyMemberRepository
+        FamilyMemberRepository familyMemberRepository,
+        MerchantKnowledgeBase knowledgeBase,
+        CategoryService categoryService
     ) {
         this.ruleRepository = ruleRepository;
         this.categoryRepository = categoryRepository;
         this.transactionRepository = transactionRepository;
         this.familyMemberRepository = familyMemberRepository;
+        this.knowledgeBase = knowledgeBase;
+        this.categoryService = categoryService;
     }
 
     // ─── Rule CRUD ────────────────────────────────────────────────────────────
@@ -118,9 +136,97 @@ public class CategorizationService {
         return false;
     }
 
-    /** Convenience overload that loads the member's rules itself. */
-    public boolean apply(Transaction tx, Long memberId) {
-        return apply(tx, ruleRepository.findAllByMemberIdOrderByPriorityDescIdAsc(memberId));
+    // ─── Zero-config pipeline: enrich → rules → brand fallback ─────────────────
+
+    /**
+     * Pre-loaded inputs for categorizing a batch without re-querying per transaction:
+     * the member's rules (priority-desc) and their categories indexed by slug. Built once by
+     * {@link #loadContext} so the sync loop reuses it across the whole window.
+     */
+    public record CategorizationContext(List<CategorizationRule> rules, Map<String, Category> categoriesBySlug) {}
+
+    /**
+     * Load the per-member categorization inputs once. Writable because {@link #categoriesBySlug}
+     * may lazily seed the member's default categories (a no-op once seeded).
+     */
+    @Transactional
+    public CategorizationContext loadContext(Long memberId) {
+        return new CategorizationContext(
+            ruleRepository.findAllByMemberIdOrderByPriorityDescIdAsc(memberId),
+            categoriesBySlug(memberId));
+    }
+
+    /**
+     * Full zero-config categorization for one transaction:
+     * <ol>
+     *   <li>{@link #enrich} — always stamp the clean label + brand link;</li>
+     *   <li>respect an existing category (never override a USER/manual choice);</li>
+     *   <li>try the member's USER/AUTO rules;</li>
+     *   <li>fall back to the matched brand's default category.</li>
+     * </ol>
+     * Returns true if this call assigned a category.
+     */
+    public boolean autoCategorize(Transaction tx, CategorizationContext ctx) {
+        enrich(tx);
+        if (tx.getCategoryRef() != null) {
+            return false; // already categorized — leave it (and the enrichment) alone
+        }
+        if (apply(tx, ctx.rules())) {
+            return true;
+        }
+        return applyBrandFallback(tx, ctx.categoriesBySlug());
+    }
+
+    /** Convenience overload that loads the context itself (single-transaction callers). */
+    @Transactional
+    public boolean autoCategorize(Transaction tx, Long memberId) {
+        return autoCategorize(tx, loadContext(memberId));
+    }
+
+    /**
+     * Stamp {@code merchant_label} (clean name) and {@code merchant_brand_id} (offline KB match)
+     * on the transaction. Pure aside from the in-memory KB lookup — no database I/O. Idempotent:
+     * re-running recomputes the same values. Leaves both untouched when the raw fields are blank.
+     */
+    public void enrich(Transaction tx) {
+        String label = MerchantNormalizer.normalize(tx.getCounterparty(), tx.getDescription());
+        if (label.isEmpty()) {
+            return;
+        }
+        tx.setMerchantLabel(label);
+        knowledgeBase.match(MerchantNormalizer.matchKey(label))
+            .ifPresent(brand -> tx.setMerchantBrandId(brand.id()));
+    }
+
+    /**
+     * Assign the category that the transaction's matched brand maps to, if any. Reads the brand's
+     * {@code default_category_slug} and resolves it against the member's categories-by-slug. No-op
+     * when the transaction matched no brand, the brand is unknown, or the member lacks that slug.
+     */
+    private boolean applyBrandFallback(Transaction tx, Map<String, Category> categoriesBySlug) {
+        Long brandId = tx.getMerchantBrandId();
+        if (brandId == null) {
+            return false;
+        }
+        return knowledgeBase.findById(brandId)
+            .map(brand -> categoriesBySlug.get(brand.defaultCategorySlug()))
+            .map(category -> {
+                tx.setCategoryRef(category);
+                return true;
+            })
+            .orElse(false);
+    }
+
+    /**
+     * The member's non-archived categories indexed by their stable {@code slug} (the KB's join
+     * key). Seeds the defaults first so a brand-new member still resolves brand fallbacks. User
+     * categories without a slug are skipped; on a slug collision the first (lowest sortOrder) wins.
+     */
+    public Map<String, Category> categoriesBySlug(Long memberId) {
+        categoryService.ensureSeeded(memberId);
+        return categoryRepository.findAllByMemberIdAndArchivedFalseOrderBySortOrderAscIdAsc(memberId).stream()
+            .filter(c -> c.getSlug() != null && !c.getSlug().isBlank())
+            .collect(Collectors.toMap(Category::getSlug, Function.identity(), (first, dup) -> first));
     }
 
     private boolean matches(CategorizationRule rule, String counterparty, String description) {
@@ -176,16 +282,18 @@ public class CategorizationService {
             .build());
     }
 
-    /** Re-run rules over every still-uncategorized transaction; returns the count assigned. */
+    /**
+     * Re-run the full pipeline (enrich → rules → brand fallback) over every still-uncategorized
+     * transaction; returns the count assigned. No early-out on empty rules: the brand knowledge
+     * base alone categorizes a member who has never written a rule — this is what makes the
+     * "Recategorize" action useful zero-config and after a KB version bump.
+     */
     @Transactional
     public int recategorizeUncategorized(Long memberId) {
-        List<CategorizationRule> rules = ruleRepository.findAllByMemberIdOrderByPriorityDescIdAsc(memberId);
-        if (rules.isEmpty()) {
-            return 0;
-        }
+        CategorizationContext ctx = loadContext(memberId);
         int assigned = 0;
         for (Transaction tx : transactionRepository.findUncategorizedByMemberId(memberId)) {
-            if (apply(tx, rules)) {
+            if (autoCategorize(tx, ctx)) {
                 assigned++;
             }
         }

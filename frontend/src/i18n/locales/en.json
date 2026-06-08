@@ -376,6 +376,33 @@
       "empty": "No transactions in this period.",
       "error": "Could not load cashflow."
     },
+    "flow": {
+      "subtitle": "How your money moves.",
+      "diagram": "This cycle's flow",
+      "breakdown": "Where your money goes",
+      "inflows": "In",
+      "outflows": "Out",
+      "empty": "No flow to show for this period.",
+      "error": "Could not load the flow diagram.",
+      "ariaSummary": "Flow diagram: {{income}} in, {{expense}} out, net {{net}}.",
+      "transactionsCount": "{{count}} transaction",
+      "transactionsCount_other": "{{count}} transactions",
+      "node": {
+        "hub": "Budget",
+        "incomeOther": "Other income",
+        "uncategorized": "Uncategorized",
+        "moreExpenses": "Other spending",
+        "savings": "Savings",
+        "drawdown": "Savings drawdown"
+      }
+    },
+    "detail": {
+      "back": "Back to spending",
+      "total": "Period total",
+      "empty": "No transactions in this category for the period.",
+      "error": "Could not load category detail.",
+      "notFound": "Category not found."
+    },
     "allocation": {
       "subtitle": "How your savings and investments break down.",
       "stock": "Holdings by asset class",

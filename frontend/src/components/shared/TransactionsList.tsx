@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Transaction } from '@/types/api'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
+import { MerchantAvatar } from '@/components/shared/MerchantAvatar'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,9 +21,13 @@ export function TransactionsList({ transactions, onDelete, onEdit }: Transaction
   const [search, setSearch] = useState('')
 
   const filtered = search
-    ? transactions.filter(tr =>
-        tr.description.toLowerCase().includes(search.toLowerCase())
-      )
+    ? transactions.filter(tr => {
+        const q = search.toLowerCase()
+        return (
+          tr.description.toLowerCase().includes(q) ||
+          (tr.merchantLabel ?? '').toLowerCase().includes(q)
+        )
+      })
     : transactions
 
   // Group by date
@@ -65,13 +70,16 @@ export function TransactionsList({ transactions, onDelete, onEdit }: Transaction
                     rowIdx % 2 === 0 ? 'bg-muted/20' : 'bg-transparent',
                   )}
                 >
-                  <div className="min-w-0 flex-1 flex items-center gap-2">
-                    <p className="truncate text-sm font-medium">{tr.description}</p>
-                    {tr.isManual && (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground shrink-0">
-                        Manuel
-                      </span>
-                    )}
+                  <div className="min-w-0 flex-1 flex items-center gap-3">
+                    <MerchantAvatar label={tr.merchantLabel || tr.description} size="sm" />
+                    <div className="min-w-0 flex items-center gap-2">
+                      <p className="truncate text-sm font-medium">{tr.merchantLabel || tr.description}</p>
+                      {tr.isManual && (
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground shrink-0">
+                          Manuel
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 ml-4">
                     <CurrencyDisplay

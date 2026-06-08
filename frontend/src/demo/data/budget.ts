@@ -3,12 +3,19 @@ import type {
   Budget,
   BudgetSettings,
   CashflowBucket,
+  CashflowFlowResponse,
   CashflowPeriod,
   CashflowResponse,
   CategorizationRule,
   Category,
+  CategorySpend,
+  FlowLink,
+  FlowNode,
   RecurringOccurrence,
   RecurringSeries,
+  SpendingByCategoryResponse,
+  SpendingDetailResponse,
+  Transaction,
   UncategorizedTransaction,
 } from '@/types/api'
 
@@ -60,18 +67,21 @@ export const mockUncategorized: UncategorizedTransaction[] = [
     category: null, nativeCurrency: 'EUR', createdAt: daysFromNow(-2), isManual: false,
     txType: 'WITHDRAWAL', ticker: null, quantity: null, pricePerUnit: null,
     categoryId: null, categoryName: null, counterparty: 'AMAZON EU SARL',
+    merchantLabel: 'Amazon', merchantBrandId: null,
   },
   {
     id: 9002, date: daysFromNow(-3), description: 'SNCF VOYAGEURS', amount: -68.0, type: null,
     category: null, nativeCurrency: 'EUR', createdAt: daysFromNow(-3), isManual: false,
     txType: 'WITHDRAWAL', ticker: null, quantity: null, pricePerUnit: null,
     categoryId: null, categoryName: null, counterparty: 'SNCF VOYAGEURS',
+    merchantLabel: 'SNCF', merchantBrandId: null,
   },
   {
     id: 9003, date: daysFromNow(-5), description: 'BOULANGERIE DU COIN', amount: -8.4, type: null,
     category: null, nativeCurrency: 'EUR', createdAt: daysFromNow(-5), isManual: false,
     txType: 'WITHDRAWAL', ticker: null, quantity: null, pricePerUnit: null,
     categoryId: null, categoryName: null, counterparty: 'BOULANGERIE DU COIN',
+    merchantLabel: 'Boulangerie du Coin', merchantBrandId: null,
   },
 ]
 
@@ -223,4 +233,194 @@ export function mockCalendar(horizonDays: number): RecurringOccurrence[] {
     }
   }
   return occ.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+}
+
+// ── Flow & spending (M2) ────────────────────────────────────────────────────────
+// One coherent dataset drives the Sankey, the ranked breakdown and the category drill,
+// so the three views always agree. YTD is just the cycle scaled ~6×. The flow is built
+// exactly like the backend (sources → hub → sinks, savings sink when net positive) so
+// the demo graph stays balanced the same way the real one is.
+
+const r2 = (n: number): number => Math.round(n * 100) / 100
+
+const INCOME_BASE = 3200
+
+/** Base monthly spend per category (cycle); paired with mockCategories above. */
+const SPEND_BASE: { cat: Category; amount: number }[] = [
+  { cat: mockCategories[2], amount: 1100 }, // Logement
+  { cat: mockCategories[1], amount: 412.3 }, // Courses
+  { cat: mockCategories[4], amount: 187.9 }, // Loisirs
+  { cat: mockCategories[3], amount: 168.5 }, // Transport
+  { cat: mockCategories[6], amount: 134.2 }, // Restaurants
+  { cat: mockCategories[5], amount: 53.97 }, // Abonnements
+]
+const UNCATEGORIZED_BASE = 60
+
+/** A couple of believable merchants per category, for the drill transaction list. */
+const MERCHANTS_BY_CATEGORY: Record<number, string[]> = {
+  1: ['Employeur SAS'],
+  2: ['Carrefour', 'Monoprix', 'Boulangerie du Coin'],
+  3: ['Agence Immo', 'EDF'],
+  4: ['SNCF', 'TotalEnergies'],
+  5: ['Fnac', 'UGC'],
+  6: ['Netflix', 'Spotify'],
+  7: ['Le Bistrot', 'Sushi Shop'],
+}
+
+/**
+ * Single source of truth for how many transactions each category holds in the
+ * period. Both the spending breakdown (`count`) and the per-category drill read
+ * this, so the "N transactions" badge always matches the rows actually listed —
+ * and the backend gives the same guarantee for free (detail count == size()).
+ */
+const TX_COUNT_BY_CATEGORY: Record<number, number> = {
+  1: 1, // Salaire — single monthly inflow
+  2: 9, // Courses — many small grocery trips
+  3: 2, // Logement — loyer + énergie
+  4: 4, // Transport
+  5: 3, // Loisirs
+  6: 2, // Abonnements — Netflix + Spotify
+  7: 5, // Restaurants
+}
+
+function periodRange(period: CashflowPeriod): { from: string; to: string } {
+  return period === 'YTD'
+    ? { from: iso(new Date(NOW.getFullYear(), 0, 1)), to: iso(NOW) }
+    : { from: iso(CYCLE_START), to: iso(CYCLE_END) }
+}
+
+export function mockFlow(period: CashflowPeriod): CashflowFlowResponse {
+  const factor = period === 'YTD' ? 6 : 1
+  const { from, to } = periodRange(period)
+  const income = r2(INCOME_BASE * factor)
+
+  const expenseItems = [
+    ...SPEND_BASE.map((s) => ({
+      key: `cat:${s.cat.id}`,
+      label: s.cat.name as string | null,
+      color: s.cat.color,
+      amount: r2(s.amount * factor),
+    })),
+    { key: '__expense_uncat__', label: null, color: null, amount: r2(UNCATEGORIZED_BASE * factor) },
+  ].sort((a, b) => b.amount - a.amount)
+
+  const totalExpense = r2(expenseItems.reduce((acc, e) => acc + e.amount, 0))
+  const net = r2(income - totalExpense)
+
+  const nodes: FlowNode[] = []
+  const links: FlowLink[] = []
+
+  // Sources (left): the salary, plus a drawdown source if we overspent.
+  nodes.push({ key: `cat:${mockCategories[0].id}`, label: mockCategories[0].name, color: mockCategories[0].color, type: 'INCOME' })
+  if (net < 0) nodes.push({ key: '__drawdown__', label: null, color: null, type: 'INCOME' })
+
+  const hubIndex = nodes.length
+  nodes.push({ key: '__hub__', label: null, color: null, type: 'HUB' })
+  links.push({ source: 0, target: hubIndex, value: income })
+  if (net < 0) links.push({ source: 1, target: hubIndex, value: r2(-net) })
+
+  // Sinks (right): expense categories, then a savings sink if net positive.
+  for (const e of expenseItems) {
+    const idx = nodes.length
+    nodes.push({ key: e.key, label: e.label, color: e.color, type: 'EXPENSE' })
+    links.push({ source: hubIndex, target: idx, value: e.amount })
+  }
+  if (net > 0) {
+    const idx = nodes.length
+    nodes.push({ key: '__savings__', label: null, color: null, type: 'SAVINGS' })
+    links.push({ source: hubIndex, target: idx, value: net })
+  }
+
+  return { period, from, to, income, expense: totalExpense, net, nodes, links }
+}
+
+export function mockSpendingByCategory(period: CashflowPeriod): SpendingByCategoryResponse {
+  const factor = period === 'YTD' ? 6 : 1
+  const { from, to } = periodRange(period)
+
+  const rows = [
+    ...SPEND_BASE.map((s) => ({
+      categoryId: s.cat.id as number | null,
+      slug: null,
+      name: s.cat.name as string | null,
+      color: s.cat.color,
+      icon: null,
+      amount: r2(s.amount * factor),
+      count: TX_COUNT_BY_CATEGORY[s.cat.id] ?? 3,
+    })),
+    {
+      categoryId: null,
+      slug: null,
+      name: null,
+      color: null,
+      icon: null,
+      amount: r2(UNCATEGORIZED_BASE * factor),
+      count: 2,
+    },
+  ]
+  const totalExpense = r2(rows.reduce((acc, r) => acc + r.amount, 0))
+  const categories: CategorySpend[] = rows
+    .map((r) => ({ ...r, share: totalExpense > 0 ? Math.round((r.amount / totalExpense) * 1e4) / 1e4 : 0 }))
+    .sort((a, b) => b.amount - a.amount)
+
+  return { period, from, to, totalExpense, categories }
+}
+
+export function mockCategoryDetail(categoryId: number, period: CashflowPeriod): SpendingDetailResponse {
+  const factor = period === 'YTD' ? 6 : 1
+  const { from, to } = periodRange(period)
+  const cat = mockCategories.find((c) => c.id === categoryId)
+  const base = SPEND_BASE.find((s) => s.cat.id === categoryId)?.amount ?? 80
+  const merchants = MERCHANTS_BY_CATEGORY[categoryId] ?? ['Achat']
+  const isIncome = cat?.kind === 'INCOME'
+  const n = TX_COUNT_BY_CATEGORY[categoryId] ?? merchants.length
+
+  // Spread the category total across `n` transactions with a deterministic,
+  // non-uniform split (so amounts look real rather than identical), and let the
+  // last one absorb rounding so the sum matches the breakdown total exactly.
+  const totalAbs = r2(base * factor)
+  const weights = Array.from({ length: n }, (_, i) => 1 + ((i * 37) % 13) / 12)
+  const wSum = weights.reduce((acc, w) => acc + w, 0)
+  let allocated = 0
+  const amounts = weights.map((w, i) => {
+    if (i === n - 1) return r2(totalAbs - allocated)
+    const a = r2((totalAbs * w) / wSum)
+    allocated = r2(allocated + a)
+    return a
+  })
+
+  const transactions: Transaction[] = amounts.map((abs, i) => {
+    const merchant = merchants[i % merchants.length]
+    return {
+      id: categoryId * 100 + i,
+      date: daysFromNow(-(i * 3 + 2)),
+      description: merchant.toUpperCase(),
+      amount: isIncome ? abs : -abs,
+      type: null,
+      category: cat?.name ?? null,
+      nativeCurrency: 'EUR',
+      isManual: false,
+      txType: isIncome ? 'DEPOSIT' : 'WITHDRAWAL',
+      ticker: null,
+      quantity: null,
+      pricePerUnit: null,
+      merchantLabel: merchant,
+      merchantBrandId: null,
+    }
+  })
+  const total = r2(transactions.reduce((acc, t) => acc + t.amount, 0))
+
+  return {
+    categoryId,
+    slug: null,
+    name: cat?.name ?? 'Catégorie',
+    color: cat?.color ?? null,
+    icon: null,
+    period,
+    from,
+    to,
+    total,
+    count: transactions.length,
+    transactions,
+  }
 }

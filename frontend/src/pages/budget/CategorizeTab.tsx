@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { MerchantAvatar } from '@/components/shared/MerchantAvatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   useCategories,
@@ -35,9 +36,14 @@ function InboxRow({ tx, categories }: {
     <Card>
       <CardContent className="py-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate font-medium">{tx.counterparty || tx.description}</p>
-            <p className="text-xs text-muted-foreground">{formatDate(tx.date, getLocale())}</p>
+          <div className="flex min-w-0 items-center gap-3">
+            <MerchantAvatar label={tx.merchantLabel || tx.counterparty || tx.description} />
+            <div className="min-w-0">
+              <p className="truncate font-medium">
+                {tx.merchantLabel || tx.counterparty || tx.description}
+              </p>
+              <p className="text-xs text-muted-foreground">{formatDate(tx.date, getLocale())}</p>
+            </div>
           </div>
           <span className={`shrink-0 font-semibold tabular-nums ${
             tx.amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'}`}>

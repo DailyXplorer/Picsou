@@ -23,7 +23,9 @@ public record TransactionResponse(
     BigDecimal pricePerUnit,
     Long categoryId,
     String categoryName,
-    String counterparty
+    String counterparty,
+    String merchantLabel,
+    Long merchantBrandId
 ) {
     public static TransactionResponse from(Transaction t) {
         return new TransactionResponse(
@@ -42,7 +44,9 @@ public record TransactionResponse(
             t.getPricePerUnit(),
             t.getCategoryRef() != null ? t.getCategoryRef().getId() : null,
             t.getCategoryRef() != null ? t.getCategoryRef().getName() : null,
-            t.getCounterparty()
+            t.getCounterparty(),
+            t.getMerchantLabel(),
+            t.getMerchantBrandId()
         );
     }
 }

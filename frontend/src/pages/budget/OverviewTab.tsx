@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { ArrowRight, CalendarClock, Inbox, PiggyBank, TrendingUp, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -10,7 +11,6 @@ import {
   useRecurringCalendar,
   useUncategorized,
 } from '@/features/budget/hooks'
-import type { BudgetTab } from './tabs'
 import { ColorDot } from './budget-utils'
 
 function RecapCard({ icon: Icon, label, children, onClick }: {
@@ -35,8 +35,10 @@ function RecapCard({ icon: Icon, label, children, onClick }: {
   )
 }
 
-export function OverviewTab({ onNavigate }: { onNavigate: (tab: BudgetTab) => void }) {
+export function OverviewTab() {
   const { t } = useTranslation()
+  // Recap cards deep-link into the nested budget routes (relative to `/budget`).
+  const navigate = useNavigate()
   const { data: cashflow } = useCashflow('CYCLE')
   const { data: budgets } = useBudgets()
   const { data: upcoming } = useRecurringCalendar(30)
@@ -53,7 +55,7 @@ export function OverviewTab({ onNavigate }: { onNavigate: (tab: BudgetTab) => vo
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <RecapCard icon={TrendingUp} label={t('budget.overview.netThisCycle')}
-          onClick={() => onNavigate('cashflow')}>
+          onClick={() => navigate('spending')}>
           <p className={`text-2xl font-bold ${
             (cashflow?.net ?? 0) >= 0
               ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
@@ -68,7 +70,7 @@ export function OverviewTab({ onNavigate }: { onNavigate: (tab: BudgetTab) => vo
         </RecapCard>
 
         <RecapCard icon={Wallet} label={t('budget.overview.envelopes')}
-          onClick={() => onNavigate('envelopes')}>
+          onClick={() => navigate('envelopes')}>
           <p className="text-2xl font-bold">
             <CurrencyDisplay value={totalSpent} /> <span className="text-sm text-muted-foreground">/ <CurrencyDisplay value={totalLimit} /></span>
           </p>
@@ -80,7 +82,7 @@ export function OverviewTab({ onNavigate }: { onNavigate: (tab: BudgetTab) => vo
         </RecapCard>
 
         <RecapCard icon={CalendarClock} label={t('budget.overview.upcoming30')}
-          onClick={() => onNavigate('recurring')}>
+          onClick={() => navigate('subscriptions')}>
           <p className="text-2xl font-bold">
             <CurrencyDisplay value={upcomingTotal} showSign />
           </p>
@@ -90,7 +92,7 @@ export function OverviewTab({ onNavigate }: { onNavigate: (tab: BudgetTab) => vo
         </RecapCard>
 
         <RecapCard icon={PiggyBank} label={t('budget.overview.investable')}
-          onClick={() => onNavigate('allocation')}>
+          onClick={() => navigate('envelopes')}>
           <p className="text-2xl font-bold">
             <CurrencyDisplay value={allocation?.totalStock ?? 0} />
           </p>
@@ -104,7 +106,7 @@ export function OverviewTab({ onNavigate }: { onNavigate: (tab: BudgetTab) => vo
 
       {/* To-categorize nudge */}
       {(uncategorized?.length ?? 0) > 0 && (
-        <button type="button" onClick={() => onNavigate('categorize')} className="block w-full text-left">
+        <button type="button" onClick={() => navigate('review')} className="block w-full text-left">
           <Card className="border-amber-500/40 bg-amber-500/5 transition-colors hover:bg-amber-500/10">
             <CardContent className="flex items-center gap-3 py-4">
               <Inbox className="size-5 text-amber-600 dark:text-amber-400" />

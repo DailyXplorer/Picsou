@@ -5,6 +5,7 @@ import type {
   BudgetRequest,
   BudgetSettings,
   BudgetSettingsRequest,
+  CashflowFlowResponse,
   CashflowPeriod,
   CashflowResponse,
   Category,
@@ -16,6 +17,8 @@ import type {
   RecurringSeries,
   RecurringSeriesRequest,
   RecurringStatus,
+  SpendingByCategoryResponse,
+  SpendingDetailResponse,
   UncategorizedTransaction,
 } from '@/types/api'
 
@@ -67,8 +70,18 @@ export const budgetApi = {
   // ─── Cashflow & allocation (read-only aggregations) ───────────────────────
   getCashflow: (period: CashflowPeriod) =>
     api.get<CashflowResponse>('/cashflow', { params: { period } }).then(r => r.data),
+  getCashflowFlow: (period: CashflowPeriod) =>
+    api.get<CashflowFlowResponse>('/cashflow/flow', { params: { period } }).then(r => r.data),
   getAllocation: (period: CashflowPeriod) =>
     api.get<AllocationResponse>('/allocation', { params: { period } }).then(r => r.data),
+
+  // ─── Spending breakdown & drill ───────────────────────────────────────────
+  getSpendingByCategory: (period: CashflowPeriod) =>
+    api.get<SpendingByCategoryResponse>('/spending/by-category', { params: { period } })
+      .then(r => r.data),
+  getCategoryDetail: (categoryId: number, period: CashflowPeriod) =>
+    api.get<SpendingDetailResponse>(`/spending/category/${categoryId}`, { params: { period } })
+      .then(r => r.data),
 
   // ─── Recurring series ─────────────────────────────────────────────────────
   listRecurring: (status?: RecurringStatus) =>

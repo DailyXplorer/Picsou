@@ -32,6 +32,15 @@ public class Category extends AuditableEntity {
     @Column(nullable = false, length = 100)
     private String name;
 
+    /**
+     * Stable, member-agnostic key ({@code "courses"}, {@code "transport"}, …) that the
+     * global merchant knowledge base targets to resolve a brand to <em>this</em> member's
+     * category. Only the seeded default set carries one; user-created categories leave it
+     * null. Unique per member (partial index, see {@code V36}). Survives renames.
+     */
+    @Column(length = 60)
+    private String slug;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "category_kind")
