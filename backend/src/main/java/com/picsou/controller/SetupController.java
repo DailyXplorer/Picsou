@@ -135,7 +135,6 @@ public class SetupController {
 
         setupService.writeEnableBankingConfig(
             request.applicationId(),
-            request.keyId(),
             request.redirectUri()
         );
         return ResponseEntity.noContent().build();

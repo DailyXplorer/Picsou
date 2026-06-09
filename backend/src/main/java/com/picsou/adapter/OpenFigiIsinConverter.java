@@ -29,6 +29,23 @@ public class OpenFigiIsinConverter {
     /** Result of an ISIN conversion: Yahoo ticker + display name. */
     public record TickerResult(String ticker, String name) {}
 
+    /** ISIN format: 2-letter country code + 9 alphanumerics + 1 check digit. */
+    private static final java.util.regex.Pattern ISIN_PATTERN =
+        java.util.regex.Pattern.compile("[A-Z]{2}[A-Z0-9]{9}[A-Z0-9]");
+
+    /**
+     * Whether {@code s} looks like an ISIN (2-letter country code + 9 alphanumerics
+     * + 1 check digit = 12 chars). Case-insensitive; trims surrounding whitespace.
+     * Mirrors the detection in {@code YahooFinancePriceProvider.supports()}.
+     */
+    public static boolean isIsin(String s) {
+        if (s == null) {
+            return false;
+        }
+        String upper = s.trim().toUpperCase();
+        return upper.length() == 12 && ISIN_PATTERN.matcher(upper).matches();
+    }
+
     /** OpenFIGI exchCode → Yahoo Finance exchange suffix. Empty string = no suffix (US markets). */
     private static final Map<String, String> EXCHANGE_SUFFIX = Map.ofEntries(
         // US — no suffix

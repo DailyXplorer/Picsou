@@ -13,6 +13,7 @@ public record TransactionRequest(
     @NotNull BigDecimal amount,
     TransactionType txType,
     String ticker,
+    String name,
     BigDecimal quantity,
     BigDecimal pricePerUnit,
     String currency,

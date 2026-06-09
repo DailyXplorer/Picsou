@@ -87,7 +87,7 @@ function TransactionForm({ onOpenChange, accountId, accountType, onSubmit, isLoa
   // Investment fields
   const [investType, setInvestType] = useState<'BUY' | 'SELL'>(() => (isInvestmentTx ? (initialValues!.txType as 'BUY' | 'SELL') : 'BUY'))
   const [ticker, setTicker] = useState(() => (isInvestmentTx ? (initialValues?.ticker ?? '') : ''))
-  const [name, setName] = useState(() => (isInvestmentTx ? (initialValues?.description ?? '') : ''))
+  const [name, setName] = useState(() => (isInvestmentTx ? (initialValues?.name ?? '') : ''))
   const [quantity, setQuantity] = useState(() => (isInvestmentTx && initialValues?.quantity != null ? String(initialValues.quantity) : ''))
   const [pricePerUnit, setPricePerUnit] = useState(() => (isInvestmentTx && initialValues?.pricePerUnit != null ? String(initialValues.pricePerUnit) : ''))
 
@@ -120,6 +120,7 @@ function TransactionForm({ onOpenChange, accountId, accountType, onSubmit, isLoa
         amount,
         txType: investType,
         ticker: ticker.toUpperCase(),
+        name: name.trim() || undefined,
         quantity: qty,
         pricePerUnit: price,
       }
@@ -167,8 +168,8 @@ function TransactionForm({ onOpenChange, accountId, accountType, onSubmit, isLoa
             ))}
           </div>
           <div className="space-y-1">
-            <Label>Ticker</Label>
-            <Input placeholder="BTC, IWDA.AS…" value={ticker} onChange={e => handleTickerChange(e.target.value)} required />
+            <Label>Ticker ou ISIN</Label>
+            <Input placeholder="IWDA.AS, IE00B4L5Y983, BTC…" value={ticker} onChange={e => handleTickerChange(e.target.value)} required />
           </div>
           <div className="space-y-1">
             <Label>Nom <span className="text-muted-foreground text-xs">(optionnel)</span></Label>

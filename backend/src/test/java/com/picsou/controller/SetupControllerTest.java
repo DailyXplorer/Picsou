@@ -199,7 +199,6 @@ class SetupControllerTest {
         ResponseEntity<?> response = controller.writeEnableBankingConfig(
             new EnableBankingConfigRequest(
                 "12345678-1234-1234-1234-1234567890ab",
-                "abcdef01-2345-6789-abcd-ef0123456789",
                 "https://picsou.example.com/sync/callback"
             ),
             request("10.0.0.1")
@@ -208,7 +207,6 @@ class SetupControllerTest {
         assertThat(response.getStatusCode().value()).isEqualTo(204);
         verify(setupService).writeEnableBankingConfig(
             "12345678-1234-1234-1234-1234567890ab",
-            "abcdef01-2345-6789-abcd-ef0123456789",
             "https://picsou.example.com/sync/callback"
         );
     }

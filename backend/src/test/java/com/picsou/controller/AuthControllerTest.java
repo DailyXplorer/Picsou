@@ -139,6 +139,70 @@ class AuthControllerTest {
         verify(cookieWriter).setAccessAndRefresh(httpRes, "acc", "ref");
     }
 
+    @Test
+    void login_mfaRequired_seversLingeringSessionCookies_beforeIssuingChallenge() {
+        AppUser active = user(true);
+        when(userRepository.findByUsernameWithMember("alice")).thenReturn(Optional.of(active));
+        when(passwordEncoder.matches("pw", "$2a$12$hash")).thenReturn(true);
+        when(mfaService.isEnabled(active)).thenReturn(true);
+        // A DIFFERENT identity's "Remember Me" cookie is sitting on this browser.
+        httpReq.setCookies(new Cookie(AuthCookieWriter.PERSISTENT_COOKIE, "stale-admin-cookie"));
+        when(persistentSessionService.isTrustedDeviceFor(active, "stale-admin-cookie")).thenReturn(false);
+        when(jwtUtil.generateMfaChallengeToken(active, false)).thenReturn("chal");
+
+        ResponseEntity<?> res = controller.login(
+            new LoginRequest("alice", "pw", false), httpReq, httpRes);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).isInstanceOf(Map.class);
+        assertThat(((Map<?, ?>) res.getBody()).get("mfaRequired")).isEqualTo(true);
+        // The lingering session is severed and NO access/refresh is issued: the
+        // caller stays unauthenticated until the second factor is verified.
+        verify(cookieWriter).clearSessionCookies(httpRes);
+        verify(cookieWriter).setMfaChallenge(httpRes, "chal");
+        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any());
+    }
+
+    @Test
+    void login_noMfa_dropsForeignPersistentCookie_whenNotRemembering() {
+        AppUser active = user(true); // id 7L
+        when(userRepository.findByUsernameWithMember("alice")).thenReturn(Optional.of(active));
+        when(passwordEncoder.matches("pw", "$2a$12$hash")).thenReturn(true);
+        when(mfaService.isEnabled(active)).thenReturn(false);
+        when(jwtUtil.generateAccessToken(active)).thenReturn("acc");
+        when(jwtUtil.generateRefreshToken(active)).thenReturn("ref");
+        // A "Remember Me" cookie owned by a DIFFERENT user (99) lingers on the browser.
+        httpReq.setCookies(new Cookie(AuthCookieWriter.PERSISTENT_COOKIE, "foreign"));
+        when(persistentSessionService.ownerUserId("foreign")).thenReturn(Optional.of(99L));
+
+        ResponseEntity<?> res = controller.login(
+            new LoginRequest("alice", "pw", false), httpReq, httpRes);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc", "ref");
+        // The foreign Remember-Me cookie is cleared so it can't re-mint user 99's session.
+        verify(cookieWriter).clearPersistent(httpRes);
+    }
+
+    @Test
+    void login_noMfa_keepsOwnPersistentCookie_whenNotRemembering() {
+        AppUser active = user(true); // id 7L
+        when(userRepository.findByUsernameWithMember("alice")).thenReturn(Optional.of(active));
+        when(passwordEncoder.matches("pw", "$2a$12$hash")).thenReturn(true);
+        when(mfaService.isEnabled(active)).thenReturn(false);
+        when(jwtUtil.generateAccessToken(active)).thenReturn("acc");
+        when(jwtUtil.generateRefreshToken(active)).thenReturn("ref");
+        // The lingering cookie belongs to THIS user (a trusted device not re-ticking
+        // Remember Me) — it must be preserved, not cleared.
+        httpReq.setCookies(new Cookie(AuthCookieWriter.PERSISTENT_COOKIE, "mine"));
+        when(persistentSessionService.ownerUserId("mine")).thenReturn(Optional.of(7L));
+
+        controller.login(new LoginRequest("alice", "pw", false), httpReq, httpRes);
+
+        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc", "ref");
+        verify(cookieWriter, never()).clearPersistent(httpRes);
+    }
+
     // ─── mfa/verify ──────────────────────────────────────────────────────
 
     @Test

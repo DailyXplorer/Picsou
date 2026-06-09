@@ -1,6 +1,6 @@
 # Feature: Bank Sync
 
-> Last updated: 2026-06-02
+> Last updated: 2026-06-03 (Enable Banking: single Application ID field, Key ID derived)
 
 > **Status (1.0.0).** Enable Banking is the only enabled provider. The Powens
 > adapter ships in the codebase but is **experimental and untested** —
@@ -96,10 +96,30 @@ Two pitfalls cost real users a lot of time during 1.0.0 testing — both are sur
 - **PRODUCTION vs SANDBOX**: The Enable Banking developer dashboard defaults to SANDBOX, which only exposes fictitious test banks. A user who creates a SANDBOX application will reach the bank picker, see a list of unfamiliar test banks, and never find their real one. The wizard now shows a warning encart on step 1 and forces the user to tick a "my application is in PRODUCTION mode" checkbox before submitting credentials on step 3.
 - **PSD2 scope is current accounts only (`CACC`)**: PSD2 standardises consent for cash accounts. PEA, Assurance Vie, Livret A, and other savings/investment products are out of scope — Enable Banking has no API for them. This is a permanent product limitation, not a Picsou bug. Users should be directed to the dedicated integrations (Trade Republic, BoursoBank sidecar, Finary) or manual entry. The wizard surfaces this on step 1, and `BankSyncTab` repeats the note above the connection list.
 
+## Enable Banking configuration: the configured pieces
+
+Enable Banking needs the following, stored/loaded in **two different places** — a distinction that has confused operators:
+
+| Piece | Stored in | Set via |
+| --- | --- | --- |
+| Application ID | DB (`app_setting`) or `ENABLEBANKING_APPLICATION_ID` | Setup wizard / Admin → Integrations |
+| Redirect URI | DB (`app_setting`) or `ENABLEBANKING_REDIRECT_URI` | Setup wizard / Admin → Integrations |
+| **RSA private key** | **Filesystem** (`/data/keys/enablebanking-private.pem`), or `ENABLEBANKING_PRIVATE_KEY_PATH` / inline `ENABLEBANKING_PRIVATE_KEY` | Setup wizard keypair step / **Admin → Integrations keypair panel** |
+
+**Application ID == Key ID.** Per Enable Banking's [quick-start spec](https://enablebanking.com/docs/api/quick-start/) the JWT header `kid` *is* the application's ID and the private key file is named `<applicationId>.pem` — so the "Key ID" is never a distinct value. Picsou therefore collects **only the Application ID** (in both the wizard and the admin page) and derives the Key ID from it: `EnableBankingConfigProvider.keyId()` returns an explicitly-configured value if present (legacy `ENABLEBANKING_KEY_ID` env / `key-id` DB row, kept for backward compatibility), otherwise falls back to `applicationId()`. `SetupService.writeEnableBankingConfig(applicationId, redirectUri)` writes the `key-id` row in lock-step with `application-id` so a later app-id change can't be shadowed by a stale DB key-id (which, being DB-first in `resolve()`, would otherwise win).
+
+`EnableBankingConfigProvider.isConfigured()` requires app id + key id + redirect URI + a parseable private key; `isConfiguredLenient()` / `privateKeyPresent()` are cheap, **non-parsing** checks used by status surfaces and the admin integration toggle (so a malformed key reports as "present" rather than 500-ing the page — the parse error surfaces at real use in `privateKey()`).
+
+Because the text fields (Application ID + Redirect URI) live in Postgres while the key is a file, they can be "saved" while the key is absent — e.g. configuring via the Admin page, abandoning the wizard after the credentials step, or losing the `/data/keys` volume while the DB survives. Symptom: institution search / sync fails with a `SyncException` (HTTP 502).
+
+**Recovery / management:**
+- The **Admin → Integrations → Enable Banking** section shows a readiness banner naming every missing piece (incl. the private key) and provides a keypair panel to **generate** (idempotent — never invalidates an already-uploaded public key) or **import** a `.pem`. Endpoints: `POST /api/admin/settings/enablebanking/keypair` and `/keypair/import` (mirror the wizard's but without the setup-complete guard, so they work post-setup). `GET /api/admin/settings` returns `enableBanking.privateKeyPresent`.
+- Connector errors are **field-specific**: `EnableBankingBankConnector` names the single missing piece (e.g. *"Enable Banking private key is missing on the server…"*) instead of a blanket "not configured", so the operator knows exactly what to fix.
+
 ## Gotchas / Pitfalls
 
 - **Powens is disabled in 1.0.0**: `@Primary` was removed from `PowensBankConnector`, so even setting `POWENS_CLIENT_ID` will NOT activate Powens — Enable Banking stays injected. To re-enable after validating the adapter, restore `@Primary` on `PowensBankConnector` and set `POWENS_CLIENT_ID`.
-- **Enable Banking RSA key**: The private key must be PKCS8 PEM format. The `ENABLEBANKING_PRIVATE_KEY` env var can contain literal `\n` characters -- both formats are handled in `parsePrivateKey()`.
+- **Enable Banking RSA key**: The private key must be PKCS8 PEM format. The `ENABLEBANKING_PRIVATE_KEY` env var can contain literal `\n` characters -- both formats are handled in `parsePem()`. The key lives on disk, **not** in the DB — see "Enable Banking configuration" above; setting only the text fields (Application ID + Redirect URI) leaves searches failing until a key is generated/imported.
 - **Enable Banking redirect URI must be registered**: `ENABLEBANKING_REDIRECT_URI` defaults to `http://localhost:5173/sync/callback` (dev only). In production, set it to `http://<host>:8080/sync/callback` in `.env`. The same URL must be registered in the Enable Banking developer portal under the application's Redirect URIs. A mismatch causes a `REDIRECT_URI_NOT_ALLOWED` 400 error at auth initiation — it surfaces in the Add Account modal bank wizard.
 - **ALREADY_AUTHORIZED**: If the OAuth code is reused (e.g. browser back button), `SyncService.completeConnection()` catches the error and falls back to refreshing the latest linked session instead of failing.
 - **Type upgrade on resync**: If the user has not customized an account's type, `upsertAccount()` will upgrade it from CHECKING to the detected type on the next sync. Manual user changes are preserved (only CHECKING is auto-upgraded).
@@ -108,6 +128,10 @@ Two pitfalls cost real users a lot of time during 1.0.0 testing — both are sur
 ## Tests
 
 - `SyncServiceTest` -- unit tests for type detection, upsert logic, retry flow
+- `EnableBankingConfigProviderTest` -- DB/env resolution precedence, and `keyId()` falling back to the Application ID vs honoring an explicitly-configured value
+- `EnableBankingBankConnectorTest` -- JWT build / institution search against a mocked provider
+- `AdminControllerTest` -- `getSettings` reads the resolved provider; `updateEnableBanking` delegates the 2-arg writer
+- `IntegrationsServiceTest` -- `isEffectivelyEnabled` = stored flag OR detected config (env/DB/session presence)
 - Manual integration testing against real provider APIs
 
 ## Links

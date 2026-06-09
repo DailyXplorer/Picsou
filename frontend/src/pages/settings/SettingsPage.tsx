@@ -27,10 +27,12 @@ import {
   X,
   Pencil,
   Shield,
+  KeyRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { SecuritySection } from './security/SecuritySection'
+import { AccessKeysSection } from './sections/AccessKeysSection'
 
 // ---------------------------------------------------------------------------
 // Toggle group button (theme / language)
@@ -286,6 +288,15 @@ export function SettingsPage() {
         <SecuritySection />
       </SectionCard>
 
+      {/* Access keys & MCP ------------------------------------------------ */}
+      <SectionCard
+        icon={KeyRound}
+        title={t('accessKeys.sectionTitle')}
+        description={t('accessKeys.sectionDescription')}
+      >
+        <AccessKeysSection />
+      </SectionCard>
+
       {/* Family ----------------------------------------------------------- */}
       <SectionCard
         icon={Users}
@@ -334,7 +345,7 @@ export function SettingsPage() {
             <span className="text-muted-foreground">
               {t('settings.version')}
             </span>
-            <span className="font-medium">1.0.0</span>
+            <span className="font-medium">1.0.8</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">GitHub</span>

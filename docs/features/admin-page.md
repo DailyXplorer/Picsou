@@ -42,11 +42,16 @@ sub-sections so the page renders from a single query — no fan-out, single
 ### Key files
 
 Backend:
-- `backend/src/main/java/com/picsou/controller/AdminController.java` — 4 endpoints
-  (`GET /settings`, `PUT /settings/security`, `PUT /settings/enablebanking`,
-  `PATCH /settings/integrations/{key}?enabled=...`).
+- `backend/src/main/java/com/picsou/controller/AdminController.java` — endpoints:
+  `GET /settings`, `PUT /settings/security`, `PUT /settings/enablebanking`,
+  `PATCH /settings/integrations/{key}?enabled=...`, plus EB keypair management
+  `POST /settings/enablebanking/keypair` (idempotent generate) and
+  `/keypair/import` (422 on a bad PEM). `GET /settings` reads EB credentials from
+  the *resolved* `EnableBankingConfigProvider` (DB-then-env), not raw DB rows, so
+  env-configured installs report their real values rather than blanks.
 - `backend/src/main/java/com/picsou/dto/AdminSettingsResponse.java` — record with
-  nested `SecuritySettings` and `EnableBankingSettings`.
+  nested `SecuritySettings` and `EnableBankingSettings` (the latter carries a
+  `privateKeyPresent` boolean so the UI can flag a missing key-file).
 - `backend/src/main/java/com/picsou/dto/AdminSecurityRequest.java` — `@NotNull
   @Size(min=1) List<String> allowedOrigins`, `boolean secureCookies`.
 - `backend/src/main/java/com/picsou/dto/AdminEnableBankingRequest.java` — three
@@ -139,6 +144,19 @@ On submit / toggle ──► PUT or PATCH ──► invalidate adminKeys.setting
   bypass the form and POST a single `[""]` you'll write back the literal empty value.
   `SetupService.writeSecurity` is the only safe writer; do not duplicate the CSV
   formatting elsewhere.
+- **The integration toggle shows the *effective* state, not the raw flag.**
+  `getSettings` reports `integrationsService.isEffectivelyEnabled(key)`, which ORs
+  the stored `app_setting` flag with a cheap per-integration config probe: Enable
+  Banking → `EnableBankingConfigProvider.isConfiguredLenient()` (creds + key
+  present, no parsing); Trade Republic / Finary → a login-session row exists;
+  BoursoBank (network-only) / crypto (nothing to detect) → fall back to the flag.
+  This is why an install configured purely via `.env` / docker-compose — which
+  never ran the wizard, so the flag stayed `false` — still shows its integrations
+  *on*. Consequence: an env-configured integration **cannot be turned off** from
+  the toggle (the connector reads env directly and ignores the flag, so a `PATCH`
+  to `false` snaps back to `on` on the next `GET`). The switch reflects reality
+  rather than a stale boolean — to disable, remove the env config / delete the
+  session.
 - **Toggling an integration off does not delete its credentials** (TR session,
   Bourso session, EB requisitions, encrypted exchange API keys). It only flips the
   `app_setting` flag. Re-enabling restores prior connectivity. By design — flipping

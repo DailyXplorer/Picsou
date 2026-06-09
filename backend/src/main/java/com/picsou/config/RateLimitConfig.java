@@ -100,6 +100,27 @@ public class RateLimitConfig {
         return new ConcurrentHashMap<>();
     }
 
+    /**
+     * Per-key MCP rate limiter: keyed by access-key id (not IP), since one key may serve many
+     * tool calls from a single AI client. Lives in the {@code AccessKeyAuthFilter}, which creates
+     * a bucket lazily on first use and shares it across that key's requests.
+     */
+    @Bean("mcpKeyBuckets")
+    public Map<Long, Bucket> mcpKeyBuckets() {
+        return new ConcurrentHashMap<>();
+    }
+
+    /**
+     * Per-member access-key creation limiter: keyed by member id (not IP), because the
+     * {@code POST /api/access-keys} endpoint is cookie-authenticated and self-service — the member is
+     * the correct abuse boundary, so an attacker with a stolen session can't mint keys faster than this
+     * regardless of IP rotation.
+     */
+    @Bean("accessKeyCreateBuckets")
+    public Map<Long, Bucket> accessKeyCreateBuckets() {
+        return new ConcurrentHashMap<>();
+    }
+
     public static Bucket createLoginBucket() {
         return Bucket.builder()
             .addLimit(Bandwidth.builder()
@@ -177,6 +198,33 @@ public class RateLimitConfig {
             .addLimit(Bandwidth.builder()
                 .capacity(60)
                 .refillIntervally(60, Duration.ofMinutes(1))
+                .build())
+            .build();
+    }
+
+    /**
+     * Per-key MCP throttle: 120 requests per minute. Generous enough for an interactive AI client
+     * (each user turn can fan out into several tool calls) while capping a runaway or hostile key.
+     */
+    public static Bucket createMcpKeyBucket() {
+        return Bucket.builder()
+            .addLimit(Bandwidth.builder()
+                .capacity(120)
+                .refillIntervally(120, Duration.ofMinutes(1))
+                .build())
+            .build();
+    }
+
+    /**
+     * Per-member access-key creation throttle: 10 new keys per hour. Minting a key is a deliberate,
+     * infrequent action; anything past a handful an hour from one member is a runaway script or a
+     * hijacked session, so cap it without hindering normal use.
+     */
+    public static Bucket createAccessKeyCreateBucket() {
+        return Bucket.builder()
+            .addLimit(Bandwidth.builder()
+                .capacity(10)
+                .refillIntervally(10, Duration.ofMinutes(60))
                 .build())
             .build();
     }

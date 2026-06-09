@@ -1,7 +1,11 @@
 package com.picsou.controller;
 
+import com.picsou.config.EnableBankingConfigProvider;
 import com.picsou.dto.AdminEnableBankingRequest;
 import com.picsou.dto.AdminSecurityRequest;
+import com.picsou.dto.EnableBankingImportRequest;
+import com.picsou.dto.EnableBankingKeypairResponse;
+import com.picsou.service.EnableBankingKeyPairService;
 import com.picsou.service.IntegrationsService;
 import com.picsou.service.SetupService;
 import org.junit.jupiter.api.Test;
@@ -10,6 +14,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 
 import java.util.List;
 import java.util.Optional;
@@ -23,6 +28,8 @@ class AdminControllerTest {
 
     @Mock SetupService setupService;
     @Mock IntegrationsService integrationsService;
+    @Mock EnableBankingConfigProvider ebConfigProvider;
+    @Mock EnableBankingKeyPairService keyPairService;
 
     @InjectMocks AdminController controller;
 
@@ -30,11 +37,13 @@ class AdminControllerTest {
     void getSettings_returnsAssembledResponse() {
         when(setupService.readSetting(KEY_CORS_ALLOWED_ORIGINS)).thenReturn(Optional.of("https://a.com,https://b.com"));
         when(setupService.readSetting(KEY_SECURE_COOKIES)).thenReturn(Optional.of("true"));
-        when(setupService.readSetting(KEY_ENABLEBANKING_APP_ID)).thenReturn(Optional.of("app-id"));
-        when(setupService.readSetting(KEY_ENABLEBANKING_KEY_ID)).thenReturn(Optional.of("key-id"));
-        when(setupService.readSetting(KEY_ENABLEBANKING_REDIRECT_URI)).thenReturn(Optional.of("https://app.com/callback"));
+        // EB credentials now come from the resolved provider (DB-then-env), the same
+        // source the connector uses — not raw setupService.readSetting calls.
+        when(ebConfigProvider.applicationId()).thenReturn(Optional.of("app-id"));
+        when(ebConfigProvider.redirectUri()).thenReturn(Optional.of("https://app.com/callback"));
+        when(ebConfigProvider.privateKeyPresent()).thenReturn(true);
         for (String key : INTEGRATIONS) {
-            when(integrationsService.isEnabled(key)).thenReturn("enablebanking".equals(key));
+            when(integrationsService.isEffectivelyEnabled(key)).thenReturn("enablebanking".equals(key));
         }
 
         var response = controller.getSettings();
@@ -45,8 +54,64 @@ class AdminControllerTest {
         assertThat(body.security().allowedOrigins()).containsExactly("https://a.com", "https://b.com");
         assertThat(body.security().secureCookies()).isTrue();
         assertThat(body.enableBanking().applicationId()).isEqualTo("app-id");
+        assertThat(body.enableBanking().privateKeyPresent()).isTrue();
         assertThat(body.integrations()).containsEntry("enablebanking", true);
         assertThat(body.integrations()).containsEntry("finary", false);
+    }
+
+    @Test
+    void getSettings_reportsMissingPrivateKey() {
+        when(ebConfigProvider.privateKeyPresent()).thenReturn(false);
+
+        var body = controller.getSettings().getBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.enableBanking().privateKeyPresent()).isFalse();
+    }
+
+    @Test
+    void generateKeyPair_returnsPublicPem_andFlagsNewlyGenerated() {
+        when(keyPairService.exists()).thenReturn(false);
+        when(keyPairService.getOrGeneratePublicPem()).thenReturn("PUBLIC-PEM");
+
+        var response = controller.generateEnableBankingKeyPair();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().publicKeyPem()).isEqualTo("PUBLIC-PEM");
+        assertThat(response.getBody().regenerated()).isTrue();
+    }
+
+    @Test
+    void generateKeyPair_existingKey_isNotFlaggedRegenerated() {
+        when(keyPairService.exists()).thenReturn(true);
+        when(keyPairService.getOrGeneratePublicPem()).thenReturn("EXISTING-PUBLIC");
+
+        var body = controller.generateEnableBankingKeyPair().getBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.regenerated()).isFalse();
+    }
+
+    @Test
+    void importPrivateKey_valid_returnsDerivedPublic() {
+        when(keyPairService.importPrivateKey("PRIV")).thenReturn("DERIVED-PUBLIC");
+
+        var response = controller.importEnableBankingPrivateKey(new EnableBankingImportRequest("PRIV"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isEqualTo(new EnableBankingKeypairResponse("DERIVED-PUBLIC", false));
+    }
+
+    @Test
+    void importPrivateKey_invalid_returns422() {
+        when(keyPairService.importPrivateKey("bad")).thenThrow(new IllegalArgumentException("not a PKCS8 pem"));
+
+        var response = controller.importEnableBankingPrivateKey(new EnableBankingImportRequest("bad"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(response.getBody()).isInstanceOf(ProblemDetail.class);
+        assertThat(((ProblemDetail) response.getBody()).getDetail()).isEqualTo("not a PKCS8 pem");
     }
 
     @Test
@@ -59,10 +124,10 @@ class AdminControllerTest {
 
     @Test
     void updateEnableBanking_delegatesToSetupService() {
-        var request = new AdminEnableBankingRequest("my-app", "my-key", "https://app.com/cb");
+        var request = new AdminEnableBankingRequest("my-app", "https://app.com/cb");
         var response = controller.updateEnableBanking(request);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-        verify(setupService).writeEnableBankingConfig("my-app", "my-key", "https://app.com/cb");
+        verify(setupService).writeEnableBankingConfig("my-app", "https://app.com/cb");
     }
 
     @Test

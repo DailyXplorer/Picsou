@@ -265,6 +265,7 @@ export function AccountDetailPage() {
             amount: editingTx.amount,
             txType: editingTx.txType,
             ticker: editingTx.ticker ?? undefined,
+            name: editingTx.name ?? undefined,
             quantity: editingTx.quantity ?? undefined,
             pricePerUnit: editingTx.pricePerUnit ?? undefined,
             currency: editingTx.nativeCurrency,

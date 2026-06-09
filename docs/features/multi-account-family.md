@@ -1,6 +1,6 @@
 # Feature: Multi-account family system
 
-> Last updated: 2026-05-31
+> Last updated: 2026-06-03
 
 ## Context
 
@@ -23,12 +23,27 @@ Every data entity (Account, Goal, Requisition, etc.) has a `member_id` FK. All s
 
 `UserContext.currentMemberId()` is called by every controller to scope queries.
 
-When an admin switches to a managed profile in the UI, the frontend sends `?memberId=X` on every API request (Axios interceptor in `api-client.ts`). The backend `UserContext.getMemberIdOverride()` checks:
+When an admin switches to a managed profile in the UI, the frontend sends `?memberId=X` on every API request (Axios interceptor in `api-client.ts`). The interceptor **only adds the param when the logged-in user is an admin** (`useAuthStore … role === 'ADMIN'`), mirroring the backend guard so a stale persisted `activeMemberId` can never scope a regular member's requests. The backend `UserContext.getMemberIdOverride()` then checks:
 1. Is the current user an admin?
 2. Is there a `memberId` query param?
 3. If both → return the override memberId instead of the admin's own
 
-Non-admin users always use their own memberId (override is ignored).
+Non-admin users always use their own memberId (override is ignored server-side, and the client no longer sends it).
+
+### Client-state isolation across the login boundary
+
+`profile-store` persists `activeMemberId` to **localStorage** (`picsou-profile`) and the TanStack Query cache holds user-agnostic keys (`['dashboard', range]`, `['accounts']`, …). On a **shared family browser** both survive a logout, so without an explicit reset the next person's login would carry the previous user's impersonation target and see their cached balance/history (staleTime is 60 s).
+
+A single helper, `resetClientState(queryClient)` in `lib/reset-client-state.ts`, calls `useProfileStore.getState().reset()` **and** `queryClient.clear()`. It runs on **every** auth-boundary crossing:
+
+- **logout** — `useLogout` (`onSettled`, `features/auth/hooks.ts`);
+- **a login that establishes a session** — the non-MFA branch of `useLoginWithRememberMe` and the post-verify branch of `useVerifyMfa` (`features/mfa/hooks.ts`), i.e. the exact moment the new identity is written to the auth store.
+
+It is deliberately **not** called on the `mfaRequired` branch — no session exists yet there (the user is mid-challenge). The reset is the authoritative client-side privacy boundary; the `?memberId` admin-gating and backend scoping are defense-in-depth. Its server-side complement — severing a *different* user's leftover cookies during login so they can't silently re-authenticate — lives in [mfa-and-remember-me.md](./mfa-and-remember-me.md#cross-identity-session-bleed-at-login).
+
+### History endpoints reject foreign / unscoped accounts
+
+`HistoryService.buildHistory / buildIntradayHistory / buildPnl` validate that **every** requested account belongs to the caller's member via a shared `assertOwnership(accounts, memberId)` helper. A `null` memberId is treated as a programming error (`IllegalArgumentException`) rather than a "skip validation" signal — closing a latent path that previously returned accounts unscoped. Foreign accounts raise `ResourceNotFoundException` (404, not 403, so existence isn't leaked).
 
 ### Sharing system
 
@@ -180,7 +195,10 @@ Step 3 is critical: without it, the next request would fail because the old JWT 
 - `features/family/api.ts` — API functions
 - `features/family/members.ts` — `selectSwitchableMembers()` (admin switcher excludes independent members)
 - `components/layout/AppSidebar.tsx` — profile switcher in dropdown
-- `lib/api-client.ts` — Axios interceptor adds `?memberId=X` when managed profile active
+- `lib/api-client.ts` — Axios interceptor adds `?memberId=X` only when an **admin** has a managed profile active
+- `lib/reset-client-state.ts` — `resetClientState(queryClient)`: resets profile-store + clears the Query cache; the one shared auth-boundary reset
+- `features/auth/hooks.ts` — `useLogout` calls `resetClientState` (logout side)
+- `features/mfa/hooks.ts` — `useLoginWithRememberMe` / `useVerifyMfa` call `resetClientState` before writing the new identity (login side)
 - `pages/settings/FamilySettingsPage.tsx` — member management + sharing config UI
 - `pages/family/FamilyDashboardPage.tsx` — shared overview
 - `pages/activation/ActivationPage.tsx` — activation flow for new members
@@ -218,7 +236,7 @@ Admin clicks managed profile in sidebar dropdown
 
 - **LazyInitializationException**: With `open-in-view: false`, any entity with `@ManyToOne(fetch = LAZY)` that gets serialized directly by a controller will 500. All lazy relation fields have `@JsonIgnore` as a safeguard. New entities with lazy relations MUST add `@JsonIgnore`.
 - **PG native enum columns**: PostgreSQL enum types (`sharing_level`, `requisition_status`, `account_type`) require `@JdbcTypeCode(SqlTypes.NAMED_ENUM)` + `columnDefinition`. Without it, Hibernate sends a varchar and PG rejects the INSERT/UPDATE.
-- **Admin-only endpoints**: `FamilyController` member management methods call `requireAdmin()`. If a non-admin hits these, they get 403. The frontend must guard UI accordingly (currently checks `user?.role === 'ADMIN'`).
+- **Admin-only endpoints**: `FamilyController` member management methods call `requireAdmin()`. If a non-admin hits these, they get 403, and the global Axios interceptor turns any GET 403 into a full-app redirect to `/error/403`. The frontend must therefore **never call these for non-admins**: `useFamilyMembers({ enabled })` is gated on `isAdmin` in `AppSidebar.tsx` (the sidebar renders for every user). Other callers are already admin-scoped — `MembersSection` sits under `RequireAdmin`, and `FamilySettingsPage`'s `MemberManagement` is only rendered when `isAdmin`. Regression: a non-admin's first login used to fire `/api/family/members` from the sidebar → 403 → `/error/403`.
 - **Stale auth store**: The frontend caches user info (including role) at login time. Changing role in DB requires re-login to take effect in the UI.
 - **Username change requires token rotation**: `PATCH /api/auth/username` must re-issue the JWT cookies. If you only update the DB row, the existing tokens still carry the old username — the filter can't find the user → immediate 401 on next request.
 - **`isIndependent` in frontend must include `managed`**: The display logic for a member's status in `FamilySettingsPage` uses `isIndependent = member.managed && member.hasLogin && member.activated`. Without `managed`, admin users (who are also `hasLogin && activated`) would show "Compte indépendant" instead of "Administrateur".
@@ -226,10 +244,14 @@ Admin clicks managed profile in sidebar dropdown
 - **Cannot impersonate an activated member**: `UserContext.getMemberIdOverride()` throws 403 when an admin's `?memberId=X` targets an activated (independent) member other than themselves. The sidebar hides them too (`selectSwitchableMembers`), but the backend is the authoritative guard — never rely on the frontend filter alone.
 - **Yahoo Finance null closes**: Yahoo can return `null` in historical price arrays for non-trading days. Must check `close == null` before unboxing to avoid NPE.
 - **Profile switch cache**: TanStack Query cache is global. Without `invalidateQueries()` on switch, the old member's data persists visually.
+- **Cross-user leak on a shared browser**: query keys are not scoped by user and `activeMemberId` is persisted to localStorage, so every auth-boundary crossing MUST `queryClient.clear()` + `useProfileStore.getState().reset()` — centralised in `resetClientState` (`lib/reset-client-state.ts`), wired into `useLogout` (logout) and `useLoginWithRememberMe`/`useVerifyMfa` (login). Otherwise the next person to log in on the same device briefly sees the previous user's balance/history (and, for an admin re-login, the stale `?memberId` returns another member's real data). Regression that prompted the fix: a member reported seeing "un solde et historique qui n'est pas du tout le sien" on first login. A related **identity** bleed — entering one user's credentials but landing on *another* user's account — is the server-side cookie-severing case in [mfa-and-remember-me.md](./mfa-and-remember-me.md#cross-identity-session-bleed-at-login).
 
 ## Tests
 
 - `GoalServiceTest` — goal CRUD scoped by memberId
+- `HistoryServiceTest` — history scoped by memberId, incl. `buildHistory_rejectsAccountsOwnedByAnotherMember` and `buildHistory_rejectsNullMemberId`
+- `api-client.test.ts` (frontend) — `?memberId` is attached only for admins, never for a non-admin with a stale `activeMemberId`
+- `features/mfa/hooks.test.ts` (frontend) — login-side `resetClientState`: wipes the cache + impersonation target on a non-MFA login and on MFA verify, and performs **no** reset on the `mfaRequired` branch
 - `FamilyServiceTest` — username derivation, activation/reset, and **member deletion**:
   `deleteMember_withLogin_deletesUserBeforeMember` (Mockito `InOrder` guard for the
   `TransientObjectException` fix), `deleteMember_managedWithoutLogin_deletesOnlyMember`,

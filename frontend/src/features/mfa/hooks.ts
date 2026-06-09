@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { mfaApi } from './api'
 import { useAuthStore } from '@/stores/auth-store'
+import { resetClientState } from '@/lib/reset-client-state'
 
 const MFA_KEYS = {
   status: ['mfa', 'status'] as const,
@@ -16,6 +17,7 @@ const MFA_KEYS = {
  */
 export function useLoginWithRememberMe() {
   const login = useAuthStore(s => s.login)
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({
       username,
@@ -28,6 +30,10 @@ export function useLoginWithRememberMe() {
     }) => mfaApi.loginWithRememberMe(username, password, rememberMe),
     onSuccess: data => {
       if (!data.mfaRequired) {
+        // A real session now exists. Wipe any previous user's cached data and
+        // impersonation target BEFORE writing the new identity, so a shared
+        // family browser never shows the prior login's figures.
+        resetClientState(queryClient)
         login({
           username: data.username,
           role: data.role,
@@ -41,6 +47,7 @@ export function useLoginWithRememberMe() {
 
 export function useVerifyMfa() {
   const login = useAuthStore(s => s.login)
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({
       code,
@@ -56,6 +63,10 @@ export function useVerifyMfa() {
       // is no second factor beyond this one, so mfaRequired:true here would be
       // a server bug. Discriminate to keep the type narrowing honest.
       if (!data.mfaRequired) {
+        // MFA cleared → session established. Same boundary reset as the non-MFA
+        // login branch: drop the previous user's cache and impersonation target
+        // before writing this identity.
+        resetClientState(queryClient)
         login({
           username: data.username,
           role: data.role,

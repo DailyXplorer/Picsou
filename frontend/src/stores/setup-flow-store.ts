@@ -18,7 +18,6 @@ export const ALL_INTEGRATIONS: IntegrationKey[] = [
 
 interface EnableBankingDraft {
   applicationId: string
-  keyId: string
   redirectUri: string
   publicKeyPem: string | null
   tested: boolean
@@ -44,7 +43,6 @@ interface SetupFlowState {
 
 const blankEbDraft: EnableBankingDraft = {
   applicationId: '',
-  keyId: '',
   redirectUri: '',
   publicKeyPem: null,
   tested: false,

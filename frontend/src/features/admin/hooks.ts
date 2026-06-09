@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from './api'
-import type { AdminSecuritySettings, AdminEnableBankingSettings } from './api'
+import type { AdminSecuritySettings, AdminEnableBankingCredentials } from './api'
 
 export const adminKeys = {
   all: ['admin'] as const,
@@ -26,7 +26,23 @@ export function useUpdateSecurity() {
 export function useUpdateEnableBanking() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: AdminEnableBankingSettings) => adminApi.updateEnableBanking(body),
+    mutationFn: (body: AdminEnableBankingCredentials) => adminApi.updateEnableBanking(body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.settings() }),
+  })
+}
+
+export function useGenerateEnableBankingKeyPair() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => adminApi.generateEnableBankingKeyPair(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.settings() }),
+  })
+}
+
+export function useImportEnableBankingPrivateKey() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (privatePem: string) => adminApi.importEnableBankingPrivateKey(privatePem),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.settings() }),
   })
 }

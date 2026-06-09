@@ -36,11 +36,17 @@ public class HoldingComputeService {
         Map<String, BigDecimal> netQuantity = new HashMap<>();
         Map<String, BigDecimal> vwapNumerator = new HashMap<>();   // Σ(qty_i × price_i) for BUY transactions
         Map<String, BigDecimal> vwapDenominator = new HashMap<>();  // Σ(qty_i) for BUY transactions
+        // Most-recent human-readable name per ticker. Transactions arrive date-ASC,
+        // so the last write for a ticker is its newest name.
+        Map<String, String> latestName = new HashMap<>();
 
         for (Transaction tx : transactions) {
             String ticker = tx.getTicker();
             if (ticker == null || ticker.isBlank()) {
                 continue;
+            }
+            if (tx.getName() != null) {
+                latestName.put(ticker, tx.getName());
             }
             BigDecimal qty = tx.getQuantity();
             if (qty == null) {
@@ -88,6 +94,12 @@ public class HoldingComputeService {
                         .build());
                 holding.setQuantity(qty);
                 holding.setAverageBuyIn(averageBuyIn);
+                // Only overwrite the label when a transaction actually carries a name,
+                // so a nameless manual entry never erases a name set by bank sync.
+                String name = latestName.get(ticker);
+                if (name != null) {
+                    holding.setName(name);
+                }
                 toSave.add(holding);
             }
         }

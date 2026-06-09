@@ -52,12 +52,27 @@ public class HistoryService {
         this.accountService = accountService;
     }
 
-    public List<NetWorthPoint> buildHistory(List<Long> accountIds, int months) {
-        return buildHistory(accountIds, months, false, null);
-    }
-
     public List<NetWorthPoint> buildHistory(List<Long> accountIds, int months, Long memberId) {
         return buildHistory(accountIds, months, false, memberId);
+    }
+
+    /**
+     * Rejects any request whose accounts don't all belong to {@code memberId}.
+     *
+     * <p>Member scoping is mandatory: a {@code null} memberId is a programming error
+     * (every controller resolves {@code UserContext.currentMemberId()}, which is never
+     * null), not a "skip validation" signal — failing loud here prevents a future caller
+     * from accidentally returning another member's financial data.
+     */
+    private void assertOwnership(List<Account> accounts, Long memberId) {
+        if (memberId == null) {
+            throw new IllegalArgumentException("memberId is required for member-scoped history");
+        }
+        for (Account account : accounts) {
+            if (!account.getMember().getId().equals(memberId)) {
+                throw com.picsou.exception.ResourceNotFoundException.account(account.getId());
+            }
+        }
     }
 
     /**
@@ -77,14 +92,7 @@ public class HistoryService {
         List<Account> accounts = accountRepository.findAllById(accountIds);
         if (accounts.isEmpty()) return List.of();
 
-        // Validate all accounts belong to the requesting member
-        if (memberId != null) {
-            for (Account account : accounts) {
-                if (!account.getMember().getId().equals(memberId)) {
-                    throw com.picsou.exception.ResourceNotFoundException.account(account.getId());
-                }
-            }
-        }
+        assertOwnership(accounts, memberId);
 
         LocalDate from = LocalDate.now().minusMonths(months);
 
@@ -188,13 +196,7 @@ public class HistoryService {
         List<Account> accounts = accountRepository.findAllById(accountIds);
         if (accounts.isEmpty()) return List.of();
 
-        if (memberId != null) {
-            for (Account account : accounts) {
-                if (!account.getMember().getId().equals(memberId)) {
-                    throw com.picsou.exception.ResourceNotFoundException.account(account.getId());
-                }
-            }
-        }
+        assertOwnership(accounts, memberId);
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime from = now.minusHours(24);
@@ -320,14 +322,7 @@ public class HistoryService {
             return new com.picsou.dto.PnlResponse(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null);
         }
 
-        // Validate all accounts belong to the requesting member
-        if (memberId != null) {
-            for (Account account : accounts) {
-                if (!account.getMember().getId().equals(memberId)) {
-                    throw com.picsou.exception.ResourceNotFoundException.account(account.getId());
-                }
-            }
-        }
+        assertOwnership(accounts, memberId);
 
         // Live values
         BigDecimal liveTotal = BigDecimal.ZERO;

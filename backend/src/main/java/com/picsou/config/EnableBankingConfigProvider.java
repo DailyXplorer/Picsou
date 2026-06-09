@@ -64,8 +64,15 @@ public class EnableBankingConfigProvider {
         return resolve(SetupService.KEY_ENABLEBANKING_APP_ID, envApplicationId);
     }
 
+    /**
+     * The JWT signing Key ID. Per Enable Banking's spec the {@code kid} is the
+     * application's own ID, so when no key-id is configured separately we fall
+     * back to {@link #applicationId()}. An explicitly-set value (legacy env
+     * {@code ENABLEBANKING_KEY_ID} or a stored {@code key-id} row) still wins,
+     * keeping old installs working verbatim.
+     */
     public Optional<String> keyId() {
-        return resolve(SetupService.KEY_ENABLEBANKING_KEY_ID, envKeyId);
+        return resolve(SetupService.KEY_ENABLEBANKING_KEY_ID, envKeyId).or(this::applicationId);
     }
 
     public Optional<String> redirectUri() {
@@ -96,6 +103,36 @@ public class EnableBankingConfigProvider {
             && keyId().isPresent()
             && redirectUri().isPresent()
             && privateKey().isPresent();
+    }
+
+    /**
+     * Cheap, non-parsing variant of {@link #isConfigured()}: all three text
+     * fields are present and a private key file/PEM exists, without ever
+     * parsing the key. Use this on status surfaces (e.g. deriving the admin
+     * integration toggle) so a malformed key reports as "configured" rather
+     * than throwing — {@link #privateKey()} surfaces the parse error at real
+     * use time. The strict {@link #isConfigured()} stays for code paths that
+     * actually need a usable key.
+     */
+    public boolean isConfiguredLenient() {
+        return applicationId().isPresent()
+            && keyId().isPresent()
+            && redirectUri().isPresent()
+            && privateKeyPresent();
+    }
+
+    /**
+     * Cheap, non-parsing check of whether a private key is available — mirrors
+     * the source precedence of {@link #privateKey()} but only tests for
+     * existence / non-blank content. Used by status surfaces (e.g. the admin
+     * settings page) so a malformed key reports as "present" rather than
+     * throwing and 500-ing the page; {@link #privateKey()} surfaces the parse
+     * error at actual use time instead.
+     */
+    public boolean privateKeyPresent() {
+        return Files.exists(Path.of(defaultPrivateKeyPath))
+            || (!envPrivateKeyPath.isBlank() && Files.exists(Path.of(envPrivateKeyPath)))
+            || !envPrivateKeyPem.isBlank();
     }
 
     // ─── internals ───────────────────────────────────────────────────────────

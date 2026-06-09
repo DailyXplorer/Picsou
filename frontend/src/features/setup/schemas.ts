@@ -40,7 +40,6 @@ export type SetupSecurityFormValues = z.infer<typeof setupSecuritySchema>
 
 export const enableBankingConfigSchema = z.object({
   applicationId: z.string().regex(UUID_SHAPE_REGEX, 'setup.enablebanking.appIdFormat'),
-  keyId: z.string().regex(UUID_SHAPE_REGEX, 'setup.enablebanking.keyIdFormat'),
   redirectUri: z.string().regex(REDIRECT_URI_REGEX, 'setup.enablebanking.redirectFormat'),
 })
 export type EnableBankingConfigFormValues = z.infer<typeof enableBankingConfigSchema>

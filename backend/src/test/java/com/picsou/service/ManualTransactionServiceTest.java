@@ -1,5 +1,6 @@
 package com.picsou.service;
 
+import com.picsou.adapter.OpenFigiIsinConverter;
 import com.picsou.dto.TransactionRequest;
 import com.picsou.dto.TransactionResponse;
 import com.picsou.exception.ResourceNotFoundException;
@@ -36,6 +37,7 @@ class ManualTransactionServiceTest {
     @Mock FinaryPersistenceHelper finaryPersistenceHelper;
     @Mock CategoryRepository categoryRepository;
     @Mock CategorizationService categorizationService;
+    @Mock OpenFigiIsinConverter openFigiIsinConverter;
 
     @InjectMocks ManualTransactionService manualTransactionService;
 
@@ -67,7 +69,7 @@ class ManualTransactionServiceTest {
             "Salary",
             new BigDecimal("1000"),
             TransactionType.DEPOSIT,
-            null, null, null, "EUR", null
+            null, null, null, null, "EUR", null
         );
 
         when(accountRepository.findByIdAndMemberId(1L, 10L)).thenReturn(Optional.of(account));
@@ -93,6 +95,7 @@ class ManualTransactionServiceTest {
             new BigDecimal("500"),
             TransactionType.BUY,
             "AAPL",
+            null,
             new BigDecimal("5"),
             new BigDecimal("100"),
             "EUR", null
@@ -114,7 +117,7 @@ class ManualTransactionServiceTest {
     void addTransaction_accountNotFound_throws() {
         TransactionRequest req = new TransactionRequest(
             LocalDate.now(), "Test", BigDecimal.TEN,
-            TransactionType.DEPOSIT, null, null, null, "EUR", null
+            TransactionType.DEPOSIT, null, null, null, null, "EUR", null
         );
 
         when(accountRepository.findByIdAndMemberId(99L, 10L)).thenReturn(Optional.empty());
@@ -188,5 +191,66 @@ class ManualTransactionServiceTest {
             .isInstanceOf(ResourceNotFoundException.class)
             .hasMessageContaining("Transaction not found")
             .hasMessageNotContaining("99");
+    }
+
+    @Test
+    void addTransaction_isinInput_resolvesTickerNameAndDescription() {
+        Account account = peaAccount();
+        // The frontend puts the ISIN in the ticker field; with Nom blank it sends a placeholder description.
+        TransactionRequest req = new TransactionRequest(
+            LocalDate.of(2024, 3, 10),
+            "Achat IE00B4L5Y983",
+            new BigDecimal("500"),
+            TransactionType.BUY,
+            "IE00B4L5Y983",
+            null,
+            new BigDecimal("5"),
+            new BigDecimal("100"),
+            "EUR", null
+        );
+
+        when(accountRepository.findByIdAndMemberId(2L, 10L)).thenReturn(Optional.of(account));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(openFigiIsinConverter.resolve("IE00B4L5Y983"))
+            .thenReturn(new OpenFigiIsinConverter.TickerResult("IWDA.AS", "iShares Core MSCI World UCITS ETF"));
+
+        TransactionResponse result = manualTransactionService.addTransaction(2L, 10L, req);
+
+        // ISIN is normalized to the Yahoo ticker so positions merge and pricing works.
+        assertThat(result.ticker()).isEqualTo("IWDA.AS");
+        // The resolved name labels the position.
+        assertThat(result.name()).isEqualTo("iShares Core MSCI World UCITS ETF");
+        // The raw ISIN must never surface in the transaction row.
+        assertThat(result.description()).isEqualTo("iShares Core MSCI World UCITS ETF");
+        verify(holdingComputeService).recomputeHoldings(account);
+    }
+
+    @Test
+    void addTransaction_plainTicker_uppercasesAndUserNameWins() {
+        Account account = peaAccount();
+        TransactionRequest req = new TransactionRequest(
+            LocalDate.of(2024, 3, 10),
+            "ignored placeholder",
+            new BigDecimal("500"),
+            TransactionType.BUY,
+            "iwda.as",
+            "My World ETF",
+            new BigDecimal("5"),
+            new BigDecimal("100"),
+            "EUR", null
+        );
+
+        when(accountRepository.findByIdAndMemberId(2L, 10L)).thenReturn(Optional.of(account));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse result = manualTransactionService.addTransaction(2L, 10L, req);
+
+        // A plain ticker is just uppercased — no network resolution.
+        assertThat(result.ticker()).isEqualTo("IWDA.AS");
+        // A user-supplied Nom always wins over any resolved name.
+        assertThat(result.name()).isEqualTo("My World ETF");
+        // The row description is the chosen name, not the placeholder.
+        assertThat(result.description()).isEqualTo("My World ETF");
+        verify(openFigiIsinConverter, never()).resolve(any());
     }
 }

@@ -1,6 +1,6 @@
 -- Budget categorization foundation (1.1.0, phase C — "zero-config" redesign).
 -- Shared, single-owner migration for the merchant-categorization / subcategory /
--- cashflow-flow work. Adds the columns every later phase (V37 merchant KB, V38
+-- cashflow-flow work. Adds the columns every later phase (V39 merchant KB, V40
 -- recurring v2) builds on, so those phases never re-touch these tables.
 
 -- ── Categories: hierarchy + stable join key ────────────────────────────────
@@ -44,7 +44,7 @@ CREATE INDEX idx_category_parent ON category(parent_id);
 
 -- ── Transactions: canonical merchant label ─────────────────────────────────
 -- `merchant_label` is the human-readable brand/merchant derived from the raw
--- bank `counterparty`+`description` by MerchantNormalizer (set in phase V37).
+-- bank `counterparty`+`description` by MerchantNormalizer (set in phase V39).
 -- Always populated for synced transactions; drives clean names + brand matching.
 ALTER TABLE transaction
   ADD COLUMN merchant_label VARCHAR(255);

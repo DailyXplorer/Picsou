@@ -22,6 +22,9 @@
         <java.version>21</java.version>
         <jjwt.version>0.12.6</jjwt.version>
         <bucket4j.version>8.10.1</bucket4j.version>
+        <!-- Spring AI 1.0.x targets Spring Boot 3.4.x (Spring 6.2) — matches this project.
+             Do NOT bump to 1.1.x: it targets Boot 3.5 / Spring 6.3 and conflicts with the pins below. -->
+        <spring-ai.version>1.0.3</spring-ai.version>
         <!-- Security overrides: pin versions ahead of Spring Boot 3.4.9 BOM (verified CLEAN on OSV) -->
         <tomcat.version>10.1.53</tomcat.version>
         <netty.version>4.1.132.Final</netty.version>
@@ -32,6 +35,19 @@
              modern daemon. Overridable, e.g. `mvn test -Ddocker.api.version=1.44`. -->
         <docker.api.version>1.40</docker.api.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring AI BOM: governs the MCP server starter and its transitive MCP SDK versions -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Web -->
@@ -44,6 +60,18 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <!-- AOP — powers @RequiresScope enforcement on MCP tool methods -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
+        <!-- MCP server (Model Context Protocol) — embedded, Streamable HTTP over WebMVC -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
         </dependency>
 
         <!-- JPA + PostgreSQL -->

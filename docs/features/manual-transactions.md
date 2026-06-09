@@ -1,6 +1,6 @@
 # Feature: Manual Transactions
 
-> Last updated: 2026-04-21
+> Last updated: 2026-06-03
 
 ## Context
 
@@ -25,12 +25,33 @@ CREATE INDEX idx_transaction_account_manual ON transaction(account_id, is_manual
 
 Existing synced transactions have `is_manual = false`. The original `type` column (Finary raw category string) is untouched.
 
+### Security name column (V36 migration)
+
+A later migration adds a first-class label for derived positions:
+
+```sql
+ALTER TABLE transaction
+  ADD COLUMN name VARCHAR(100) NULL;
+```
+
+`transaction.name` is the human-readable security name, distinct from the row `description`. It is auto-filled from OpenFIGI when an ISIN is entered, or from the user-supplied "Nom". `HoldingComputeService` uses it to label each position (see below). The width matches `account_holding.name` so the value copies across without truncation.
+
 ### Transaction types
 
 `TransactionType` enum: `DEPOSIT`, `WITHDRAWAL`, `BUY`, `SELL`, `DIVIDEND`, `FEE`.
 
 - Cash accounts (CHECKING, SAVINGS, LEP, OTHER): use DEPOSIT / WITHDRAWAL. The `amount` field is signed (positive = deposit, negative = withdrawal).
 - Investment accounts (PEA, COMPTE_TITRES, CRYPTO): use BUY / SELL. The `amount` is signed (negative for BUY, positive for SELL, reflecting cash flow).
+
+### Entering a position by ISIN
+
+On an investment account, the instrument field accepts **either** a Yahoo ticker (e.g. `IWDA.AS`) **or** a 12-character ISIN (e.g. `IE00B4L5Y983`). `ManualTransactionService.applyInstrumentFields()` detects an ISIN via `OpenFigiIsinConverter.isIsin()` and, when matched, calls `resolve()` to convert it to a Yahoo ticker + display name. Resolution happens at **write time**, so:
+
+- an ISIN entry and the equivalent ticker entry merge into a **single position** (the grouping key is the resolved ticker, not the raw input — this is what kills duplicate positions);
+- Yahoo pricing works (`YahooFinancePriceProvider` rejects raw ISINs);
+- the raw ISIN never surfaces in the transaction row — the service owns the `description` for BUY/SELL (see Gotchas).
+
+A user-supplied "Nom" always wins over the resolved name. The same logic runs for both add and edit (`addTransaction` and `updateTransaction` share `applyInstrumentFields`).
 
 ### Balance derivation (cash accounts)
 
@@ -45,6 +66,7 @@ When a manual transaction is added or deleted on a cash account, `ManualTransact
 3. Computes `averageBuyIn` as VWAP across all BUY transactions for each ticker.
 4. Upserts `AccountHolding` for tickers where `qty > 0`.
 5. Deletes `AccountHolding` for tickers where `qty ≤ 0`.
+6. Labels each surviving position with the **most recent** transaction (date ASC, last write wins) that carries a non-blank `name`. The update is guarded by a null check, so a nameless manual transaction never erases a name already set by bank sync (OpenFIGI).
 
 All existing holdings are loaded upfront (one query) to avoid N+1 lookups.
 
@@ -57,6 +79,7 @@ All sync services (`FinaryPersistenceHelper`, `BoursoSyncService`) now call `tra
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/accounts/{id}/transactions` | Add a manual transaction (returns 201) |
+| `PUT` | `/api/accounts/{id}/transactions/{txId}` | Edit a manual transaction |
 | `DELETE` | `/api/accounts/{id}/transactions/{txId}` | Delete a manual transaction (returns 204) |
 
 `DELETE` validates that the transaction is manual (`isManual = true`). Synced transactions cannot be deleted via this endpoint.
@@ -69,7 +92,7 @@ All sync services (`FinaryPersistenceHelper`, `BoursoSyncService`) now call `tra
 - Date, DEPOSIT/WITHDRAWAL toggle, Description, Amount (always positive — toggle sets sign)
 
 **Investment accounts (PEA, COMPTE_TITRES, CRYPTO):**
-- Date, BUY/SELL toggle, Ticker, Name (auto-filled from existing holdings if ticker matches), Quantity, Price per unit, Total (read-only)
+- Date, BUY/SELL toggle, **Ticker ou ISIN** (a ticker like `IWDA.AS` or a 12-char ISIN like `IE00B4L5Y983`), Name (auto-filled from existing holdings when the ticker matches; otherwise resolved from the ISIN backend-side), Quantity, Price per unit, Total (read-only)
 
 The Transactions list shows a "Manuel" badge on manual entries and a delete button (only for manual entries).
 
@@ -79,10 +102,12 @@ After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the 
 
 | File | Role |
 |------|------|
-| `db/migration/V24__manual_transactions.sql` | Schema extension |
+| `db/migration/V24__manual_transactions.sql` | Schema extension (is_manual, tx_type, ticker, quantity, price_per_unit) |
+| `db/migration/V36__transaction_security_name.sql` | Adds `transaction.name` (position label) |
 | `model/TransactionType.java` | Enum (DEPOSIT, WITHDRAWAL, BUY, SELL, DIVIDEND, FEE) |
-| `service/HoldingComputeService.java` | Derives holdings from BUY/SELL transactions |
-| `service/ManualTransactionService.java` | Orchestrates add/delete + re-derivation |
+| `service/HoldingComputeService.java` | Derives holdings (qty, VWAP, **name**) from BUY/SELL transactions |
+| `service/ManualTransactionService.java` | Orchestrates add/edit/delete + re-derivation; resolves ISIN and owns the BUY/SELL description (`applyInstrumentFields`) |
+| `adapter/OpenFigiIsinConverter.java` | `isIsin()` detection + `resolve()` ISIN→ticker+name (shared with bank sync) |
 | `controller/AccountController.java` | POST/DELETE `/accounts/{id}/transactions` |
 | `repository/TransactionRepository.java` | `deleteByAccountIdAndIsManualFalse`, `sumAmountByAccountId`, `findByAccountIdAndTxTypeInOrderByDateAsc` |
 | `frontend/src/components/shared/AddTransactionModal.tsx` | Account-type-aware form modal |
@@ -103,9 +128,10 @@ After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the 
 - **Investment account balance is NOT recomputed** from manual transactions. Only the holdings (positions) are derived. The account's `currentBalance` is set by the price scheduler (qty × live price). This is intentional for investment accounts.
 - **Synced transactions cannot be deleted**: The DELETE endpoint checks `isManual`. Attempting to delete a synced transaction returns 403.
 - **Holdings recomputation is full**: Every add/delete triggers a full re-derivation for that account (all tickers). This is fast in practice since investment accounts rarely have hundreds of tickers.
-- **Auto-generated description for investment transactions**: If the user leaves the Name field blank, the description defaults to "Achat {TICKER}" or "Vente {TICKER}".
+- **The backend owns the investment description**: For BUY/SELL, `ManualTransactionService` sets the row `description` from the effective name, or `Achat {TICKER}` / `Vente {TICKER}` when no name exists — overriding whatever the client sent. This is what stops a raw ISIN (entered in the Ticker field with a blank Nom) from leaking into the transaction row. Cash transactions keep the client-supplied description.
 
 ## Tests
 
-- `HoldingComputeServiceTest` — 9 unit tests covering BUY-only, multi-BUY VWAP, BUY+SELL, fully-sold position, null ticker/quantity skipping, multiple tickers, existing holding update.
-- `ManualTransactionServiceTest` — 6 unit tests covering cash add, investment add (holdings recomputed), non-owned account rejection, manual delete, synced-transaction delete rejection, not-found rejection.
+- `HoldingComputeServiceTest` — 11 unit tests: BUY-only, multi-BUY VWAP, BUY+SELL, fully-sold position, null ticker/quantity skipping, multiple tickers, existing holding update, plus position name = newest transaction's name and name-preserved-when-transactions-have-none.
+- `ManualTransactionServiceTest` — 8 unit tests: cash add, investment add (holdings recomputed), non-owned account rejection, manual delete, synced-transaction delete rejection, not-found rejection, plus ISIN input → resolved ticker/name/description and plain-ticker uppercased with the user "Nom" winning.
+- `OpenFigiIsinConverterTest` — 4 unit tests for the `isIsin()` detector: valid ISINs, case/whitespace normalization, rejects tickers/non-ISIN strings, rejects null/blank.

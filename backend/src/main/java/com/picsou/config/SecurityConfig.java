@@ -1,9 +1,12 @@
 package com.picsou.config;
 
+import com.picsou.mcp.AccessKeyService;
 import com.picsou.repository.AppSettingRepository;
 import com.picsou.repository.AppUserRepository;
 import com.picsou.service.MfaService;
 import com.picsou.service.PersistentSessionService;
+import io.github.bucket4j.Bucket;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,6 +24,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 
 import java.util.List;
+import java.util.Map;
 
 @Configuration
 @EnableWebSecurity
@@ -36,7 +40,9 @@ public class SecurityConfig {
                                            SetupFilter setupFilter,
                                            PersistentSessionService persistentSessionService,
                                            AuthCookieWriter authCookieWriter,
-                                           MfaService mfaService) throws Exception {
+                                           MfaService mfaService,
+                                           AccessKeyService accessKeyService,
+                                           @Qualifier("mcpKeyBuckets") Map<Long, Bucket> mcpKeyBuckets) throws Exception {
         http
             .cors(Customizer.withDefaults())
             .csrf(csrf -> csrf.disable())   // stateless JWT + SameSite cookies cover this
@@ -61,6 +67,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/auth/activate/*").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .requestMatchers("/mcp/**").authenticated()
                 .anyRequest().authenticated()
             )
             // All custom filters anchor to UsernamePasswordAuthenticationFilter because
@@ -75,6 +82,12 @@ public class SecurityConfig {
             .addFilterBefore(new JwtAuthenticationFilter(jwtUtil, appUserRepository), UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(
                 new PersistentTokenAuthFilter(persistentSessionService, appUserRepository, jwtUtil, authCookieWriter, mfaService),
+                UsernamePasswordAuthenticationFilter.class
+            )
+            // Last of the same-anchor filters: only acts on /mcp/** (shouldNotFilter), validates the
+            // Bearer access-key, and sets an AccessKeyAuthentication carrying scope authorities only.
+            .addFilterBefore(
+                new AccessKeyAuthFilter(accessKeyService, mcpKeyBuckets),
                 UsernamePasswordAuthenticationFilter.class
             )
             .exceptionHandling(ex -> ex

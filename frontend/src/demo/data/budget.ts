@@ -451,6 +451,7 @@ function leafTransactions(cat: Category, factor: number): Transaction[] {
       isManual: false,
       txType: isIncome ? 'DEPOSIT' : 'WITHDRAWAL',
       ticker: null,
+      name: null,
       quantity: null,
       pricePerUnit: null,
       merchantLabel: merchant,

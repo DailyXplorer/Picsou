@@ -1,17 +1,20 @@
 # Feature: ISIN to Yahoo Finance Ticker Conversion
 
-> Last updated: 2026-04-13
+> Last updated: 2026-06-03
 
 ## Context
 
 Trade Republic returns account holdings with ISIN codes (e.g., `IE00BYVQ9F29`), but Yahoo Finance expects ticker symbols (e.g., `IWDA.AS`). This feature converts ISINs to Yahoo-compatible tickers via the OpenFIGI API, and also resolves the display name (e.g., "ISHARES CORE MSCI WORLD") for the frontend.
 
+The converter is shared by two callers: the **Trade Republic sync** (its original use) and **manual transaction entry**, where a user can type an ISIN instead of a ticker in the *Add transaction* form (see [manual-transactions.md](./manual-transactions.md)). Both resolve at write time so an ISIN entry and the equivalent ticker entry collapse into one position.
+
 ## How it works
 
 ### Key files
 
-- `adapter/OpenFigiIsinConverter.java` — ISIN→ticker+name conversion via OpenFIGI `/v3/mapping` API
+- `adapter/OpenFigiIsinConverter.java` — ISIN→ticker+name conversion via OpenFIGI `/v3/mapping` API; also exposes `public static boolean isIsin(String)`, the 12-char ISIN detector reused by callers to decide whether to resolve
 - `service/TradeRepublicSyncService.java` — calls `resolve()` during sync, stores ticker and name
+- `service/ManualTransactionService.java` — calls `isIsin()` + `resolve()` when a user enters an instrument by ISIN in the *Add transaction* form (`applyInstrumentFields`)
 - `adapter/YahooFinancePriceProvider.java` — rejects unconvertible ISINs via regex in `supports()`
 - `frontend/src/components/shared/HoldingsCard.tsx` — displays name in title, ticker in square badge
 
@@ -69,7 +72,7 @@ OpenFIGI `exchCode` is mapped to Yahoo suffix (e.g., `GY`→`.DE`, `NA`→`.AS`,
 
 ## Tests
 
-- No dedicated unit tests for `OpenFigiIsinConverter` (WebClient mock setup is complex)
+- `OpenFigiIsinConverterTest` — 4 unit tests covering the `isIsin()` detector (valid ISINs, case/whitespace normalization, rejects tickers and non-ISIN strings, rejects null/blank). The network-bound `resolve()` path still has no unit test (WebClient mock setup is complex); callers that use it (`ManualTransactionServiceTest`) mock the converter instead.
 - Manual verification with `curl` against OpenFIGI API:
   - `US0378331005` (Apple) → `AAPL`
   - `IE00B4L5Y983` (iShares MSCI World) → `IWDA.AS`

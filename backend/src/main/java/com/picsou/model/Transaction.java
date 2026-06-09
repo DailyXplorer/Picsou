@@ -87,6 +87,10 @@ public class Transaction {
     @Column(name = "ticker", length = 30)
     private String ticker;
 
+    /** Human-readable security name (distinct from the row description). Used to label the derived position. */
+    @Column(name = "name", length = 100)
+    private String name;
+
     @Column(name = "quantity", precision = 20, scale = 8)
     private BigDecimal quantity;
 

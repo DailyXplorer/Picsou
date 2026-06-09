@@ -1,7 +1,7 @@
 -- Merchant knowledge base (1.1.0, phase C — "zero-config" categorization).
 -- A GLOBAL, offline brand dataset (not member-scoped, read-only at runtime). It lets the
 -- categorizer resolve a normalized transaction label to a brand, and a brand to each
--- member's own category via the stable `slug` added in V36. Seeded here; loaded once into
+-- member's own category via the stable `slug` added in V38. Seeded here; loaded once into
 -- MerchantKnowledgeBase. Privacy (ADR 2026-06-02): fully offline; logo_domain only ever
 -- feeds the opt-in online logo fetch, never categorization.
 
@@ -32,7 +32,7 @@ ALTER TABLE transaction
   ADD COLUMN merchant_brand_id BIGINT REFERENCES merchant_brand(id) ON DELETE SET NULL;
 CREATE INDEX idx_transaction_merchant_brand ON transaction(merchant_brand_id);
 
--- ── Brand seed (~110 common FR/EU merchants → parent category slugs) ─────────
+-- ── Brand seed (137 common FR/EU merchants → parent category slugs) ──────────
 INSERT INTO merchant_brand (slug, display_name, default_category_slug, color, monogram, logo_domain) VALUES
   -- Courses (groceries)
   ('carrefour',        'Carrefour',         'courses',     '#0066CB', 'C',  'carrefour.fr'),

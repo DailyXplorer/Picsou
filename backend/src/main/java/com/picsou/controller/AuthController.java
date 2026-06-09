@@ -129,6 +129,13 @@ public class AuthController {
                 && persistentSessionService.isTrustedDeviceFor(user, existingPersistent);
 
             if (!trustedDevice) {
+                // Password is correct but the second factor is still outstanding, so
+                // the caller is NOT authenticated yet. Drop any pre-existing session
+                // cookies first: on a shared/reused browser they may belong to a
+                // DIFFERENT identity (e.g. a left-over no-MFA admin "Remember Me"
+                // session), which would otherwise silently re-authenticate that other
+                // user while this challenge is pending or abandoned.
+                cookieWriter.clearSessionCookies(httpRes);
                 String challenge = jwtUtil.generateMfaChallengeToken(user, req.rememberMe());
                 cookieWriter.setMfaChallenge(httpRes, challenge);
                 return ResponseEntity.ok(Map.of(
@@ -384,6 +391,20 @@ public class AuthController {
                 0
             );
             cookieWriter.setPersistent(httpRes, issued.cookieValue(), secondsUntilExpiry);
+        } else {
+            // Not remembering this device. If a "Remember Me" cookie from a DIFFERENT
+            // identity is still on this browser (shared/reused machine), drop it so it
+            // can't silently re-mint that other user's session via the persistent-token
+            // filter once this access token lapses. A persistent cookie that belongs to
+            // THIS user — a trusted device logging in without re-ticking Remember Me —
+            // is left intact so we don't needlessly un-trust the device.
+            String existingPersistent = extractCookie(httpReq, AuthCookieWriter.PERSISTENT_COOKIE);
+            if (existingPersistent != null && !existingPersistent.isBlank()
+                && persistentSessionService.ownerUserId(existingPersistent)
+                    .filter(ownerId -> ownerId.equals(user.getId()))
+                    .isEmpty()) {
+                cookieWriter.clearPersistent(httpRes);
+            }
         }
     }
 

@@ -1,8 +1,10 @@
 package com.picsou.service;
 
 import com.picsou.dto.DashboardResponse.NetWorthPoint;
+import com.picsou.exception.ResourceNotFoundException;
 import com.picsou.model.Account;
 import com.picsou.model.AccountType;
+import com.picsou.model.FamilyMember;
 import com.picsou.repository.AccountHoldingRepository;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.BalanceSnapshotRepository;
@@ -18,6 +20,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -35,6 +38,9 @@ class HistoryServiceTest {
 
     @InjectMocks HistoryService historyService;
 
+    private static final long MEMBER_ID = 99L;
+    private static final FamilyMember MEMBER = FamilyMember.builder().id(MEMBER_ID).build();
+
     private static Account brokerage(long id, String name) {
         return Account.builder()
             .id(id)
@@ -43,6 +49,7 @@ class HistoryServiceTest {
             .currency("EUR")
             .currentBalance(new BigDecimal("0"))
             .color("#6366f1")
+            .member(MEMBER)
             .build();
     }
 
@@ -61,7 +68,7 @@ class HistoryServiceTest {
         when(accountService.liveBalanceEur(account)).thenReturn(new BigDecimal("6200"));
         when(accountService.calculateInvestedAmount(account)).thenReturn(new BigDecimal("5400"));
 
-        List<NetWorthPoint> result = historyService.buildHistory(List.of(1L), 1, false, null);
+        List<NetWorthPoint> result = historyService.buildHistory(List.of(1L), 1, false, MEMBER_ID);
 
         // Three historical points + today's appended live point.
         assertThat(result).hasSize(4);
@@ -92,7 +99,7 @@ class HistoryServiceTest {
         when(accountService.liveBalanceEur(account)).thenReturn(new BigDecimal("5100"));
         when(accountService.calculateInvestedAmount(account)).thenReturn(new BigDecimal("4800"));
 
-        List<NetWorthPoint> result = historyService.buildHistory(List.of(1L), 1, false, null);
+        List<NetWorthPoint> result = historyService.buildHistory(List.of(1L), 1, false, MEMBER_ID);
 
         NetWorthPoint todayPoint = result.get(result.size() - 1);
         assertThat(todayPoint.date()).isEqualTo(today);
@@ -107,10 +114,10 @@ class HistoryServiceTest {
 
         Account loan = Account.builder()
             .id(1L).name("Loan").type(AccountType.LOAN).currency("EUR")
-            .currentBalance(new BigDecimal("10000")).color("#ef4444").build();
+            .currentBalance(new BigDecimal("10000")).color("#ef4444").member(MEMBER).build();
         Account checking = Account.builder()
             .id(2L).name("Checking").type(AccountType.CHECKING).currency("EUR")
-            .currentBalance(new BigDecimal("2000")).color("#3b82f6").build();
+            .currentBalance(new BigDecimal("2000")).color("#3b82f6").member(MEMBER).build();
 
         when(accountRepository.findAllById(List.of(1L, 2L))).thenReturn(List.of(loan, checking));
         when(snapshotRepository.findForwardFillDataByAccountIds(any(LocalDate.class), eq(List.of(1L, 2L))))
@@ -123,7 +130,7 @@ class HistoryServiceTest {
         lenient().when(accountService.calculateInvestedAmount(loan)).thenReturn(new BigDecimal("10000"));
         lenient().when(accountService.calculateInvestedAmount(checking)).thenReturn(new BigDecimal("2000"));
 
-        List<NetWorthPoint> result = historyService.buildHistory(List.of(1L, 2L), 1, true, null);
+        List<NetWorthPoint> result = historyService.buildHistory(List.of(1L, 2L), 1, true, MEMBER_ID);
 
         NetWorthPoint point = result.stream()
             .filter(p -> p.date().equals(date))
@@ -145,7 +152,7 @@ class HistoryServiceTest {
         Account brokerage = brokerage(1L, "CT");
         Account checking = Account.builder()
             .id(2L).name("Checking").type(AccountType.CHECKING).currency("EUR")
-            .currentBalance(new BigDecimal("1000")).color("#3b82f6").build();
+            .currentBalance(new BigDecimal("1000")).color("#3b82f6").member(MEMBER).build();
 
         when(accountRepository.findAllById(List.of(1L, 2L))).thenReturn(List.of(brokerage, checking));
         when(snapshotRepository.findForwardFillDataByAccountIds(any(LocalDate.class), eq(List.of(1L, 2L))))
@@ -161,7 +168,7 @@ class HistoryServiceTest {
         lenient().when(accountService.calculateInvestedAmount(brokerage)).thenReturn(new BigDecimal("3200"));
         lenient().when(accountService.calculateInvestedAmount(checking)).thenReturn(new BigDecimal("1000"));
 
-        List<NetWorthPoint> result = historyService.buildHistory(List.of(1L, 2L), 1, false, null);
+        List<NetWorthPoint> result = historyService.buildHistory(List.of(1L, 2L), 1, false, MEMBER_ID);
 
         // At D-5: brokerage forward-fills from D-7 (invested=3000), checking has its own row (1000).
         NetWorthPoint atD5 = result.stream()
@@ -190,7 +197,7 @@ class HistoryServiceTest {
         lenient().when(accountService.calculateInvestedAmount(acc1)).thenReturn(new BigDecimal("1000"));
         lenient().when(accountService.calculateInvestedAmount(acc2)).thenReturn(new BigDecimal("2500"));
 
-        List<NetWorthPoint> result = historyService.buildHistory(List.of(1L, 2L), 1, true, null);
+        List<NetWorthPoint> result = historyService.buildHistory(List.of(1L, 2L), 1, true, MEMBER_ID);
 
         NetWorthPoint atDate = result.stream()
             .filter(p -> p.date().equals(date))
@@ -200,5 +207,26 @@ class HistoryServiceTest {
         assertThat(atDate.accounts().get(2L).invested()).isEqualByComparingTo("2500");
         assertThat(atDate.invested()).isEqualByComparingTo("3500");
         assertThat(atDate.total()).isEqualByComparingTo("4000");
+    }
+
+    @Test
+    void buildHistory_rejectsAccountsOwnedByAnotherMember() {
+        Account othersAccount = brokerage(1L, "CT"); // belongs to MEMBER (id 99)
+        when(accountRepository.findAllById(List.of(1L))).thenReturn(List.of(othersAccount));
+
+        // A different member must not be able to read account 1's history.
+        assertThatThrownBy(() -> historyService.buildHistory(List.of(1L), 1, false, 7L))
+            .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void buildHistory_rejectsNullMemberId() {
+        Account account = brokerage(1L, "CT");
+        when(accountRepository.findAllById(List.of(1L))).thenReturn(List.of(account));
+
+        // Member scoping is mandatory — a null memberId is a programming error,
+        // not a signal to return every requested account unscoped.
+        assertThatThrownBy(() -> historyService.buildHistory(List.of(1L), 1, false, null))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 }

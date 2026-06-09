@@ -1,10 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { familyApi } from './api'
 
-export function useFamilyMembers() {
+/**
+ * Lists family members. The underlying `/family/members` endpoint is admin-only
+ * (`requireAdmin()` → 403 for non-admins), so callers rendered for every user
+ * (e.g. the sidebar) MUST pass `enabled: isAdmin` to avoid a spurious 403 that
+ * the global interceptor would turn into an `/error/403` redirect.
+ */
+export function useFamilyMembers({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['family', 'members'],
     queryFn: () => familyApi.listMembers(),
+    enabled,
   })
 }
 

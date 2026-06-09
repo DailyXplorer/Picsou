@@ -153,6 +153,19 @@ public class PersistentSessionService {
             .isPresent();
     }
 
+    /**
+     * Resolves the owning user id of a "Remember Me" cookie by its series_id,
+     * WITHOUT validating the token hash. Intended only for cheap "does this
+     * left-over cookie belong to the user we're authenticating?" checks — never
+     * for granting access. Empty if the cookie is malformed or the series is
+     * unknown (in which case the caller should treat it as foreign).
+     */
+    public Optional<Long> ownerUserId(String cookieValue) {
+        return parseCookie(cookieValue)
+            .flatMap(p -> repository.findBySeriesId(p.seriesId()))
+            .map(s -> s.getUser().getId());
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────────
 
     private String generateToken() {

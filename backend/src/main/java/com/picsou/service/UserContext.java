@@ -1,5 +1,6 @@
 package com.picsou.service;
 
+import com.picsou.config.AccessKeyAuthentication;
 import com.picsou.model.AppUser;
 import com.picsou.model.FamilyMember;
 import com.picsou.model.UserRole;
@@ -52,6 +53,12 @@ public class UserContext {
      * Overriding to the admin's own member id is always allowed (no-op).
      */
     private Long getMemberIdOverride() {
+        // Property B: an access-key acts ONLY on its owner's own data. Even when the owner is an
+        // admin, a key must never honour ?memberId= — short-circuit before isAdmin() opens the
+        // override, so a key can never reach another member's data via impersonation.
+        if (SecurityContextHolder.getContext().getAuthentication() instanceof AccessKeyAuthentication) {
+            return null;
+        }
         if (!isAdmin()) return null;
         ServletRequestAttributes attrs =
             (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();

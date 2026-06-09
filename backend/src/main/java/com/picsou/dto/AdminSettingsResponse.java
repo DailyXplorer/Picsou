@@ -7,5 +7,5 @@ public record AdminSettingsResponse(
     Map<String, Boolean> integrations
 ) {
     public record SecuritySettings(List<String> allowedOrigins, boolean secureCookies) {}
-    public record EnableBankingSettings(String applicationId, String keyId, String redirectUri) {}
+    public record EnableBankingSettings(String applicationId, String redirectUri, boolean privateKeyPresent) {}
 }

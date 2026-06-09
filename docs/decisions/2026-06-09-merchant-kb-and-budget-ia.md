@@ -124,9 +124,11 @@ proven in `/setup` and lets Review become the contextual surface the product vis
 
 ## Consequences
 
-- New migrations **V36** (`category.parent_id`/`slug`, `transaction.merchant_label`,
-  `budget_settings.kb_version`/`logo_fetch_enabled`) and **V37** (`merchant_brand`,
-  `merchant_alias`, `transaction.merchant_brand_id`, 137-brand seed).
+- New migrations **V38** (`category.parent_id`/`slug`, `transaction.merchant_label`,
+  `budget_settings.kb_version`/`logo_fetch_enabled`), **V39** (`merchant_brand`,
+  `merchant_alias`, `transaction.merchant_brand_id`, 137-brand seed), and **V40** (recurring v2).
+  They start at V38 because V36/V37 (`transaction.name`, access-keys / MCP) were merged in from the
+  1.0.x line above the budget foundation's V33–V35.
 - New backend: `MerchantNormalizer` (pure), `MerchantKnowledgeBase` (`@Component`),
   `CashflowFlowService`, `SpendingController`, `MerchantBrand`/`MerchantAlias` models + repos, flow
   DTOs; `CategorizationService` gains `enrich`/`autoCategorize`/brand fallback.

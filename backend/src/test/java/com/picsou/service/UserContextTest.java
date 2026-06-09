@@ -1,5 +1,6 @@
 package com.picsou.service;
 
+import com.picsou.config.AccessKeyAuthentication;
 import com.picsou.model.AppUser;
 import com.picsou.model.FamilyMember;
 import com.picsou.model.UserRole;
@@ -18,6 +19,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -115,5 +117,21 @@ class UserContextTest {
         request.setParameter("memberId", "2");
 
         assertThat(userContext.currentMemberId()).isEqualTo(5L);
+    }
+
+    // ─── Property B: an access-key never impersonates, even if its owner is an admin ──
+
+    @Test
+    void accessKey_ignoresMemberIdOverride_evenWhenOwnerIsAdmin() {
+        // Same principal a cookie-admin would use, but presented as an access-key.
+        // For a cookie-admin, ?memberId=3 (a managed, not-yet-activated profile) is a
+        // permitted override; for a key it must be silently refused so the key only ever
+        // touches its own member's data — and the repo is never even consulted.
+        AppUser adminOwner = member(ADMIN_MEMBER_ID, UserRole.ADMIN, true);
+        SecurityContextHolder.getContext().setAuthentication(
+            new AccessKeyAuthentication(adminOwner, List.of(), 99L));
+        request.setParameter("memberId", "3");
+
+        assertThat(userContext.currentMemberId()).isEqualTo(ADMIN_MEMBER_ID);
     }
 }

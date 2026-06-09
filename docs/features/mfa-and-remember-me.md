@@ -1,6 +1,6 @@
 # Feature: 2FA (TOTP) and Remember Me
 
-> Last updated: 2026-04-26
+> Last updated: 2026-06-03
 > Status: ✅ Implemented (2026-04-26)
 >
 > Implementation notes vs. original design:
@@ -97,10 +97,10 @@ AppUser (id, username, password_hash, role, member_id, ...)
 
 | Cookie | TTL | Purpose | Set by | Cleared by |
 |---|---|---|---|---|
-| `access_token` | 15 min | API auth (existing) | login, refresh, mfa/verify, persistent-filter | logout |
-| `refresh_token` | 7 days | Rotate access token (existing) | login, refresh, mfa/verify, persistent-filter | logout, password change, mfa change |
+| `access_token` | 15 min | API auth (existing) | login, refresh, mfa/verify, persistent-filter | logout; login (severs a pending/foreign session) |
+| `refresh_token` | 7 days | Rotate access token (existing) | login, refresh, mfa/verify, persistent-filter | logout, password change, mfa change; login (sever) |
 | `mfa_challenge` | 5 min | Single-purpose token to call `/api/auth/mfa/verify` | login (when 2FA on) | mfa/verify success, mfa/verify rate-limit lockout |
-| `persistent_token` | 90 days | Remember Me / trusted-device | login, mfa/verify (if rememberMe), persistent-filter rotation | logout, password change, mfa change, session revoke |
+| `persistent_token` | 90 days | Remember Me / trusted-device | login, mfa/verify (if rememberMe), persistent-filter rotation | logout, password change, mfa change, session revoke; login (foreign "Remember Me") |
 
 All cookies share the same attributes: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` controlled by `SECURE_COOKIES` env (existing).
 
@@ -178,6 +178,17 @@ The reauth check is a `passwordEncoder.matches(request.currentPassword, user.pas
 | Regenerate recovery codes | No session impact (only revokes the codes themselves). |
 | Admin force-disables target's 2FA | Same as user-initiated disable: wipe target's persistent sessions. |
 | Logout | Revoke only the current device's persistent session. |
+
+### Cross-identity session bleed at login
+
+On a **shared family browser**, login cookies from a *previous* user can outlive their session and silently re-authenticate that other identity. `PersistentTokenAuthFilter` re-mints an access token from any still-valid `persistent_token`, and it only auto-clears a stale one when the cookie owner has 2FA enabled and the device isn't trusted — so a **no-MFA** account's leftover "Remember Me" cookie always sails through. Concretely: user A (2FA on) types their password on a browser still holding user B's (no-MFA) `persistent_token`. A's login correctly returns `requires2fa` and issues **no** session, so the next request falls back on B's lingering cookie → A is dropped onto **B's** account.
+
+`AuthController.login` closes this at the instant the password is verified:
+
+1. **MFA-required branch** — before issuing the `mfa_challenge`, it calls `AuthCookieWriter.clearSessionCookies` (access + refresh + persistent). The caller has proven a password but is **not** authenticated yet; any session cookies present must not bleed through while the second factor is pending or abandoned. A genuinely **trusted device** is detected first (`PersistentSessionService.isTrustedDeviceFor`, user-scoped) and is exempt — it falls through to a normal session.
+2. **Session-completion without Remember Me** — `completeAuthenticatedSession` drops a leftover `persistent_token` whose `series_id` resolves to a **different** `AppUser` (`PersistentSessionService.ownerUserId`, a series-only lookup that never validates the token hash and never grants access). A cookie belonging to the *same* user (a trusted device logging in without re-ticking Remember Me) is left intact so the device stays trusted.
+
+This is the server-side half of the shared-browser fix; the client-side half — resetting the cache + impersonation target when the new identity is written — lives in [multi-account-family.md](./multi-account-family.md#client-state-isolation-across-the-login-boundary).
 
 ### Endpoints
 
@@ -387,6 +398,7 @@ All UIs are mobile-responsive (per repo convention).
 ## Gotchas / Pitfalls
 
 - **`persistent_token` and `?memberId=X` are independent**: the persistent token authenticates the `AppUser`; `?memberId=X` is the admin's profile-switch overlay. Don't confuse them.
+- **A no-MFA "Remember Me" cookie survives someone else's login**: `PersistentTokenAuthFilter` only auto-clears a stale `persistent_token` for 2FA-enabled owners, so a no-MFA account's leftover cookie would re-authenticate it under the next person. `AuthController.login` therefore severs lingering session cookies on the MFA-required branch (`clearSessionCookies`) and drops a *foreign* `persistent_token` on no-Remember-Me completion (`ownerUserId` series check); a trusted device's **own** cookie is preserved. See "Cross-identity session bleed at login".
 - **`SECURE_COOKIES=false` on LAN HTTP**: persistent and challenge cookies must inherit the same `Secure` flag handling as access/refresh, otherwise they'll be silently dropped or sent over plaintext (matching existing behavior).
 - **TOTP clock drift**: with ±1 step tolerance, the server clock must be within ~30 s of the user's device. Document this in the gotchas; rely on host NTP.
 - **Backup code collision**: 8-digit codes have ~33 bits — collision risk with 10 codes is negligible, but generation must `SecureRandom`-loop until unique within the user's set to avoid duplicates.
@@ -401,6 +413,7 @@ All UIs are mobile-responsive (per repo convention).
 **Backend unit (Mockito):**
 - `MfaServiceTest`
 - `PersistentSessionServiceTest`
+- `AuthControllerTest` — login severs cross-identity cookies: `login_mfaRequired_seversLingeringSessionCookies_beforeIssuingChallenge`, `login_noMfa_dropsForeignPersistentCookie_whenNotRemembering`, `login_noMfa_keepsOwnPersistentCookie_whenNotRemembering`
 
 **Backend integration (`@SpringBootTest` + H2):**
 - `AuthControllerMfaIntegrationTest`

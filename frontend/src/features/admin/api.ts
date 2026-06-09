@@ -5,10 +5,21 @@ export interface AdminSecuritySettings {
   secureCookies: boolean
 }
 
-export interface AdminEnableBankingSettings {
+/** The user-editable credential fields (the PUT body). The Key ID is derived
+ *  server-side from the Application ID (they are the same value in EB). */
+export interface AdminEnableBankingCredentials {
   applicationId: string
-  keyId: string
   redirectUri: string
+}
+
+/** Read shape: credentials plus the server-derived key-present flag. */
+export interface AdminEnableBankingSettings extends AdminEnableBankingCredentials {
+  privateKeyPresent: boolean
+}
+
+export interface EnableBankingKeypairResponse {
+  publicKeyPem: string
+  regenerated: boolean
 }
 
 export interface AdminSettings {
@@ -24,8 +35,16 @@ export const adminApi = {
   updateSecurity: (body: AdminSecuritySettings) =>
     api.put<void>('/admin/settings/security', body).then(r => r.data),
 
-  updateEnableBanking: (body: AdminEnableBankingSettings) =>
+  updateEnableBanking: (body: AdminEnableBankingCredentials) =>
     api.put<void>('/admin/settings/enablebanking', body).then(r => r.data),
+
+  generateEnableBankingKeyPair: () =>
+    api.post<EnableBankingKeypairResponse>('/admin/settings/enablebanking/keypair')
+      .then(r => r.data),
+
+  importEnableBankingPrivateKey: (privatePem: string) =>
+    api.post<EnableBankingKeypairResponse>('/admin/settings/enablebanking/keypair/import', { privatePem })
+      .then(r => r.data),
 
   toggleIntegration: (key: string, enabled: boolean) =>
     api.patch<void>(`/admin/settings/integrations/${key}`, null, { params: { enabled } })

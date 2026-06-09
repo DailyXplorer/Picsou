@@ -92,7 +92,10 @@ export function AppSidebar() {
   const user = useAuthStore((s) => s.user)
   const demoMode = useAppStore((s) => s.demoMode)
   const { activeMemberId, setActiveMember } = useProfileStore()
-  const { data: familyMembers } = useFamilyMembers()
+  const isAdmin = user?.role === 'ADMIN'
+  // `/family/members` is admin-only — never call it for non-admins, or the 403
+  // interceptor bounces the whole app to /error/403 (notably on a member's first login).
+  const { data: familyMembers } = useFamilyMembers({ enabled: isAdmin })
   const logoutMutation = useLogout()
   const queryClient = useQueryClient()
 
@@ -101,7 +104,6 @@ export function AppSidebar() {
     queryClient.invalidateQueries()
   }
 
-  const isAdmin = user?.role === 'ADMIN'
   // Independent members (own activated password) are private — not switchable by the admin.
   const managedMembers = selectSwitchableMembers(familyMembers ?? [])
 

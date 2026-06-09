@@ -59,19 +59,128 @@ information architecture.
   and [budget cycle & categorization](docs/decisions/2026-06-02-budget-cycle-and-categorization.md)
   (the original foundation).
 - Categorization stays **100% offline** — no ML, no third-party categorization API (privacy).
-- Custom reports and the Picsou MCP server remain out of scope for this release.
+- Custom reports remain out of scope for this release. (The embedded MCP server arrived on the
+  1.0.x line and is carried into this release — see [`docs/features/mcp-server.md`](docs/features/mcp-server.md).)
 
 ### Database migrations
 
 - **V33** — budget foundation (categories, rules, `budget_settings`)
 - **V34** — envelopes / budgets
 - **V35** — recurring series
-- **V36** — budget categorization foundation (`category.parent_id`/`slug`,
+- **V36 / V37** — inherited from the 1.0.x line (`transaction.name`, then access-keys + embedded
+  MCP server); see [1.0.7] below. The budget branch reserved V33–V35, so these slot in above it.
+- **V38** — budget categorization foundation (`category.parent_id`/`slug`,
   `transaction.merchant_label`, `budget_settings.kb_version`/`logo_fetch_enabled`)
-- **V37** — merchant knowledge base (`merchant_brand`, `merchant_alias`,
+- **V39** — merchant knowledge base (`merchant_brand`, `merchant_alias`,
   `transaction.merchant_brand_id`, 137-brand seed)
-- **V38** — recurring v2 (`confidence`, amount range, `is_variable`, `previous_amount`,
+- **V40** — recurring v2 (`confidence`, amount range, `is_variable`, `previous_amount`,
   `price_changed_at`; `(member_id, lower(label))` unique index)
+
+## [1.0.7] — 2026-06-04
+
+Patch release: renumbers the new `transaction.name` migration so it no longer
+collides with the 1.1.0 budget branch.
+
+### Changed
+
+- **The `transaction.name` migration moves from `V33` to `V36`.** `V33`–`V35`
+  are reserved by the 1.1.0 budgets branch (`budget_foundation`,
+  `budgets_envelopes`, `recurring`), so the migration introduced in 1.0.6
+  collided — a dev database on the budget timeline rejected it on a Flyway
+  checksum mismatch, and a future `main` ↔ `1.1.0` merge would have carried two
+  `V33` files. `V33__transaction_security_name.sql` is renamed to
+  `V36__transaction_security_name.sql` (the next free slot after the budget
+  migrations); the SQL is unchanged. Upgrade directly to 1.0.7 from ≤ 1.0.5 so
+  the column is only ever applied as `V36`.
+
+## [1.0.6] — 2026-06-03
+
+Patch release: manual investment entry accepts an ISIN, and positions gain a
+human-readable name instead of a bare ticker.
+
+### Added
+
+- **Enter a position by ISIN.** The "Ticker or ISIN" field on manual investment
+  entry now accepts a 12-character ISIN. `ManualTransactionService` resolves it
+  to a Yahoo ticker and display name via `OpenFigiIsinConverter` at write time,
+  so an ISIN entry and the equivalent ticker entry merge into a single position
+  and Yahoo pricing keeps working.
+- **Positions carry a first-class name.** A nullable `transaction.name` column
+  holds the human label, and `HoldingComputeService` names each position from the
+  most recent transaction that carries one — guarded so a nameless manual entry
+  never erases a bank-synced name. The raw ticker no longer leaks into the Name
+  column.
+
+### Database migrations
+
+- **V33** *(renumbered to `V36` in 1.0.7)* — nullable `transaction.name` column.
+
+## [1.0.5] — 2026-06-03
+
+Patch release: closes a session-bleed where, on a shared browser, logging in as a
+2FA-protected user could drop you onto a *different* (no-MFA) member's account.
+
+### Fixed
+
+- **Logging in as a 2FA user no longer lands you on someone else's account.** On a
+  shared browser still holding a leftover "Remember Me" cookie for a *no-MFA* account,
+  a 2FA user's login correctly stopped at the TOTP step and issued no session — so the
+  next request fell back on the lingering cookie and authenticated the *other* user.
+  `POST /api/auth/login` now severs any pre-existing session cookies the moment a
+  password is verified while the second factor is still pending, and drops a leftover
+  persistent ("Remember Me") cookie belonging to a different user when completing a
+  login without Remember Me. A trusted device's own cookie is preserved.
+- **The login path now resets per-user client state.** The cache and impersonation
+  reset that already ran on logout (1.0.4) now also runs the instant a login
+  establishes a session (non-MFA login and MFA verification), centralised in a single
+  `resetClientState` helper. This stops a freshly logged-in user from briefly seeing
+  the previous user's cached balance/history on a shared browser.
+
+## [1.0.4] — 2026-06-03
+
+Patch release: fixes two issues hitting non-admin family members — a spurious 403
+on first login and seeing another member's financial data on a shared browser.
+
+### Fixed
+
+- **A non-admin member no longer gets a 403 / `/error/403` redirect on login.** The
+  sidebar called the admin-only `GET /api/family/members` for every user; the global
+  403 interceptor then bounced the whole app to the error page. The call is now gated
+  on `isAdmin`, so non-admins never hit the admin-only endpoint.
+- **A member no longer sees another member's balance and net-worth history.** On a
+  shared browser the persisted impersonation target (`activeMemberId`, in localStorage)
+  and the user-agnostic TanStack Query cache survived logout, so the next person's first
+  login showed the previous user's data. Login and logout now reset the profile store
+  and clear the query cache. As defense-in-depth, the client only sends `?memberId` for
+  admins, and `HistoryService` enforces account ownership unconditionally (a `null`
+  member id is now rejected instead of bypassing the check).
+
+## [1.0.3] — 2026-06-03
+
+Patch release: clearer Enable Banking setup, an honest admin configuration view,
+and integration toggles that reflect what's actually configured.
+
+### Changed
+
+- **Enable Banking now asks for a single "Application ID" instead of two near-identical
+  fields.** Per Enable Banking's spec the JWT `kid` *is* the application's ID and the key
+  file is named `<applicationId>.pem`, so the "Key ID" was never a distinct value — users
+  retyped the same UUID twice, an easy way to mis-key one. Both the setup wizard and
+  Admin → Integrations now collect only the Application ID and derive the Key ID from it,
+  with a hint explaining they're the same value. Existing installs that set
+  `ENABLEBANKING_KEY_ID` (env) or have a `key-id` row keep working — `keyId()` honors an
+  explicitly-configured value and only falls back to the Application ID otherwise.
+
+### Fixed
+
+- **Admin → Integrations no longer shows Enable Banking as "not configured" when it works.**
+  The settings view read raw DB rows while the connector resolves credentials DB-then-env,
+  so an install configured via `.env` saw empty fields and a false warning banner. The
+  admin view now reads the same resolved provider the connector uses.
+- **Integration toggles reflect actual configuration, not just a stored boolean.** An
+  integration configured via `.env`/Docker (Enable Banking, Trade Republic, Finary) now
+  reports as enabled even with no DB intent-flag set — the toggle is `stored-flag OR
+  detected-config` rather than trusting the flag alone.
 
 ## [1.0.2] — 2026-06-02
 

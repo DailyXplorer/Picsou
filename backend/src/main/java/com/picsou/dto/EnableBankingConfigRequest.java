@@ -19,11 +19,6 @@ public record EnableBankingConfigRequest(
     String applicationId,
 
     @NotBlank
-    @Pattern(regexp = "^[0-9a-fA-F-]{32,36}$",
-             message = "Key ID must look like a UUID (32-36 hex characters)")
-    String keyId,
-
-    @NotBlank
     @Size(max = 500)
     @Pattern(regexp = "^https?://.+", message = "Redirect URI must start with http:// or https://")
     String redirectUri

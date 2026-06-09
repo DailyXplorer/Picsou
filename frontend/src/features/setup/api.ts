@@ -27,7 +27,6 @@ export interface SetupSecurityRequest {
 
 export interface EnableBankingConfigRequest {
   applicationId: string
-  keyId: string
   redirectUri: string
 }
 

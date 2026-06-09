@@ -19,11 +19,12 @@ interface Props {
 }
 
 /**
- * Credentials step (Application ID + Key ID). The redirect URI is shown to
- * the user in the previous substep so they can register it in their EB
- * dashboard before generating credentials; we read it back from the draft
- * (or recompute from window.location as a fallback) and ship the full
- * config to the backend here.
+ * Credentials step (Application ID only). Per Enable Banking's spec the JWT
+ * `kid` is the application id itself, so we collect a single value and the
+ * backend derives the Key ID from it. The redirect URI is shown to the user in
+ * the previous substep so they can register it in their EB dashboard before
+ * generating credentials; we read it back from the draft (or recompute from
+ * window.location as a fallback) and ship the config to the backend here.
  */
 export function EBStep2Credentials({ onNext, onBack }: Props) {
   const { t } = useTranslation()
@@ -41,26 +42,23 @@ export function EBStep2Credentials({ onNext, onBack }: Props) {
     resolver: zodResolver(enableBankingConfigSchema),
     defaultValues: {
       applicationId: draft.applicationId ?? '',
-      keyId: draft.keyId ?? '',
       redirectUri: draft.redirectUri || defaultRedirect,
     },
     mode: 'onBlur',
   })
 
   /**
-   * Trim clipboard whitespace on paste — users copy UUIDs from dashboards
-   * that love adding a trailing newline. Trimming here (instead of in
-   * onChange) avoids eating legitimate typed characters.
+   * Trim clipboard whitespace on paste — users copy the UUID from the EB
+   * dashboard, which loves adding a trailing newline. Trimming here (instead
+   * of in onChange) avoids eating legitimate typed characters.
    */
-  const handlePaste =
-    (name: 'applicationId' | 'keyId') =>
-    (e: React.ClipboardEvent<HTMLInputElement>) => {
-      const pasted = e.clipboardData.getData('text').trim()
-      if (pasted) {
-        e.preventDefault()
-        setValue(name, pasted, { shouldValidate: true })
-      }
+  const handlePasteApplicationId = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text').trim()
+    if (pasted) {
+      e.preventDefault()
+      setValue('applicationId', pasted, { shouldValidate: true })
     }
+  }
 
   useEffect(() => {
     // Pre-populate draft with the autodiscovered redirect URI so the prior step
@@ -74,13 +72,11 @@ export function EBStep2Credentials({ onNext, onBack }: Props) {
     setServerError(null)
     updateEbDraft({
       applicationId: values.applicationId.trim(),
-      keyId: values.keyId.trim(),
       redirectUri: values.redirectUri,
     })
     try {
       await writeConfig.mutateAsync({
         applicationId: values.applicationId.trim(),
-        keyId: values.keyId.trim(),
         redirectUri: values.redirectUri,
       })
       onNext()
@@ -112,30 +108,16 @@ export function EBStep2Credentials({ onNext, onBack }: Props) {
             spellCheck={false}
             placeholder="00000000-0000-0000-0000-000000000000"
             aria-invalid={!!formState.errors.applicationId}
-            onPaste={handlePaste('applicationId')}
+            onPaste={handlePasteApplicationId}
             {...register('applicationId')}
           />
-          {formState.errors.applicationId && (
+          {formState.errors.applicationId ? (
             <p className="text-xs text-destructive">
               {t(formState.errors.applicationId.message ?? 'setup.enablebanking.appIdFormat')}
             </p>
-          )}
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="eb-key-id">{t('setup.enablebanking.creds.keyId')}</Label>
-          <Input
-            id="eb-key-id"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="00000000-0000-0000-0000-000000000000"
-            aria-invalid={!!formState.errors.keyId}
-            onPaste={handlePaste('keyId')}
-            {...register('keyId')}
-          />
-          {formState.errors.keyId && (
-            <p className="text-xs text-destructive">
-              {t(formState.errors.keyId.message ?? 'setup.enablebanking.keyIdFormat')}
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {t('setup.enablebanking.creds.applicationIdHint')}
             </p>
           )}
         </div>

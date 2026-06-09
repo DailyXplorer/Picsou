@@ -98,14 +98,17 @@ It deliberately has no empty-rules early-out: the brand KB alone categorizes a r
 
 ### Schema (Flyway, member-owned where applicable)
 
-- **`V36__budget_categorization_foundation.sql`** — shared foundation:
+> The redesign migrations start at **V38**: the budget foundation owns V33–V35, while V36
+> (`transaction.name`) and V37 (`access_keys` / embedded MCP) were merged in from the 1.0.x line.
+
+- **`V38__budget_categorization_foundation.sql`** — shared foundation:
   - `category` `+ parent_id BIGINT` (self-FK `ON DELETE SET NULL`), `+ slug VARCHAR(60)`; unique
     index `(member_id, slug) WHERE slug IS NOT NULL`, index `(parent_id)`; backfills
     slugs on the seeded default categories.
   - `transaction` `+ merchant_label VARCHAR(255)`.
   - `budget_settings` `+ kb_version INT` (per-member KB gate), `+ logo_fetch_enabled BOOLEAN NOT
     NULL DEFAULT false` (logos are opt-in, off by default).
-- **`V37__merchant_knowledge_base.sql`** — **global** (not member-scoped) brand KB:
+- **`V39__merchant_knowledge_base.sql`** — **global** (not member-scoped) brand KB:
   - `merchant_brand (id, slug UNIQUE, display_name, default_category_slug, color, monogram,
     logo_domain)`.
   - `merchant_alias (id, brand_id FK CASCADE, pattern, match_type VARCHAR)` — `match_type` is
@@ -162,7 +165,7 @@ single rule is what keeps every total honest.
   twice, `assertNoEnvelopeOverlap` forbids a parent **and** any of its children both holding an
   envelope.
 
-No migration was needed: `category.parent_id` + `slug` shipped in `V36` (M0) as foundation; M4 made
+No migration was needed: `category.parent_id` + `slug` shipped in `V38` (M0) as foundation; M4 made
 the tree user-facing across Settings, the Spending breakdown, the drill, and Envelopes.
 
 ### Recurring v2 — detection, auto-confirm & the activity feed
@@ -255,7 +258,7 @@ visually indistinguishable from "this brand has no logo".
 (identity/auto-confirm rewrite), `service/budget/RecurringSeriesService.java` (activity + undo +
 runtime mapping), `controller/RecurringController.java`; DTOs `RecurringSeriesResponse` (extended),
 **new** `RecurringActivityResponse`, `RecurringActivityType`, `RecurringRuntimeStatus`;
-`repository/RecurringSeriesRepository.java`; migration `V38__recurring_v2.sql`.
+`repository/RecurringSeriesRepository.java`; migration `V40__recurring_v2.sql`.
 
 **Envelopes / Allocation** (pre-1.1.0 logic under the new IA; parent-envelope subtree rollup +
 overlap guard added in M4): `model/Budget.java` + `BudgetService` + `BudgetController`;

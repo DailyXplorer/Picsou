@@ -191,15 +191,22 @@ public class SetupService {
     }
 
     /**
-     * Persists Enable Banking connection credentials (app-id, key-id,
-     * redirect URI). The private key is handled separately by
+     * Persists Enable Banking connection credentials (app-id, redirect URI).
+     * The private key is handled separately by
      * {@code EnableBankingKeyPairService} since it lives on the filesystem,
      * not in {@code app_setting}.
+     *
+     * <p>Per Enable Banking's spec the JWT {@code kid} <em>is</em> the
+     * application id, so we no longer collect a separate Key ID and instead
+     * store {@code key-id = applicationId} in lock-step. Keeping the row in sync
+     * matters because {@link EnableBankingConfigProvider#resolve} reads the DB
+     * first — a stale {@code key-id} row would otherwise win over a
+     * later-changed application id.
      */
     @Transactional
-    public void writeEnableBankingConfig(String applicationId, String keyId, String redirectUri) {
+    public void writeEnableBankingConfig(String applicationId, String redirectUri) {
         upsert(KEY_ENABLEBANKING_APP_ID, applicationId);
-        upsert(KEY_ENABLEBANKING_KEY_ID, keyId);
+        upsert(KEY_ENABLEBANKING_KEY_ID, applicationId);
         upsert(KEY_ENABLEBANKING_REDIRECT_URI, redirectUri);
         log.info("setup.integration.enablebanking.configured");
     }

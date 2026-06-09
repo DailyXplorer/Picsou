@@ -37,6 +37,33 @@ spring:
       max-file-size: 1MB
       max-request-size: 1MB
 
+  # Embedded MCP server (Model Context Protocol). Transport is HTTP+SSE — the only transport
+  # Spring AI 1.0.3 / MCP SDK 0.10.0 ship (there is no Streamable HTTP on this version). Both
+  # the SSE stream (GET /mcp) and the message channel (POST /mcp/message) live under /mcp/** so
+  # AccessKeyAuthFilter gates them and a `psk_` key can never reach /api/** (security Property A).
+  ai:
+    mcp:
+      server:
+        enabled: ${MCP_ENABLED:true}
+        stdio: false
+        type: SYNC
+        name: picsou
+        version: 1.0.8
+        instructions: >-
+          Picsou personal-finance MCP server. Every tool operates only on the financial data of
+          the member who owns the access-key used to authenticate: it can never read or modify
+          another member's data, and it cannot perform authentication, credential, admin,
+          member-management, MFA, or data-export operations. Monetary values are in each account's
+          own currency unless the field name ends in "Eur".
+        sse-endpoint: /mcp
+        sse-message-endpoint: /mcp/message
+        request-timeout: 30s
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+
 server:
   port: 8080
   # Trust X-Forwarded-* from the local nginx so request scheme/host/port reflect the

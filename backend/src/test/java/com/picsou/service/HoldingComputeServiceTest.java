@@ -58,6 +58,20 @@ class HoldingComputeServiceTest {
                 .build();
     }
 
+    private Transaction buyTxWithName(String ticker, String qty, String price, String name, LocalDate date) {
+        return Transaction.builder()
+                .account(account(1L))
+                .date(date)
+                .description("BUY " + ticker)
+                .name(name)
+                .amount(BigDecimal.ZERO)
+                .txType(TransactionType.BUY)
+                .ticker(ticker)
+                .quantity(new BigDecimal(qty))
+                .pricePerUnit(price != null ? new BigDecimal(price) : null)
+                .build();
+    }
+
     @Test
     void buyOnly_setsQuantityAndAverageBuyIn() {
         Account account = account(1L);
@@ -298,5 +312,61 @@ class HoldingComputeServiceTest {
         assertThat(saved.get(0).getId()).isEqualTo(42L);
         assertThat(saved.get(0).getQuantity()).isEqualByComparingTo("3");
         assertThat(saved.get(0).getAverageBuyIn()).isEqualByComparingTo("400.00000000");
+    }
+
+    @Test
+    void positionName_usesNameFromNewestTransaction() {
+        Account account = account(1L);
+        // Two BUYs for the same security, returned in date-ASC order (oldest first).
+        // The older transaction carries a stale label; the newer one the canonical name.
+        Transaction older = buyTxWithName("IWDA.AS", "10", "80.00",
+                "iShares MSCI World (old label)", LocalDate.of(2024, 1, 1));
+        Transaction newer = buyTxWithName("IWDA.AS", "5", "90.00",
+                "iShares Core MSCI World UCITS ETF", LocalDate.of(2024, 3, 1));
+
+        when(transactionRepository.findByAccountIdAndTxTypeInOrderByDateAsc(eq(1L), anyList()))
+                .thenReturn(List.of(older, newer));
+        when(accountHoldingRepository.findByAccount_Id(1L))
+                .thenReturn(List.of());
+
+        holdingComputeService.recomputeHoldings(account);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<AccountHolding>> captor = ArgumentCaptor.forClass(List.class);
+        verify(accountHoldingRepository).saveAll(captor.capture());
+
+        AccountHolding h = captor.getValue().get(0);
+        assertThat(h.getName()).isEqualTo("iShares Core MSCI World UCITS ETF");
+    }
+
+    @Test
+    void positionName_preservesExistingNameWhenTransactionsHaveNone() {
+        Account account = account(1L);
+        // A manual BUY with no "Nom" — the transaction carries no name.
+        Transaction buy = buyTx("VWCE.DE", "4", "100.00");
+
+        // The position already has a name set by a previous bank sync (OpenFIGI).
+        AccountHolding existing = AccountHolding.builder()
+                .id(7L)
+                .account(account)
+                .ticker("VWCE.DE")
+                .name("Vanguard FTSE All-World UCITS ETF")
+                .quantity(new BigDecimal("1"))
+                .build();
+
+        when(transactionRepository.findByAccountIdAndTxTypeInOrderByDateAsc(eq(1L), anyList()))
+                .thenReturn(List.of(buy));
+        when(accountHoldingRepository.findByAccount_Id(1L))
+                .thenReturn(List.of(existing));
+
+        holdingComputeService.recomputeHoldings(account);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<AccountHolding>> captor = ArgumentCaptor.forClass(List.class);
+        verify(accountHoldingRepository).saveAll(captor.capture());
+
+        AccountHolding h = captor.getValue().get(0);
+        // The sync-sourced name must survive a nameless manual transaction.
+        assertThat(h.getName()).isEqualTo("Vanguard FTSE All-World UCITS ETF");
     }
 }

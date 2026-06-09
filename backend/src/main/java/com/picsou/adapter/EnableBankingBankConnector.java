@@ -53,27 +53,37 @@ public class EnableBankingBankConnector implements BankConnectorPort {
 
     private String applicationId() {
         return configProvider.applicationId()
-            .orElseThrow(() -> new SyncException(ebNotConfiguredMessage()));
+            .orElseThrow(() -> new SyncException(ebMissingMessage("Application ID")));
     }
 
     private String keyId() {
         return configProvider.keyId()
-            .orElseThrow(() -> new SyncException(ebNotConfiguredMessage()));
+            .orElseThrow(() -> new SyncException(ebMissingMessage("Key ID")));
     }
 
     private String redirectUri() {
         return configProvider.redirectUri()
-            .orElseThrow(() -> new SyncException(ebNotConfiguredMessage()));
+            .orElseThrow(() -> new SyncException(ebMissingMessage("redirect URL")));
     }
 
     private PrivateKey privateKey() {
         return configProvider.privateKey()
-            .orElseThrow(() -> new SyncException(ebNotConfiguredMessage()));
+            .orElseThrow(() -> new SyncException(
+                "Enable Banking private key is missing on the server. Open Settings → Integrations → " +
+                "Enable Banking and generate or import the key pair (the Application ID, Key ID and " +
+                "redirect URL are not enough — a private key is also required)."));
     }
 
-    private static String ebNotConfiguredMessage() {
-        return "Enable Banking is not configured. Open Settings → Integrations → Enable Banking in the app, " +
-               "or re-run the setup wizard. Free registration: https://enablebanking.com/";
+    /**
+     * Names the single missing credential rather than claiming Enable Banking is
+     * entirely unconfigured — the four pieces (Application ID, Key ID, redirect
+     * URL, private key) are stored/loaded independently, so a generic message
+     * misleads operators who have set everything but the one missing field.
+     */
+    private static String ebMissingMessage(String field) {
+        return "Enable Banking is not fully configured: " + field + " is missing. " +
+               "Open Settings → Integrations → Enable Banking in the app, or re-run the setup wizard. " +
+               "Free registration: https://enablebanking.com/";
     }
 
     // ─── BankConnectorPort ────────────────────────────────────────────────────

@@ -54,6 +54,21 @@ public class AuthCookieWriter {
         addCookie(response, PERSISTENT_COOKIE, "", 0);
     }
 
+    /**
+     * Clears the authenticated-session cookies (access + refresh + persistent)
+     * but leaves the {@code mfa_challenge} cookie untouched. Use this when a
+     * request has proven a password yet is NOT (or not yet) an authenticated
+     * session — e.g. the MFA-required branch of {@code /auth/login}: any session
+     * cookies still on a shared/reused browser may belong to a DIFFERENT identity
+     * (a left-over "Remember Me" admin), which must not bleed through while the
+     * second factor is pending or abandoned.
+     */
+    public void clearSessionCookies(HttpServletResponse response) {
+        addCookie(response, ACCESS_COOKIE, "", 0);
+        addCookie(response, REFRESH_COOKIE, "", 0);
+        addCookie(response, PERSISTENT_COOKIE, "", 0);
+    }
+
     public void clearAuthCookies(HttpServletResponse response) {
         addCookie(response, ACCESS_COOKIE, "", 0);
         addCookie(response, REFRESH_COOKIE, "", 0);

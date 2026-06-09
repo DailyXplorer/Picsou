@@ -15,10 +15,14 @@ if (import.meta.env.VITE_DEMO_MODE === 'true') {
   api.defaults.adapter = createDemoAdapter()
 }
 
-// Add memberId to requests when viewing a managed profile
+// Add memberId to requests when an admin is viewing a managed profile.
+// Only admins may impersonate (the backend ignores the override for non-admins and
+// rejects it for activated members), so gating on role here keeps a stale persisted
+// activeMemberId from ever affecting a regular member's requests.
 api.interceptors.request.use((config) => {
   const { activeMemberId } = useProfileStore.getState()
-  if (activeMemberId) {
+  const isAdmin = useAuthStore.getState().user?.role === 'ADMIN'
+  if (isAdmin && activeMemberId) {
     config.params = { ...config.params, memberId: activeMemberId }
   }
   return config
