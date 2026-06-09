@@ -14,9 +14,15 @@ interface TransactionsListProps {
   transactions: Transaction[]
   onDelete?: (txId: number) => void
   onEdit?: (tx: Transaction) => void
+  /**
+   * Optional opt-in logo URL builder (see `useMerchantLogoUrl`). Passed by budget callers
+   * that have enabled logos; omitted everywhere else so this shared list stays monogram-only
+   * and never triggers a budget-settings fetch outside the budget module.
+   */
+  logoUrlFor?: (brandId: number | null | undefined) => string | null
 }
 
-export function TransactionsList({ transactions, onDelete, onEdit }: TransactionsListProps) {
+export function TransactionsList({ transactions, onDelete, onEdit, logoUrlFor }: TransactionsListProps) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
 
@@ -71,7 +77,11 @@ export function TransactionsList({ transactions, onDelete, onEdit }: Transaction
                   )}
                 >
                   <div className="min-w-0 flex-1 flex items-center gap-3">
-                    <MerchantAvatar label={tr.merchantLabel || tr.description} size="sm" />
+                    <MerchantAvatar
+                      label={tr.merchantLabel || tr.description}
+                      logoUrl={logoUrlFor?.(tr.merchantBrandId)}
+                      size="sm"
+                    />
                     <div className="min-w-0 flex items-center gap-2">
                       <p className="truncate text-sm font-medium">{tr.merchantLabel || tr.description}</p>
                       {tr.isManual && (

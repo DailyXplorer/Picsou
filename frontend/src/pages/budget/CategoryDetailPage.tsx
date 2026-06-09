@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { TransactionsList } from '@/components/shared/TransactionsList'
-import { useCategoryDetail } from '@/features/budget/hooks'
+import { useCategoryDetail, useMerchantLogoUrl } from '@/features/budget/hooks'
 import type { CashflowPeriod, ChildSpend } from '@/types/api'
 import { FALLBACK_COLOR } from './budget-meta'
 import { PeriodToggle } from './budget-utils'
@@ -50,6 +50,7 @@ export function CategoryDetailPage() {
   const [period, setPeriod] = useState<CashflowPeriod>('CYCLE')
   const id = Number(categoryId)
   const { data, isLoading, isError, refetch } = useCategoryDetail(id, period)
+  const logoUrlFor = useMerchantLogoUrl()
 
   const backLink = (
     <Link
@@ -132,7 +133,7 @@ export function CategoryDetailPage() {
               {t('budget.detail.empty')}
             </p>
           ) : (
-            <TransactionsList transactions={data.transactions} />
+            <TransactionsList transactions={data.transactions} logoUrlFor={logoUrlFor} />
           )}
         </>
       )}

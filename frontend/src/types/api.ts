@@ -467,12 +467,14 @@ export interface BudgetRequest {
 
 export interface BudgetSettings {
   cycleStartDay: number
+  logoFetchEnabled: boolean
   currentCycleStart: string
   currentCycleEnd: string
 }
 
 export interface BudgetSettingsRequest {
   cycleStartDay: number
+  logoFetchEnabled: boolean
 }
 
 export interface CashflowBucket {

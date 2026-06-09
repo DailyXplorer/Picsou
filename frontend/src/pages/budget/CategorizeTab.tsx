@@ -7,11 +7,13 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { ErrorState } from '@/components/shared/ErrorState'
 import { MerchantAvatar } from '@/components/shared/MerchantAvatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   useCategories,
   useCategorize,
+  useMerchantLogoUrl,
   useRecategorize,
   useUncategorized,
 } from '@/features/budget/hooks'
@@ -24,6 +26,7 @@ function InboxRow({ tx, categories }: {
 }) {
   const { t } = useTranslation()
   const categorize = useCategorize()
+  const logoUrlFor = useMerchantLogoUrl()
   const [categoryId, setCategoryId] = useState<number | ''>('')
   const [createRule, setCreateRule] = useState(true)
 
@@ -37,7 +40,10 @@ function InboxRow({ tx, categories }: {
       <CardContent className="py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <MerchantAvatar label={tx.merchantLabel || tx.counterparty || tx.description} />
+            <MerchantAvatar
+              label={tx.merchantLabel || tx.counterparty || tx.description}
+              logoUrl={logoUrlFor(tx.merchantBrandId)}
+            />
             <div className="min-w-0">
               <p className="truncate font-medium">
                 {tx.merchantLabel || tx.counterparty || tx.description}
@@ -79,7 +85,7 @@ function InboxRow({ tx, categories }: {
 
 export function CategorizeTab() {
   const { t } = useTranslation()
-  const { data: txs, isLoading } = useUncategorized()
+  const { data: txs, isLoading, isError, refetch } = useUncategorized()
   const { data: categories } = useCategories()
   const recategorize = useRecategorize()
 
@@ -100,13 +106,17 @@ export function CategorizeTab() {
         </div>
       )}
 
-      {!isLoading && (txs?.length ?? 0) === 0 && (
+      {!isLoading && isError && (
+        <ErrorState message={t('budget.categorize.error')} onRetry={() => void refetch()} />
+      )}
+
+      {!isLoading && !isError && (txs?.length ?? 0) === 0 && (
         <EmptyState icon={<Inbox className="size-10" />}
           title={t('budget.categorize.empty')}
           description={t('budget.categorize.emptyHint')} />
       )}
 
-      {!isLoading && (txs?.length ?? 0) > 0 && (
+      {!isLoading && !isError && (txs?.length ?? 0) > 0 && (
         <div className="space-y-3">
           {txs!.map((tx) => (
             <InboxRow key={tx.id} tx={tx} categories={categories ?? []} />

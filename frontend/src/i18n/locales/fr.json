@@ -8,6 +8,7 @@
     "create": "Créer",
     "confirm": "Confirmer",
     "confirmTypePrompt": "Tapez {{phrase}} pour confirmer.",
+    "errorTitle": "Erreur",
     "error": "Une erreur est survenue. Veuillez réessayer.",
     "errors": {
       "unauthorized": "Votre session a expiré. Veuillez vous reconnecter.",
@@ -19,6 +20,7 @@
     "search": "Rechercher",
     "noResults": "Aucun résultat",
     "retry": "Réessayer",
+    "skipToContent": "Aller au contenu principal",
     "back": "Retour",
     "next": "Suivant",
     "close": "Fermer",
@@ -329,6 +331,14 @@
       "categorize": "À catégoriser",
       "manage": "Gérer"
     },
+    "a11y": {
+      "edit": "Modifier {{name}}",
+      "delete": "Supprimer {{name}}",
+      "archive": "Archiver {{name}}",
+      "unarchive": "Restaurer {{name}}",
+      "confirm": "Confirmer {{name}}",
+      "ignore": "Ignorer {{name}}"
+    },
     "kind": {
       "income": "Revenu",
       "expense": "Dépense",
@@ -365,7 +375,8 @@
       "contributedThisCycle": "{{amount}} € versés ce cycle",
       "toCategorize": "{{count}} transaction à catégoriser",
       "toCategorize_other": "{{count}} transactions à catégoriser",
-      "topEnvelopes": "Enveloppes les plus sollicitées"
+      "topEnvelopes": "Enveloppes les plus sollicitées",
+      "error": "Impossible de charger l'aperçu."
     },
     "cashflow": {
       "subtitle": "Entrées, sorties et solde net (virements exclus).",
@@ -385,6 +396,10 @@
       "empty": "Aucun flux à afficher sur cette période.",
       "error": "Impossible de charger le diagramme de flux.",
       "ariaSummary": "Diagramme de flux : {{income}} d'entrées, {{expense}} de sorties, solde net {{net}}.",
+      "dataTableCaption": "Détail des flux : {{income}} d'entrées, {{expense}} de sorties, solde net {{net}}.",
+      "colDirection": "Sens",
+      "colName": "Poste",
+      "colAmount": "Montant",
       "transactionsCount": "{{count}} transaction",
       "transactionsCount_other": "{{count}} transactions",
       "node": {
@@ -438,6 +453,7 @@
       "noSeries": "Aucune série récurrente détectée.",
       "noUpcoming": "Aucune échéance à venir",
       "noUpcomingHint": "Les prochains prélèvements apparaîtront ici une fois détectés.",
+      "error": "Impossible de charger les récurrents.",
       "label": "Libellé",
       "counterparty": "Bénéficiaire",
       "amount": "Montant",
@@ -475,7 +491,8 @@
       "learnRule": "Mémoriser une règle",
       "assign": "Affecter",
       "empty": "Tout est catégorisé",
-      "emptyHint": "Les nouvelles transactions à classer apparaîtront ici."
+      "emptyHint": "Les nouvelles transactions à classer apparaîtront ici.",
+      "error": "Impossible de charger les transactions à catégoriser."
     },
     "category": {
       "title": "Catégories",
@@ -492,13 +509,15 @@
       "parentNone": "Aucune (catégorie de premier niveau)",
       "parentHint": "Rattachez cette catégorie à une parente pour la regrouper comme sous-catégorie.",
       "parentLocked": "Cette catégorie a déjà des sous-catégories : elle ne peut pas en devenir une.",
-      "formHint": "Le genre détermine si la catégorie compte comme revenu, dépense ou virement."
+      "formHint": "Le genre détermine si la catégorie compte comme revenu, dépense ou virement.",
+      "error": "Impossible de charger les catégories."
     },
     "rule": {
       "title": "Règles de catégorisation",
       "hint": "Catégorisez automatiquement les transactions correspondantes.",
       "add": "Nouvelle règle",
       "empty": "Aucune règle définie.",
+      "error": "Impossible de charger les règles.",
       "learned": "Auto",
       "matchType": "Critère",
       "pattern": "Motif",
@@ -513,7 +532,11 @@
       "cycleTitle": "Jour de paie",
       "cycleHint": "Votre cycle budgétaire démarre ce jour-là chaque mois, pas le 1ᵉʳ.",
       "cycleStartDay": "Jour de début de cycle",
-      "currentCycle": "Cycle en cours : du {{start}} au {{end}}"
+      "currentCycle": "Cycle en cours : du {{start}} au {{end}}",
+      "logoTitle": "Logos des marques",
+      "logoHint": "Récupère les logos des marques en ligne pour les afficher à la place des monogrammes. Désactivé par défaut, purement cosmétique — n'influence jamais la catégorisation.",
+      "logoFetchLabel": "Afficher les logos en ligne",
+      "error": "Impossible de charger les réglages."
     }
   },
   "addAccount": {

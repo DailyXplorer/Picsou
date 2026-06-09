@@ -5,8 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { ColorPicker } from '@/components/shared/ColorPicker'
+import { ErrorState } from '@/components/shared/ErrorState'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -42,7 +44,7 @@ const SELECT_CLS =
 
 function CycleSettingsCard() {
   const { t } = useTranslation()
-  const { data, isLoading } = useBudgetSettings()
+  const { data, isLoading, isError, refetch } = useBudgetSettings()
   const update = useUpdateBudgetSettings()
   const [day, setDay] = useState<number | ''>('')
 
@@ -61,6 +63,9 @@ function CycleSettingsCard() {
       </CardHeader>
       <CardContent>
         {isLoading && <Skeleton className="h-9 w-full rounded-md" />}
+        {!isLoading && isError && !data && (
+          <ErrorState message={t('budget.settings.error')} onRetry={() => void refetch()} />
+        )}
         {data && (
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-2">
@@ -70,7 +75,10 @@ function CycleSettingsCard() {
                 onChange={(e) => setDay(e.target.value === '' ? '' : Number(e.target.value))} />
             </div>
             <Button disabled={update.isPending || day === '' || day < 1 || day > 28}
-              onClick={() => day !== '' && update.mutate({ cycleStartDay: Number(day) })}>
+              onClick={() => day !== '' && update.mutate({
+                cycleStartDay: Number(day),
+                logoFetchEnabled: data.logoFetchEnabled,
+              })}>
               {update.isPending ? t('common.loading') : t('common.save')}
             </Button>
             <p className="w-full text-xs text-muted-foreground">
@@ -79,6 +87,44 @@ function CycleSettingsCard() {
                 end: formatDate(data.currentCycleEnd, getLocale()),
               })}
             </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── Brand logos (opt-in) ────────────────────────────────────────────────────
+
+function LogoSettingsCard() {
+  const { t } = useTranslation()
+  const { data, isLoading, isError, refetch } = useBudgetSettings()
+  const update = useUpdateBudgetSettings()
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('budget.settings.logoTitle')}</CardTitle>
+        <CardDescription>{t('budget.settings.logoHint')}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading && <Skeleton className="h-9 w-full rounded-md" />}
+        {!isLoading && isError && !data && (
+          <ErrorState message={t('budget.settings.error')} onRetry={() => void refetch()} />
+        )}
+        {data && (
+          <div className="flex items-center justify-between gap-4">
+            <Label htmlFor="logo-fetch" className="font-normal text-muted-foreground">
+              {t('budget.settings.logoFetchLabel')}
+            </Label>
+            <Switch
+              id="logo-fetch"
+              checked={data.logoFetchEnabled}
+              disabled={update.isPending}
+              onCheckedChange={(checked) =>
+                update.mutate({ cycleStartDay: data.cycleStartDay, logoFetchEnabled: checked })
+              }
+            />
           </div>
         )}
       </CardContent>
@@ -182,7 +228,7 @@ function CategoryForm({ open, onOpenChange, editing }: {
 
 function CategoriesCard() {
   const { t } = useTranslation()
-  const { data: categories, isLoading } = useCategories()
+  const { data: categories, isLoading, isError, refetch } = useCategories()
   const archive = useArchiveCategory()
   const unarchive = useUnarchiveCategory()
 
@@ -223,16 +269,19 @@ function CategoriesCard() {
           </Badge>
         )}
         <div className="ml-auto flex items-center gap-1">
-          <Button size="icon" variant="ghost" aria-label="edit" onClick={() => open(c)}>
+          <Button size="icon" variant="ghost" onClick={() => open(c)}
+            aria-label={t('budget.a11y.edit', { name: c.name })}>
             <Pencil className="size-4" />
           </Button>
           {c.archived ? (
-            <Button size="icon" variant="ghost" aria-label="unarchive"
+            <Button size="icon" variant="ghost"
+              aria-label={t('budget.a11y.unarchive', { name: c.name })}
               disabled={unarchive.isPending} onClick={() => unarchive.mutate(c.id)}>
               <ArchiveRestore className="size-4" />
             </Button>
           ) : (
-            <Button size="icon" variant="ghost" aria-label="archive"
+            <Button size="icon" variant="ghost"
+              aria-label={t('budget.a11y.archive', { name: c.name })}
               disabled={archive.isPending} onClick={() => archive.mutate(c.id)}>
               <Archive className="size-4" />
             </Button>
@@ -255,6 +304,9 @@ function CategoriesCard() {
       </CardHeader>
       <CardContent>
         {isLoading && <Skeleton className="h-24 w-full rounded-xl" />}
+        {!isLoading && isError && !categories && (
+          <ErrorState message={t('budget.category.error')} onRetry={() => void refetch()} />
+        )}
         {categories && (
           <div className="divide-y divide-border">
             {roots.map((r) => (
@@ -343,7 +395,7 @@ function RuleForm({ open, onOpenChange }: {
 
 function RulesCard() {
   const { t } = useTranslation()
-  const { data: rules, isLoading } = useRules()
+  const { data: rules, isLoading, isError, refetch } = useRules()
   const deleteRule = useDeleteRule()
   const [formOpen, setFormOpen] = useState(false)
 
@@ -360,7 +412,10 @@ function RulesCard() {
       </CardHeader>
       <CardContent>
         {isLoading && <Skeleton className="h-20 w-full rounded-xl" />}
-        {!isLoading && (rules?.length ?? 0) === 0 && (
+        {!isLoading && isError && !rules && (
+          <ErrorState message={t('budget.rule.error')} onRetry={() => void refetch()} />
+        )}
+        {!isLoading && !isError && (rules?.length ?? 0) === 0 && (
           <p className="py-4 text-center text-sm text-muted-foreground">{t('budget.rule.empty')}</p>
         )}
         {rules && rules.length > 0 && (
@@ -376,7 +431,8 @@ function RulesCard() {
                     {t('budget.rule.learned')}
                   </Badge>
                 )}
-                <Button size="icon" variant="ghost" className="ml-auto" aria-label="delete"
+                <Button size="icon" variant="ghost" className="ml-auto"
+                  aria-label={t('budget.a11y.delete', { name: r.pattern })}
                   disabled={deleteRule.isPending} onClick={() => deleteRule.mutate(r.id)}>
                   <Trash2 className="size-4" />
                 </Button>
@@ -394,6 +450,7 @@ export function ManageTab() {
   return (
     <div className="space-y-4">
       <CycleSettingsCard />
+      <LogoSettingsCard />
       <CategoriesCard />
       <RulesCard />
     </div>

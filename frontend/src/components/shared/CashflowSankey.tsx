@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Layer, Rectangle, ResponsiveContainer, Sankey, Tooltip } from 'recharts'
 import type { CashflowFlowResponse, FlowNode } from '@/types/api'
 import { formatCurrency } from '@/lib/utils'
-import { FLOW_FALLBACK_COLOR, flowNodeColor, flowNodeLabel } from './flow-utils'
+import { FLOW_FALLBACK_COLOR, flowNodeColor, flowNodeLabel, flowSides } from './flow-utils'
 
 /**
  * Income → budget → expense Sankey for desktop (≥md; the mobile fallback is `FlowBars`).
@@ -152,6 +152,49 @@ function FlowTooltip(props: {
   )
 }
 
+/**
+ * Visually-hidden equivalent of the diagram for assistive tech. The SVG itself is opaque to
+ * screen readers, so we mark it `aria-hidden` and expose the exact same `flowSides` split as a
+ * real data table — every inflow/outflow with its amount, not just the aggregate summary.
+ */
+function FlowDataTable({ flow, t }: { flow: CashflowFlowResponse; t: TFunction }) {
+  const { sources, sinks } = flowSides(flow)
+  const caption = t('budget.flow.dataTableCaption', {
+    income: formatCurrency(flow.income),
+    expense: formatCurrency(flow.expense),
+    net: formatCurrency(flow.net),
+  })
+
+  return (
+    <table className="sr-only">
+      <caption>{caption}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{t('budget.flow.colDirection')}</th>
+          <th scope="col">{t('budget.flow.colName')}</th>
+          <th scope="col">{t('budget.flow.colAmount')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sources.map((bar, i) => (
+          <tr key={`in-${bar.node.key}-${i}`}>
+            <td>{t('budget.flow.inflows')}</td>
+            <td>{flowNodeLabel(bar.node, t)}</td>
+            <td>{formatCurrency(bar.value)}</td>
+          </tr>
+        ))}
+        {sinks.map((bar, i) => (
+          <tr key={`out-${bar.node.key}-${i}`}>
+            <td>{t('budget.flow.outflows')}</td>
+            <td>{flowNodeLabel(bar.node, t)}</td>
+            <td>{formatCurrency(bar.value)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 export function CashflowSankey({ flow }: { flow: CashflowFlowResponse }) {
   const { t } = useTranslation()
 
@@ -161,26 +204,23 @@ export function CashflowSankey({ flow }: { flow: CashflowFlowResponse }) {
     links: flow.links.map((l) => ({ ...l })),
   }
 
-  const summary = t('budget.flow.ariaSummary', {
-    income: formatCurrency(flow.income),
-    expense: formatCurrency(flow.expense),
-    net: formatCurrency(flow.net),
-  })
-
   return (
-    <div className="h-[360px] w-full" role="img" aria-label={summary}>
-      <ResponsiveContainer width="100%" height="100%">
-        <Sankey
-          data={data}
-          nodeWidth={12}
-          nodePadding={26}
-          margin={{ top: 16, right: 112, bottom: 16, left: 112 }}
-          node={<FlowSankeyNode t={t} />}
-          link={<FlowSankeyLink nodes={data.nodes} />}
-        >
-          <Tooltip content={<FlowTooltip t={t} nodes={data.nodes} />} />
-        </Sankey>
-      </ResponsiveContainer>
-    </div>
+    <figure className="m-0">
+      <div className="h-[360px] w-full" aria-hidden="true">
+        <ResponsiveContainer width="100%" height="100%">
+          <Sankey
+            data={data}
+            nodeWidth={12}
+            nodePadding={26}
+            margin={{ top: 16, right: 112, bottom: 16, left: 112 }}
+            node={<FlowSankeyNode t={t} />}
+            link={<FlowSankeyLink nodes={data.nodes} />}
+          >
+            <Tooltip content={<FlowTooltip t={t} nodes={data.nodes} />} />
+          </Sankey>
+        </ResponsiveContainer>
+      </div>
+      <FlowDataTable flow={flow} t={t} />
+    </figure>
   )
 }

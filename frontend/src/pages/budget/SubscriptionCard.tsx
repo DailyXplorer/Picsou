@@ -80,18 +80,21 @@ export function SubscriptionCard({ series }: { series: RecurringSeries }) {
 
       <div className="flex shrink-0 items-center gap-1">
         {series.status !== 'CONFIRMED' && (
-          <Button size="icon" variant="ghost" disabled={busy} aria-label="confirm"
+          <Button size="icon" variant="ghost" disabled={busy}
+            aria-label={t('budget.a11y.confirm', { name: series.label })}
             onClick={() => confirm.mutate(series.id)}>
             <Check className="size-4 text-emerald-600 dark:text-emerald-400" />
           </Button>
         )}
         {series.status !== 'IGNORED' && (
-          <Button size="icon" variant="ghost" disabled={busy} aria-label="ignore"
+          <Button size="icon" variant="ghost" disabled={busy}
+            aria-label={t('budget.a11y.ignore', { name: series.label })}
             onClick={() => ignore.mutate(series.id)}>
             <X className="size-4 text-muted-foreground" />
           </Button>
         )}
-        <Button size="icon" variant="ghost" disabled={busy} aria-label="delete"
+        <Button size="icon" variant="ghost" disabled={busy}
+          aria-label={t('budget.a11y.delete', { name: series.label })}
           onClick={() => remove.mutate(series.id)}>
           <Trash2 className="size-4" />
         </Button>

@@ -133,15 +133,20 @@ function EnvelopeRow({ budget, onEdit, onDelete }: {
             </Badge>
           )}
           <div className="ml-auto flex items-center gap-1">
-            <Button size="icon" variant="ghost" onClick={onEdit} aria-label="edit">
+            <Button size="icon" variant="ghost" onClick={onEdit}
+              aria-label={t('budget.a11y.edit', { name: budget.categoryName })}>
               <Pencil className="size-4" />
             </Button>
-            <Button size="icon" variant="ghost" onClick={onDelete} aria-label="delete">
+            <Button size="icon" variant="ghost" onClick={onDelete}
+              aria-label={t('budget.a11y.delete', { name: budget.categoryName })}>
               <Trash2 className="size-4" />
             </Button>
           </div>
         </div>
-        <div className="mt-3 h-2 w-full overflow-hidden rounded-md bg-muted">
+        <div className="mt-3 h-2 w-full overflow-hidden rounded-md bg-muted"
+          role="progressbar" aria-label={budget.categoryName}
+          aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
+          aria-valuetext={`${budget.percent}%`}>
           <div className={`h-full rounded-md transition-all ${barTone}`}
             style={{ width: `${pct}%` }} />
         </div>

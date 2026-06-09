@@ -135,6 +135,7 @@ export const mockBudgets: Budget[] = [
 
 export const mockBudgetSettings: BudgetSettings = {
   cycleStartDay: 1,
+  logoFetchEnabled: false,
   currentCycleStart: iso(CYCLE_START),
   currentCycleEnd: iso(CYCLE_END),
 }

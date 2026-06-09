@@ -88,6 +88,18 @@ public class RateLimitConfig {
         return new ConcurrentHashMap<>();
     }
 
+    /**
+     * Per-IP merchant-logo proxy rate limiter: 60 requests per minute.
+     * Generous because a single page can render many avatars, but bounded so the
+     * opt-in proxy can't be turned into an open relay against the upstream icon
+     * service. Cache hits still count — the bucket protects the network egress, not
+     * just the cache.
+     */
+    @Bean("logoBuckets")
+    public Map<String, Bucket> logoBuckets() {
+        return new ConcurrentHashMap<>();
+    }
+
     public static Bucket createLoginBucket() {
         return Bucket.builder()
             .addLimit(Bandwidth.builder()
@@ -156,6 +168,15 @@ public class RateLimitConfig {
             .addLimit(Bandwidth.builder()
                 .capacity(5)
                 .refillIntervally(5, Duration.ofMinutes(60))
+                .build())
+            .build();
+    }
+
+    public static Bucket createLogoBucket() {
+        return Bucket.builder()
+            .addLimit(Bandwidth.builder()
+                .capacity(60)
+                .refillIntervally(60, Duration.ofMinutes(1))
                 .build())
             .build();
     }

@@ -8,6 +8,7 @@
     "create": "Create",
     "confirm": "Confirm",
     "confirmTypePrompt": "Type {{phrase}} to confirm.",
+    "errorTitle": "Error",
     "error": "Something went wrong. Please try again.",
     "errors": {
       "unauthorized": "Your session has expired. Please sign in again.",
@@ -19,6 +20,7 @@
     "search": "Search",
     "noResults": "No results",
     "retry": "Retry",
+    "skipToContent": "Skip to main content",
     "back": "Back",
     "next": "Next",
     "close": "Close",
@@ -329,6 +331,14 @@
       "categorize": "To categorize",
       "manage": "Manage"
     },
+    "a11y": {
+      "edit": "Edit {{name}}",
+      "delete": "Delete {{name}}",
+      "archive": "Archive {{name}}",
+      "unarchive": "Restore {{name}}",
+      "confirm": "Confirm {{name}}",
+      "ignore": "Ignore {{name}}"
+    },
     "kind": {
       "income": "Income",
       "expense": "Expense",
@@ -365,7 +375,8 @@
       "contributedThisCycle": "{{amount}} € contributed this cycle",
       "toCategorize": "{{count}} transaction to categorize",
       "toCategorize_other": "{{count}} transactions to categorize",
-      "topEnvelopes": "Most-used envelopes"
+      "topEnvelopes": "Most-used envelopes",
+      "error": "Couldn't load the overview."
     },
     "cashflow": {
       "subtitle": "Money in, money out and net balance (transfers excluded).",
@@ -385,6 +396,10 @@
       "empty": "No flow to show for this period.",
       "error": "Could not load the flow diagram.",
       "ariaSummary": "Flow diagram: {{income}} in, {{expense}} out, net {{net}}.",
+      "dataTableCaption": "Cashflow breakdown: {{income}} in, {{expense}} out, net {{net}}.",
+      "colDirection": "Direction",
+      "colName": "Item",
+      "colAmount": "Amount",
       "transactionsCount": "{{count}} transaction",
       "transactionsCount_other": "{{count}} transactions",
       "node": {
@@ -438,6 +453,7 @@
       "noSeries": "No recurring series detected yet.",
       "noUpcoming": "No upcoming payments",
       "noUpcomingHint": "Upcoming charges will appear here once detected.",
+      "error": "Couldn't load recurring items.",
       "label": "Label",
       "counterparty": "Counterparty",
       "amount": "Amount",
@@ -475,7 +491,8 @@
       "learnRule": "Remember a rule",
       "assign": "Assign",
       "empty": "Everything is categorized",
-      "emptyHint": "New transactions to classify will appear here."
+      "emptyHint": "New transactions to classify will appear here.",
+      "error": "Couldn't load transactions to categorize."
     },
     "category": {
       "title": "Categories",
@@ -492,13 +509,15 @@
       "parentNone": "None (top-level category)",
       "parentHint": "Attach this category to a parent to group it as a sub-category.",
       "parentLocked": "This category already has sub-categories, so it can't become one itself.",
-      "formHint": "The kind sets whether the category counts as income, expense or transfer."
+      "formHint": "The kind sets whether the category counts as income, expense or transfer.",
+      "error": "Couldn't load categories."
     },
     "rule": {
       "title": "Categorization rules",
       "hint": "Automatically categorize matching transactions.",
       "add": "New rule",
       "empty": "No rules defined.",
+      "error": "Couldn't load rules.",
       "learned": "Auto",
       "matchType": "Match on",
       "pattern": "Pattern",
@@ -513,7 +532,11 @@
       "cycleTitle": "Payday",
       "cycleHint": "Your budget cycle starts on this day each month, not the 1st.",
       "cycleStartDay": "Cycle start day",
-      "currentCycle": "Current cycle: {{start}} – {{end}}"
+      "currentCycle": "Current cycle: {{start}} – {{end}}",
+      "logoTitle": "Brand logos",
+      "logoHint": "Fetch brand logos online to show instead of monograms. Off by default and purely cosmetic — it never influences categorization.",
+      "logoFetchLabel": "Show online logos",
+      "error": "Couldn't load settings."
     }
   },
   "addAccount": {

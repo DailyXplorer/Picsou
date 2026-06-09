@@ -26,6 +26,11 @@
         <tomcat.version>10.1.53</tomcat.version>
         <netty.version>4.1.132.Final</netty.version>
         <spring-security.version>6.4.10</spring-security.version>
+        <!-- docker-java (bundled with Testcontainers) defaults to Docker Engine API 1.32, which
+             Docker Engine 25+ rejects (it requires >= 1.40). Pin a safe floor read by docker-java's
+             `api.version` system property so the Testcontainers IT works under `mvn test` with a
+             modern daemon. Overridable, e.g. `mvn test -Ddocker.api.version=1.44`. -->
+        <docker.api.version>1.40</docker.api.version>
     </properties>
 
     <dependencies>
@@ -154,10 +159,41 @@
             <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Testcontainers: real Postgres for write-on-read / tx-propagation tests
+             (H2 masks Postgres' rejection of INSERTs in a read-only transaction).
+             Versions are managed by the Spring Boot parent BOM. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- Force docker-java's API version (see docker.api.version above). Harmless
+                         for the pure-Mockito tests; consumed only by the Testcontainers IT, which
+                         self-skips when no Docker daemon is present. -->
+                    <systemPropertyVariables>
+                        <api.version>${docker.api.version}</api.version>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

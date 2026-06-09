@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -17,6 +17,7 @@ import { BUDGET_NAV } from './budget-nav'
  */
 export function BudgetLayout() {
   const { t } = useTranslation()
+  const location = useLocation()
   const { data: uncategorized } = useUncategorized()
   const toReview = uncategorized?.length ?? 0
 
@@ -50,7 +51,9 @@ export function BudgetLayout() {
         </nav>
       </div>
 
-      <div className="mt-4">
+      {/* Keyed by path so each navigation replays a subtle entrance (no-op under
+          prefers-reduced-motion, which the global guard neutralizes). */}
+      <div key={location.pathname} className="mt-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
         <Outlet />
       </div>
     </div>

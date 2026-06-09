@@ -38,6 +38,15 @@ public class BudgetSettings {
     @Builder.Default
     private int cycleStartDay = 1;
 
+    /**
+     * Opt-in toggle (OFF by default) for fetching brand logos online. When false, the
+     * {@code GET /api/merchants/{id}/logo} proxy returns 404 and the UI shows offline
+     * monograms only. Purely cosmetic — it never influences categorization (ADR 2026-06-02).
+     */
+    @Column(name = "logo_fetch_enabled", nullable = false)
+    @Builder.Default
+    private boolean logoFetchEnabled = false;
+
     @Column(name = "updated_at", nullable = false)
     @Builder.Default
     private Instant updatedAt = Instant.now();

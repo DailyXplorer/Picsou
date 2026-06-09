@@ -14,19 +14,30 @@ import { type FlowBar, flowNodeColor, flowNodeLabel, flowSides } from './flow-ut
 function FlowBarRow({ bar, sideTotal, t }: { bar: FlowBar; sideTotal: number; t: TFunction }) {
   const color = flowNodeColor(bar.node)
   const share = sideTotal > 0 ? bar.value / sideTotal : 0
+  const percent = Math.round(share * 100)
+  const label = flowNodeLabel(bar.node, t)
   return (
     <div>
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="flex min-w-0 items-center gap-2">
           <span
+            aria-hidden="true"
             className="inline-block size-2.5 shrink-0 rounded-full"
             style={{ backgroundColor: color }}
           />
-          <span className="truncate">{flowNodeLabel(bar.node, t)}</span>
+          <span className="truncate">{label}</span>
         </span>
         <CurrencyDisplay value={bar.value} className="shrink-0 font-medium tabular-nums" />
       </div>
-      <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
+      <div
+        className="mt-1 h-2 overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-valuetext={`${percent}%`}
+      >
         <div
           className="h-full rounded-full transition-all"
           style={{ width: `${Math.max(share * 100, 2)}%`, backgroundColor: color }}

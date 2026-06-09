@@ -203,6 +203,33 @@ silently**, with a safety net so silent ≠ unexplained.
   TanStack hooks `useRecurringActivity` / `useUndoRecurring` invalidate `['budget','activity']`
   (also swept by `useDetectRecurring`).
 
+### Opt-in brand logos (M5)
+
+Logos are a purely cosmetic, **off-by-default** layer over the offline `MerchantAvatar` monogram —
+they **never feed categorization** (ADR [2026-06-09](../decisions/2026-06-09-merchant-kb-and-budget-ia.md)).
+When a member flips `budget_settings.logo_fetch_enabled`, `MerchantAvatar` points its `<img>` at the
+proxy and still falls back to the monogram on any load error, so a disabled or broken proxy is
+visually indistinguishable from "this brand has no logo".
+
+- **Port/adapter seam.** `MerchantLogoPort.fetch(domain)` is the abstraction; `DuckDuckGoLogoProvider`
+  (`adapter/`) implements it against DuckDuckGo's keyless public icon service
+  (`https://icons.duckduckgo.com/ip3/{domain}.ico`) — the privacy-aligned choice for a self-hosted
+  app. Swap providers (Google s2, Brandfetch) by implementing the port; callers never change.
+- **No SSRF surface.** The `logoDomain` always comes from the **seeded, bundled `merchant_brand`
+  table** — never from user input — so the proxy can't be steered at an arbitrary host. The fetch is
+  defensive regardless: a 5 s timeout, a 1 MB body cap, and a catch-all mapping every failure to
+  `Optional.empty()`, so a flaky upstream can't break a page or pin a request thread.
+- **In-memory TTL cache** (`MerchantLogoService`, mirroring `PriceService`): keyed by **global brand
+  id**, hits cached 24 h, **misses cached 1 h** (so an unknown or temporarily-failing logo isn't
+  re-fetched on every render). `brandId → logoDomain` resolves through the in-memory
+  `MerchantKnowledgeBase` snapshot — zero DB I/O per request.
+- **Three gates in the controller** (`MerchantController`, `GET /api/merchants/{id}/logo`), in order:
+  a **per-IP rate limit** (→ 429, so the proxy can't be abused as an open relay), the **per-member
+  opt-in** (→ 404 when off, so the avatar falls back exactly as for a missing logo), then the
+  cache/fetch (→ 404 for an unknown or logo-less brand). Authentication is enforced upstream by
+  `SecurityConfig`; the response carries `Cache-Control: private, max-age=1d` so the browser caches
+  per user.
+
 ### Key files
 
 **Foundation (ingestion + categorization)**
@@ -237,6 +264,11 @@ overlap guard added in M4): `model/Budget.java` + `BudgetService` + `BudgetContr
 **Sub-categories** (M4): `model/Category.java` (`parentId` self-FK), `service/budget/CategoryService.java`
 (tree invariants, archive cascade), `CashflowFlowService` (leaf-based annotation + parent drill),
 `BudgetService` (rollup); frontend `pages/budget/{ManageTab,SpendingPage,CategoryDetailPage,EnvelopesTab}.tsx`.
+
+**Opt-in logos** (M5): `port/MerchantLogoPort.java`, `adapter/DuckDuckGoLogoProvider.java`,
+`service/budget/MerchantLogoService.java` (TTL cache), `controller/MerchantController.java`
+(rate-limit → opt-in → fetch gates); `config/RateLimitConfig.java` (`logoBuckets`);
+`model/BudgetSettings.java` + `BudgetSettingsService`/`-Request`/`-Response` (`logoFetchEnabled`).
 
 **Frontend:** `pages/budget/BudgetLayout.tsx` + `budget-nav.ts` + the nested pages above;
 `pages/budget/{SubscriptionCard,ActivityFeed}.tsx` + `budget-meta.ts` (runtime/activity lookups);
@@ -341,10 +373,14 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
 - `BudgetCycleTest`, `BudgetServiceTest` (incl. **parent-envelope subtree rollup** + the
   **overlap guard** rejecting a parent/child both budgeted), `CashflowServiceTest`,
   `AllocationServiceTest`, `SyncService` ingestion tests
+- `MerchantLogoServiceTest` — per-brand TTL cache, hits/misses cached separately, opt-in gate lives
+  in the controller (not the service), graceful empty on a failing provider
 - Frontend: `flow-utils.test.ts`, `MerchantAvatar.test.tsx`, `features/budget` hooks via
   `bunx vitest run`
-- **Postgres write-on-read test** (planned M5): seed/recategorize in a read-only transaction (H2
-  masks the rejection)
+- **`BudgetSeedWriteOnReadPostgresTest`** — the one Testcontainers integration test (real Postgres
+  16, self-skips without Docker): seeding/recategorizing from a read-only caller must escape via
+  `REQUIRES_NEW`, a write-on-read trap H2 masks but Postgres rejects with SQLSTATE `25006`. See
+  [`docs/conventions/testing.md`](../conventions/testing.md).
 
 ## Links
 

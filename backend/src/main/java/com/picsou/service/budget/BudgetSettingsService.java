@@ -40,6 +40,17 @@ public class BudgetSettingsService {
     }
 
     /**
+     * Whether this member has opted into online logo fetching. Defaults to {@code false}
+     * when no settings row exists yet — a pure read (no lazy insert), so it stays safe to
+     * call from the read-only logo proxy without forcing a writable transaction.
+     */
+    public boolean logoFetchEnabled(Long memberId) {
+        return settingsRepository.findByMemberId(memberId)
+            .map(BudgetSettings::isLogoFetchEnabled)
+            .orElse(false);
+    }
+
+    /**
      * Read-write on purpose: {@link #getOrCreate} lazily inserts the default settings row on
      * first read, and that internal call bypasses Spring's proxy — so the write inherits THIS
      * transaction and it must be writable, else Postgres rejects the INSERT ("cannot execute
@@ -55,6 +66,7 @@ public class BudgetSettingsService {
     public BudgetSettingsResponse update(BudgetSettingsRequest req, Long memberId) {
         BudgetSettings settings = getOrCreate(memberId);
         settings.setCycleStartDay(req.cycleStartDay());
+        settings.setLogoFetchEnabled(req.logoFetchEnabled());
         settings.setUpdatedAt(Instant.now());
         return toResponse(settingsRepository.save(settings), LocalDate.now());
     }

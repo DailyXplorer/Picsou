@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { cn } from '@/lib/utils'
 
 /**
@@ -7,8 +9,11 @@ import { cn } from '@/lib/utils'
  * hashed from the label so the *same* merchant always gets the *same* colour
  * across the app — no storage, no flicker.
  *
- * Online logos remain an opt-in cosmetic toggle handled elsewhere (M5); this
- * component is the always-available default.
+ * Online logos are an opt-in cosmetic toggle: when the member enables them, callers
+ * pass a {@link MerchantAvatarProps.logoUrl} (see `useMerchantLogoUrl`) and the tile
+ * renders that image over the monogram, falling back to the monogram if it fails to
+ * load. The monogram is therefore always the safe default — a disabled or broken
+ * proxy is visually indistinguishable from "this brand has no logo".
  */
 
 interface MerchantAvatarProps {
@@ -18,6 +23,11 @@ interface MerchantAvatarProps {
   color?: string | null
   /** Explicit monogram from the knowledge base; otherwise derived from the label. */
   monogram?: string | null
+  /**
+   * Opt-in logo URL (e.g. `/api/merchants/42/logo`). When set, the image renders over the
+   * monogram and falls back to it on load error. Leave undefined to stay monogram-only.
+   */
+  logoUrl?: string | null
   size?: 'sm' | 'md' | 'lg'
   className?: string
 }
@@ -85,24 +95,46 @@ export function MerchantAvatar({
   label,
   color,
   monogram,
+  logoUrl,
   size = 'md',
   className,
 }: MerchantAvatarProps) {
   const text = (monogram?.trim() || deriveMonogram(label)).slice(0, 2)
   const { background, foreground } = pickColors(label, color)
 
+  // The monogram is the base layer; the logo (if any) renders on top and is removed
+  // on load error, revealing the monogram. Reset the error flag *during render* when the URL
+  // changes (the "adjust state on prop change" pattern) so a recycled avatar slot re-attempts
+  // the new merchant's logo — no effect needed, and React skips committing the discarded render.
+  const [imgFailed, setImgFailed] = useState(false)
+  const [lastUrl, setLastUrl] = useState(logoUrl)
+  if (logoUrl !== lastUrl) {
+    setLastUrl(logoUrl)
+    setImgFailed(false)
+  }
+  const showImage = Boolean(logoUrl) && !imgFailed
+
   return (
     <span
       aria-hidden="true"
       title={label ?? undefined}
       className={cn(
-        'inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold leading-none',
+        'relative inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-semibold leading-none',
         SIZE_CLASS[size],
         className,
       )}
       style={{ backgroundColor: background, color: foreground }}
     >
       {text}
+      {showImage && (
+        <img
+          src={logoUrl!}
+          alt=""
+          loading="lazy"
+          onError={() => setImgFailed(true)}
+          className="absolute inset-0 size-full rounded-full object-cover"
+        />
+      )}
     </span>
   )
 }

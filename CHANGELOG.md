@@ -5,38 +5,73 @@ All notable changes to Picsou are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] — 2026-06-02
+## [1.1.0] — 2026-06-09
 
-Minor release: a complete **Budget & Cashflow** module, fed by Enable Banking
-transaction sync with a full manual fallback.
+Minor release: a complete **Budget & Cashflow** module — zero-config and "Apple-like". Fed by
+Enable Banking transaction sync with a full manual fallback (it works with no synced bank at all),
+it categorizes every transaction automatically by *brand* against an embedded, offline knowledge
+base — before the user tags a single thing — and presents spending through a clean nested-route
+information architecture.
 
 ### Added
 
-- **Budget & Cashflow section.** A single `Budget` nav item opens a recap dashboard with
-  drill-down into six views:
-  - **Envelopes** — one monthly cap per category, spent/remaining tracked against a
-    configurable **pay cycle** (`cycleStartDay`, 1–28, not the calendar month), no rollover.
-  - **Cashflow** — income / expense / net over the current cycle and YTD, with internal
-    transfers excluded.
-  - **Allocation** — savings/investment *stock* (balances by asset class) plus *contribution
-    flux* (incoming transfers per account).
-  - **Recurring** — auto-detected subscriptions/charges (≥3 regular occurrences) that the user
-    confirms or ignores, with a projected calendar.
-  - **Categorize** — an inbox of uncategorized transactions; categorizing one can learn a
-    reusable rule.
-  - **Manage** — categories (hybrid: seeded defaults + fully customizable), categorization
-    rules, and the pay-cycle setting.
-- **Transaction ingestion from Enable Banking.** Sync now pulls transactions (not just
-  balances), deduplicates them, and auto-categorizes via a rule engine. The module also works
-  with **no synced bank** — manual transactions accept a category.
-- New categories with kinds **INCOME / EXPENSE / TRANSFER**; transfers are excluded from
-  cashflow and envelopes and feed allocation instead.
+- **Zero-config brand categorization.** An embedded, **offline** merchant knowledge base (~110
+  common FR/EU brands) categorizes synced transactions automatically, from the very first sync,
+  with no setup and no ML or external service. It slots in as a pure fallback behind the existing
+  rule engine, so the precedence **manual choice > learned rule > brand KB > uncategorized** is
+  never inverted and no per-member rows are written. A KB version bump (`kb_version`) re-categorizes
+  in place without ever overriding a user's choice.
+- **Clean merchant names everywhere.** A pure `MerchantNormalizer` strips payment-processor wrappers
+  (`PAYPAL *…`, `SUMUP *…`), card/reference digits, and date noise into a canonical `merchant_label`,
+  stamped on every transaction whether or not it ends up categorized.
+- **Merchant avatars.** `MerchantAvatar` renders an initial-monogram with a deterministic, offline
+  colour in every transaction list — no network by default.
+- **Cashflow flow diagram.** Income sources → a central hub → spending categories, drawn as a
+  **Sankey diagram** on ≥ `md` viewports and as compact **Flow Bars** on phones, internal transfers
+  excluded. A per-category **drill** lists the transactions (and, for a parent, a per-child rollup).
+- **Sub-categories.** Categories now form a one-level **tree** (`parent_id` + a stable `slug`).
+  Aggregation stays leaf-only so a euro is never counted under both a parent and a child; a parent
+  envelope rolls up its whole subtree, guarded against parent/child double-budgeting.
+- **Recurring v2 with silent auto-confirm.** Detection keys on the canonical merchant identity (not
+  the drifting raw counterparty), scores a confidence, and **silently auto-confirms** high-confidence
+  series (≥ 3 regular occurrences, fixed amount, confidence ≥ 0.80). The safety net: a **price-change
+  alert**, an **activity feed** of "what changed", and **per-item undo** — silent is never
+  unexplained. `transaction.recurring_series_id` is now populated, linking each charge to its series.
+- **New information architecture (`/budget/*`).** The single tabbed page became a `BudgetLayout` with
+  nested routes — Overview, Spending (+ drill), Subscriptions, Envelopes, Settings — a segmented
+  sub-nav on desktop and a bottom bar on mobile. **Review is contextual**: a banner on the Overview
+  when there are items to correct, not a permanent tab.
+- **Opt-in brand logos.** Off by default. When enabled, a server-side proxy
+  (`GET /api/merchants/{id}/logo`) fetches logos from DuckDuckGo's keyless icon service behind a
+  port/adapter, with an in-memory TTL cache, a per-IP rate limit, and a per-member gate; the
+  monogram is always the fallback, and logos never feed categorization.
+
+### Changed
+
+- The budget section's single 7-tab page was replaced by the nested-route IA above, and recurring
+  detection was rewritten around canonical merchant identity (it previously drifted on the raw
+  bank counterparty and never auto-acted).
 
 ### Notes
 
-- See [`docs/features/budget.md`](docs/features/budget.md) and the ADR
-  [budget cycle & categorization](docs/decisions/2026-06-02-budget-cycle-and-categorization.md).
-- Custom reports and the Picsou MCP server are out of scope for this release.
+- See [`docs/features/budget.md`](docs/features/budget.md) and the ADRs
+  [merchant KB & budget IA](docs/decisions/2026-06-09-merchant-kb-and-budget-ia.md) (this redesign)
+  and [budget cycle & categorization](docs/decisions/2026-06-02-budget-cycle-and-categorization.md)
+  (the original foundation).
+- Categorization stays **100% offline** — no ML, no third-party categorization API (privacy).
+- Custom reports and the Picsou MCP server remain out of scope for this release.
+
+### Database migrations
+
+- **V33** — budget foundation (categories, rules, `budget_settings`)
+- **V34** — envelopes / budgets
+- **V35** — recurring series
+- **V36** — budget categorization foundation (`category.parent_id`/`slug`,
+  `transaction.merchant_label`, `budget_settings.kb_version`/`logo_fetch_enabled`)
+- **V37** — merchant knowledge base (`merchant_brand`, `merchant_alias`,
+  `transaction.merchant_brand_id`, ~110-brand seed)
+- **V38** — recurring v2 (`confidence`, amount range, `is_variable`, `previous_amount`,
+  `price_changed_at`; `(member_id, lower(label))` unique index)
 
 ## [1.0.2] — 2026-06-02
 

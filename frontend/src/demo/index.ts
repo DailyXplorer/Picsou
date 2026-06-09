@@ -417,7 +417,11 @@ for (const b of mockBudgets) {
 handlers.set(key('GET', '/budget/settings'), () => mockBudgetSettings)
 handlers.set(key('PUT', '/budget/settings'), (config) => {
   const body = JSON.parse(config.data || '{}')
-  return { ...mockBudgetSettings, cycleStartDay: body.cycleStartDay ?? mockBudgetSettings.cycleStartDay }
+  return {
+    ...mockBudgetSettings,
+    cycleStartDay: body.cycleStartDay ?? mockBudgetSettings.cycleStartDay,
+    logoFetchEnabled: body.logoFetchEnabled ?? mockBudgetSettings.logoFetchEnabled,
+  }
 })
 
 // Cashflow & allocation (period comes from the query string)

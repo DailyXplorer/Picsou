@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback } from 'react'
 import { budgetApi } from './api'
 import type {
   BudgetRequest,
@@ -182,6 +183,21 @@ export function useUpdateBudgetSettings() {
     // The cycle boundary changes every spent/income figure → refresh the whole module.
     onSuccess: () => qc.invalidateQueries({ queryKey: ROOT }),
   })
+}
+
+/**
+ * Returns a builder that maps a brand id to its opt-in logo proxy URL, or `null` when logos
+ * are disabled or the id is missing. Call this once at the top of a list component, then apply
+ * the returned function per row — that keeps it out of loops (no rules-of-hooks violation) and
+ * reads the (cached) settings only once. The URL is same-origin, so `<img>` sends the auth cookie.
+ */
+export function useMerchantLogoUrl(): (brandId: number | null | undefined) => string | null {
+  const { data: settings } = useBudgetSettings()
+  const enabled = settings?.logoFetchEnabled ?? false
+  return useCallback(
+    (brandId) => (enabled && brandId != null ? `/api/merchants/${brandId}/logo` : null),
+    [enabled],
+  )
 }
 
 // ─── Cashflow & allocation ───────────────────────────────────────────────────

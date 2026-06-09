@@ -9,6 +9,7 @@ import { NumericInput } from '@/components/shared/NumericInput'
 import { DateInput } from '@/components/shared/DateInput'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { ErrorState } from '@/components/shared/ErrorState'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -131,7 +132,7 @@ function RecurringForm({ open, onOpenChange }: {
 
 /** Group upcoming occurrences by `yyyy-MM` for a compact agenda. */
 function useGroupedCalendar(horizonDays: number) {
-  const { data, isLoading } = useRecurringCalendar(horizonDays)
+  const { data, isLoading, isError, refetch } = useRecurringCalendar(horizonDays)
   const groups = new Map<string, typeof data>()
   for (const occ of data ?? []) {
     const ym = occ.dueDate.slice(0, 7)
@@ -139,14 +140,14 @@ function useGroupedCalendar(horizonDays: number) {
     arr.push(occ)
     groups.set(ym, arr)
   }
-  return { groups, isLoading, total: data?.length ?? 0 }
+  return { groups, isLoading, isError, refetch, total: data?.length ?? 0 }
 }
 
 export function RecurringTab() {
   const { t } = useTranslation()
-  const { data: series, isLoading } = useRecurring()
+  const { data: series, isLoading, isError: seriesError, refetch: refetchSeries } = useRecurring()
   const detect = useDetectRecurring()
-  const { groups, isLoading: calLoading, total } = useGroupedCalendar(90)
+  const { groups, isLoading: calLoading, isError: calError, refetch: refetchCal, total } = useGroupedCalendar(90)
   const [formOpen, setFormOpen] = useState(false)
 
   return (
@@ -175,12 +176,15 @@ export function RecurringTab() {
         </CardHeader>
         <CardContent>
           {calLoading && <Skeleton className="h-24 w-full rounded-xl" />}
-          {!calLoading && total === 0 && (
+          {!calLoading && calError && (
+            <ErrorState message={t('budget.recurring.error')} onRetry={() => void refetchCal()} />
+          )}
+          {!calLoading && !calError && total === 0 && (
             <EmptyState icon={<CalendarClock className="size-10" />}
               title={t('budget.recurring.noUpcoming')}
               description={t('budget.recurring.noUpcomingHint')} />
           )}
-          {!calLoading && total > 0 && (
+          {!calLoading && !calError && total > 0 && (
             <div className="space-y-4">
               {[...groups.entries()].map(([ym, occs]) => (
                 <div key={ym}>
@@ -217,12 +221,15 @@ export function RecurringTab() {
         </CardHeader>
         <CardContent>
           {isLoading && <Skeleton className="h-24 w-full rounded-xl" />}
-          {!isLoading && (series?.length ?? 0) === 0 && (
+          {!isLoading && seriesError && (
+            <ErrorState message={t('budget.recurring.error')} onRetry={() => void refetchSeries()} />
+          )}
+          {!isLoading && !seriesError && (series?.length ?? 0) === 0 && (
             <p className="py-6 text-center text-sm text-muted-foreground">
               {t('budget.recurring.noSeries')}
             </p>
           )}
-          {!isLoading && (series?.length ?? 0) > 0 && (
+          {!isLoading && !seriesError && (series?.length ?? 0) > 0 && (
             <div>
               {series!.map((s) => <SubscriptionCard key={s.id} series={s} />)}
             </div>

@@ -60,7 +60,9 @@
     --secondary: oklch(0.967 0.001 286.375);
     --secondary-foreground: oklch(0.21 0.006 285.885);
     --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
+    /* 0.45 (was 0.556) so secondary text clears WCAG AA (4.5:1) even on a bg-muted
+       surface, where the lighter value fell just under the floor for small text. */
+    --muted-foreground: oklch(0.45 0 0);
     --accent: oklch(0.97 0 0);
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
@@ -141,6 +143,20 @@
   }
   h1, h2, h3, h4, h5, h6 {
     color: inherit;
+  }
+}
+
+/* Respect the OS "reduce motion" setting: neutralize every animation and transition
+   app-wide (entrance animations, shadcn dialogs/sheets, hover transitions). This is the
+   safety net that lets feature code add motion freely without auditing each case. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

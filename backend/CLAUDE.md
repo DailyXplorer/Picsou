@@ -11,7 +11,9 @@ mvn test -Dtest=GoalServiceTest                       # Run a single test class
 mvn package -DskipTests                               # Build JAR
 ```
 
-Tests use H2 in-memory — no external database needed.
+Most tests are pure Mockito unit tests — no database needed. One test
+(`BudgetSeedWriteOnReadPostgresTest`) spins up a real PostgreSQL 16 via Testcontainers to cover the
+budget seed-on-read path that H2 cannot reproduce; it self-skips when no Docker daemon is present.
 
 ## Package structure
 
@@ -48,4 +50,8 @@ com.picsou/
 
 ## Testing
 
-Mockito unit tests (`@ExtendWith(MockitoExtension.class)`), `@DataJpaTest` with H2 for integration. Full conventions: see [`docs/conventions/testing.md`](../docs/conventions/testing.md).
+Mockito unit tests (`@ExtendWith(MockitoExtension.class)`) for business logic. For the one case
+where database fidelity matters — the budget seed-on-read in a read-only transaction — a
+Testcontainers-backed `@SpringBootTest` runs against real PostgreSQL, because H2 silently allows
+INSERTs in a read-only transaction whereas PostgreSQL rejects them (SQLSTATE 25006). Full
+conventions: see [`docs/conventions/testing.md`](../docs/conventions/testing.md).

@@ -58,7 +58,11 @@ Two design questions drove this ADR:
 
 6. **Logos are opt-in, off by default.** `budget_settings.logo_fetch_enabled` (default `false`).
    The default rendering is an offline `MerchantAvatar` monogram with a deterministic colour; logo
-   fetching is a cosmetic toggle that **never feeds categorization**.
+   fetching is a cosmetic toggle that **never feeds categorization**. When enabled, logos are served
+   through a **server-side proxy** (`GET /api/merchants/{id}/logo`) behind a `MerchantLogoPort`,
+   implemented by `DuckDuckGoLogoProvider` against DuckDuckGo's keyless icon service, with an
+   in-memory TTL cache. See [Logo proxy & integration testing (M5)](#logo-proxy--integration-testing-m5-realization)
+   for the provider choice, the no-SSRF argument, and the gating.
 
 ## Alternatives considered
 
@@ -113,7 +117,8 @@ proven in `/setup` and lets Review become the contextual surface the product vis
 - **A KB version bump requires a recategorize pass** to benefit existing transactions
   (`recategorizeUncategorized`, which never overrides a user choice).
 - **The KB is read-only at match time but recategorize writes** — the write-on-read transaction
-  trap (documented in `budget.md`) applies and needs a Postgres-level test (H2 hides it).
+  trap (documented in `budget.md`) applies. It is locked down by a Postgres-level test
+  (`BudgetSeedWriteOnReadPostgresTest`); H2 hides it. See the M5 realization section below.
 - **Brand→category mapping is to parent categories only.** Sub-categories are user-created; the
   seed stays simple.
 
@@ -129,8 +134,56 @@ proven in `/setup` and lets Review become the contextual surface the product vis
   `flow-utils`.
 - `CategorizationRule` and `RuleSource` are **unchanged** — the deliberate consequence of the
   direct-fallback choice.
-- Recurring v2 (identity on `merchant_label`, auto-confirm), sub-category UI, and the logo proxy
-  build on this foundation in later milestones.
+- Recurring v2 (identity on `merchant_label`, auto-confirm) and the sub-category UI built on this
+  foundation in later milestones; the opt-in logo proxy and the Postgres integration test landed in
+  M5 (next section).
+
+## Logo proxy & integration testing (M5 realization)
+
+Two M5 decisions are recorded here rather than in a separate ADR, because each is a direct
+realization of a choice already made above (logos opt-in; the write-on-read trade-off).
+
+### Why a server-side logo proxy, and why DuckDuckGo
+
+The avatar could in principle `<img src>` a third-party logo CDN directly from the browser. We
+**proxy server-side** instead so that enabling logos never leaks the member's IP, `Referer`, or —
+by URL pattern — *the list of brands they spend at* to a third party on every page render. The
+proxy also lets us cache centrally, enforce the opt-in, and rate-limit.
+
+Provider: **DuckDuckGo's keyless icon service** (`icons.duckduckgo.com/ip3/{domain}.ico}`).
+
+- **Pros**: no API key, no account, no per-call quota to manage in a self-hosted app; the
+  privacy-aligned brand for a finance tool; trivial to call.
+- **Rejected — Clearbit / Brandfetch**: require an API key and have commercial/rate terms that don't
+  fit a zero-config self-hosted deploy.
+- **Rejected — Google s2 favicons**: works keyless too, but routes every brand the user spends at
+  through Google — the exact privacy leak the proxy exists to prevent.
+
+The choice is cheap to revisit: providers sit behind `MerchantLogoPort`, so swapping one is a single
+adapter, with no change to the controller, cache, or frontend.
+
+**No SSRF surface.** The fetched `logoDomain` always originates from the **bundled, seeded
+`merchant_brand` table** — never from user input — so the proxy cannot be steered at an attacker
+host. The adapter is defensive regardless (5 s timeout, 1 MB cap, every failure → empty). The
+controller gates in order: **per-IP rate limit** (no open relay) → **per-member opt-in** (404 when
+off, identical to a missing logo so the monogram fallback is seamless) → cache/fetch.
+
+### Why Testcontainers (real Postgres) over H2 for the one integration test
+
+The seed-on-read path must run its INSERT in a *writable* transaction even when reached from a
+read-only caller (it escapes via `REQUIRES_NEW`). **H2 silently tolerates an INSERT in a read-only
+transaction; PostgreSQL rejects it with SQLSTATE `25006`.** A test on H2 would therefore pass while
+production 500s — worse than no test. `BudgetSeedWriteOnReadPostgresTest` is the project's first and
+only container-backed test: a `@SpringBootTest` over a `postgres:16-alpine` Testcontainer that
+`disabledWithoutDocker = true` makes self-skip on CI/dev machines with no Docker daemon.
+
+- **Rejected — H2 / `@DataJpaTest`**: masks exactly the bug under test (and any other Postgres-only
+  semantics), so it gives false confidence here.
+- **Rejected — a shared/dev Postgres the test connects to**: stateful, needs provisioning, and
+  couples the suite to an external service; a throwaway container is hermetic and parallel-safe.
+
+The matching convention guidance lives in [`docs/conventions/testing.md`](../conventions/testing.md):
+Mockito unit tests by default, a real-Postgres container only when DB fidelity is the point.
 
 ## Supersedes
 
