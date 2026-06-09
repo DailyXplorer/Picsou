@@ -15,7 +15,7 @@ information architecture.
 
 ### Added
 
-- **Zero-config brand categorization.** An embedded, **offline** merchant knowledge base (~110
+- **Zero-config brand categorization.** An embedded, **offline** merchant knowledge base (137
   common FR/EU brands) categorizes synced transactions automatically, from the very first sync,
   with no setup and no ML or external service. It slots in as a pure fallback behind the existing
   rule engine, so the precedence **manual choice > learned rule > brand KB > uncategorized** is
@@ -69,7 +69,7 @@ information architecture.
 - **V36** — budget categorization foundation (`category.parent_id`/`slug`,
   `transaction.merchant_label`, `budget_settings.kb_version`/`logo_fetch_enabled`)
 - **V37** — merchant knowledge base (`merchant_brand`, `merchant_alias`,
-  `transaction.merchant_brand_id`, ~110-brand seed)
+  `transaction.merchant_brand_id`, 137-brand seed)
 - **V38** — recurring v2 (`confidence`, amount range, `is_variable`, `previous_amount`,
   `price_changed_at`; `(member_id, lower(label))` unique index)
 

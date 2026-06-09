@@ -27,7 +27,7 @@ Two design questions drove this ADR:
 
 1. **Embedded, offline merchant knowledge base.** Two **global** (not member-scoped) tables —
    `merchant_brand` (slug, display name, `default_category_slug`, colour, monogram, logo domain)
-   and `merchant_alias` (pattern, `WORD`/`PHRASE` match type) — seeded with ~110 common FR/EU
+   and `merchant_alias` (pattern, `WORD`/`PHRASE` match type) — seeded with 137 common FR/EU
    brands. Loaded once at startup into an **immutable in-memory snapshot** (`MerchantKnowledgeBase`,
    published via a `volatile` reference, hot-reloadable on a per-member `kb_version` bump), matched
    with **zero per-transaction I/O**.
@@ -89,7 +89,7 @@ Two design questions drove this ADR:
 ### Member-scoped brand tables
 
 - **Pros**: members could customize brands.
-- **Cons**: duplicates the same ~110 brands per member for no benefit; brand→category mapping is
+- **Cons**: duplicates the same 137 brands per member for no benefit; brand→category mapping is
   universal, and per-member customization already exists via learned `USER` rules.
 
 ### Keeping the single tabbed Budget page
@@ -111,7 +111,7 @@ proven in `/setup` and lets Review become the contextual surface the product vis
 
 ## Trade-offs accepted
 
-- **Seed coverage is finite.** ~110 brands cover the bulk of real FR/EU spending, but the long tail
+- **Seed coverage is finite.** 137 brands cover the bulk of real FR/EU spending, but the long tail
   falls through to the learned-rule path. Acceptable: the user's first manual tag still teaches a
   durable `USER` rule.
 - **A KB version bump requires a recategorize pass** to benefit existing transactions
@@ -126,7 +126,7 @@ proven in `/setup` and lets Review become the contextual surface the product vis
 
 - New migrations **V36** (`category.parent_id`/`slug`, `transaction.merchant_label`,
   `budget_settings.kb_version`/`logo_fetch_enabled`) and **V37** (`merchant_brand`,
-  `merchant_alias`, `transaction.merchant_brand_id`, ~110-brand seed).
+  `merchant_alias`, `transaction.merchant_brand_id`, 137-brand seed).
 - New backend: `MerchantNormalizer` (pure), `MerchantKnowledgeBase` (`@Component`),
   `CashflowFlowService`, `SpendingController`, `MerchantBrand`/`MerchantAlias` models + repos, flow
   DTOs; `CategorizationService` gains `enrich`/`autoCategorize`/brand fallback.

@@ -100,7 +100,7 @@ It deliberately has no empty-rules early-out: the brand KB alone categorizes a r
 
 - **`V36__budget_categorization_foundation.sql`** — shared foundation:
   - `category` `+ parent_id BIGINT` (self-FK `ON DELETE SET NULL`), `+ slug VARCHAR(60)`; unique
-    index `(member_id, slug) WHERE slug IS NOT NULL`, index `(member_id, parent_id)`; backfills
+    index `(member_id, slug) WHERE slug IS NOT NULL`, index `(parent_id)`; backfills
     slugs on the seeded default categories.
   - `transaction` `+ merchant_label VARCHAR(255)`.
   - `budget_settings` `+ kb_version INT` (per-member KB gate), `+ logo_fetch_enabled BOOLEAN NOT
@@ -111,7 +111,7 @@ It deliberately has no empty-rules early-out: the brand KB alone categorizes a r
   - `merchant_alias (id, brand_id FK CASCADE, pattern, match_type VARCHAR)` — `match_type` is
     `WORD | PHRASE`; patterns are stored **pre-normalized** (lower-case, accent/apostrophe-free).
   - `transaction` `+ merchant_brand_id BIGINT` (FK `ON DELETE SET NULL`) + index.
-  - **Seeds ~110 FR/EU brands** + a large alias set, mapping each to a `default_category_slug`.
+  - **Seeds 137 FR/EU brands** + a large alias set, mapping each to a `default_category_slug`.
 
 ### Cashflow flow diagram (Sankey)
 
@@ -309,6 +309,8 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
 | Safety net: activity feed + per-item undo + price alerts | Silent ≠ unexplained; every silent action is reversible and surfaced | Trust the math with no recourse |
 | Recurring identity = canonical `merchant_label` | Stable grouping; raw `counterparty` drifts (card digits, cities, dates) | Group on raw bank string |
 | Runtime status (`LATE`/`DUE_SOON`) computed in the DTO | `recurring_status` is an append-only PG enum; transient states aren't persisted | Store every transient state as an enum value |
+| Opt-in logos via a **server-side proxy** (off by default) | Enabling logos never leaks the member's IP or the list of brands they spend at to a third party on every render; lets us cache, gate, and rate-limit centrally | Browser `<img>` straight to a logo CDN |
+| **DuckDuckGo** keyless icon service behind `MerchantLogoPort` | No API key or quota to manage in a self-hosted app; privacy-aligned; swappable in a single adapter | Google s2 favicons (routes every brand through Google), Clearbit / Brandfetch (API key + commercial terms) |
 
 ## Gotchas / Pitfalls
 
@@ -354,6 +356,18 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
 - **`undo` is context-aware *and* idempotent.** It branches on series state (price change →
   acknowledge; silent auto-confirm → reject), not on a client-supplied action, so a double-tap or a
   stale client can't drive it into a wrong state.
+- **The logo opt-in is gated in the *controller*, not `MerchantLogoService`.** The cache is keyed by
+  **global brand id** and is identical for every member who has logos on, so the per-member
+  `logoFetchEnabled` check lives in `MerchantController` (→ 404 when off). Don't push the gate into
+  the service, or you'll either serve the shared cache to opted-out members or fragment it per member.
+  A disabled feature returns **404, not 403**, on purpose — indistinguishable from "this brand has no
+  logo", so `MerchantAvatar` falls back to its monogram with no special-casing.
+- **Logo *misses* are cached too (1 h TTL; hits 24 h).** Adding a `logo_domain` to a brand — or
+  recovery from a flaky upstream — won't surface until the miss entry expires or `clearCache()` runs.
+  Deliberate (no re-fetch storm on a page full of avatars), but it will surprise you in manual testing.
+- **The logo `logoDomain` is never user input.** It is read from the seeded `merchant_brand` table
+  via the in-memory KB, which is what makes the proxy SSRF-safe. If you ever let a caller pass a
+  domain, you reintroduce the SSRF surface the design specifically avoids — add an allowlist instead.
 
 ## Tests
 
