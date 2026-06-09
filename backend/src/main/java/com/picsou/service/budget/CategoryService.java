@@ -122,8 +122,10 @@ public class CategoryService {
     @Transactional
     public CategoryResponse create(CategoryRequest req, Long memberId) {
         FamilyMember member = familyMemberRepository.getReferenceById(memberId);
+        Category parent = resolveParent(req.parentId(), null, req.kind(), memberId);
         Category category = Category.builder()
             .member(member)
+            .parent(parent)
             .name(req.name())
             .kind(req.kind())
             .color(req.color() != null && !req.color().isBlank() ? req.color() : "#6366f1")
@@ -137,10 +139,22 @@ public class CategoryService {
     @Transactional
     public CategoryResponse update(Long id, CategoryRequest req, Long memberId) {
         Category category = getOrThrow(id, memberId);
+        // A category that itself has children can never sit *under* another — that would create a
+        // third level — nor change kind out from under its children (the subtree must stay uniform).
+        boolean hasChildren = categoryRepository.existsByMemberIdAndParentId(memberId, id);
+        if (hasChildren && req.parentId() != null) {
+            throw new IllegalArgumentException("A category with sub-categories cannot become a sub-category");
+        }
+        if (hasChildren && category.getKind() != req.kind()) {
+            throw new IllegalArgumentException("A category with sub-categories cannot change kind");
+        }
+        Category parent = resolveParent(req.parentId(), id, req.kind(), memberId);
+
         // Kind drives downstream behaviour (cashflow/envelopes/allocation); changing it on
         // a default is allowed but the rename/recolour is the common case.
         category.setName(req.name());
         category.setKind(req.kind());
+        category.setParent(parent);
         if (req.color() != null && !req.color().isBlank()) {
             category.setColor(req.color());
         }
@@ -151,19 +165,56 @@ public class CategoryService {
         return CategoryResponse.from(categoryRepository.save(category));
     }
 
-    /** Soft-remove: keep the row (history references it) but stop offering it. */
+    /**
+     * Soft-remove: keep the row (history references it) but stop offering it. Archiving a parent
+     * <em>cascades</em> to its sub-categories — hiding a group hides its members; {@link #unarchive}
+     * restores them symmetrically.
+     */
     @Transactional
     public void archive(Long id, Long memberId) {
-        Category category = getOrThrow(id, memberId);
-        category.setArchived(true);
-        categoryRepository.save(category);
+        setArchivedCascading(getOrThrow(id, memberId), memberId, true);
     }
 
     @Transactional
     public CategoryResponse unarchive(Long id, Long memberId) {
         Category category = getOrThrow(id, memberId);
-        category.setArchived(false);
-        return CategoryResponse.from(categoryRepository.save(category));
+        setArchivedCascading(category, memberId, false);
+        return CategoryResponse.from(category);
+    }
+
+    /** Flip {@code archived} on a category and (if it is a parent) all of its direct children. */
+    private void setArchivedCascading(Category category, Long memberId, boolean archived) {
+        category.setArchived(archived);
+        categoryRepository.save(category);
+        for (Category child : categoryRepository
+                .findAllByMemberIdAndParentIdOrderBySortOrderAscIdAsc(memberId, category.getId())) {
+            child.setArchived(archived);
+            categoryRepository.save(child);
+        }
+    }
+
+    /**
+     * Resolve and validate the parent for a category, enforcing the strict one-level tree:
+     * the parent must belong to {@code memberId}, share the child's {@code kind}, and be a root
+     * itself (a parent-of-a-parent would make the child a grandchild). Returns {@code null} when
+     * {@code parentId} is null (a top-level category). {@code childId} is the category being
+     * updated (null on create) — guards against a category parenting itself.
+     */
+    private Category resolveParent(Long parentId, Long childId, CategoryKind kind, Long memberId) {
+        if (parentId == null) {
+            return null;
+        }
+        if (parentId.equals(childId)) {
+            throw new IllegalArgumentException("A category cannot be its own parent");
+        }
+        Category parent = getOrThrow(parentId, memberId);
+        if (parent.getParent() != null) {
+            throw new IllegalArgumentException("Categories support a single level of nesting");
+        }
+        if (parent.getKind() != kind) {
+            throw new IllegalArgumentException("A sub-category must share its parent's kind");
+        }
+        return parent;
     }
 
     private int nextSortOrder(Long memberId) {

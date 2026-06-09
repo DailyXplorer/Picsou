@@ -354,7 +354,7 @@ handlers.set(key('POST', '/categories'), (config) => {
   return {
     id: Date.now(), name: body.name ?? 'Catégorie', kind: body.kind ?? 'EXPENSE',
     color: body.color ?? '#6366f1', icon: body.icon ?? null,
-    isDefault: false, archived: false, sortOrder: 99,
+    isDefault: false, archived: false, sortOrder: 99, parentId: body.parentId ?? null,
   }
 })
 for (const c of mockCategories) {
@@ -399,7 +399,7 @@ handlers.set(key('POST', '/budgets'), (config) => {
   return {
     id: Date.now(), categoryId: body.categoryId ?? 0, categoryName: cat?.name ?? 'Catégorie',
     categoryKind: cat?.kind ?? 'EXPENSE', categoryColor: cat?.color ?? null, categoryIcon: null,
-    monthlyLimit: limit, spent: 0, remaining: limit, percent: 0, overBudget: false,
+    monthlyLimit: limit, spent: 0, remaining: limit, percent: 0, overBudget: false, rollup: false,
     cycleStart: mockBudgetSettings.currentCycleStart, cycleEnd: mockBudgetSettings.currentCycleEnd,
   }
 })

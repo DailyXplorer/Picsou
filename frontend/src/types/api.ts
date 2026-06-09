@@ -380,6 +380,8 @@ export interface Category {
   isDefault: boolean
   archived: boolean
   sortOrder: number
+  /** Parent category id, or null for a top-level category (one level of nesting only). */
+  parentId: number | null
 }
 
 export interface CategoryRequest {
@@ -388,6 +390,8 @@ export interface CategoryRequest {
   color?: string
   icon?: string
   sortOrder?: number
+  /** Attach as a sub-category of this parent (must share kind, be a root). null/omit = top-level. */
+  parentId?: number | null
 }
 
 export interface CategorizationRule {
@@ -450,6 +454,8 @@ export interface Budget {
   remaining: number
   percent: number
   overBudget: boolean
+  /** True when the category is a parent — `spent` then covers its whole subtree. */
+  rollup: boolean
   cycleStart: string
   cycleEnd: string
 }
@@ -522,7 +528,11 @@ export interface CashflowFlowResponse {
   links: FlowLink[]
 }
 
-/** One row of the ranked expense breakdown. `categoryId`/`slug`/`name` null = uncategorized. */
+/**
+ * One row of the ranked expense breakdown. `categoryId`/`slug`/`name` null = uncategorized.
+ * Rows are always leaf-scoped (no double-counting); `parent*` lets the client group a subtree.
+ * `parentId` null = a root category or the uncategorized bucket.
+ */
 export interface CategorySpend {
   categoryId: number | null
   slug: string | null
@@ -532,6 +542,9 @@ export interface CategorySpend {
   amount: number    // positive magnitude
   count: number
   share: number     // fraction of totalExpense, 0..1 (4 decimals)
+  parentId: number | null
+  parentName: string | null
+  parentColor: string | null
 }
 
 export interface SpendingByCategoryResponse {
@@ -542,7 +555,21 @@ export interface SpendingByCategoryResponse {
   categories: CategorySpend[]
 }
 
-/** A single category's transactions over the period (the spending drill page). */
+/** Per-child rollup shown above the transaction list when drilling a parent. `total` signed. */
+export interface ChildSpend {
+  categoryId: number
+  name: string
+  color: string | null
+  icon: string | null
+  total: number     // signed sum
+  count: number
+}
+
+/**
+ * A single category's transactions over the period (the spending drill page). When the
+ * category is a parent, `total`/`count`/`transactions` span its whole subtree and `children`
+ * carries the per-child rollup; for a leaf category `children` is empty.
+ */
 export interface SpendingDetailResponse {
   categoryId: number
   slug: string | null
@@ -555,6 +582,7 @@ export interface SpendingDetailResponse {
   total: number     // signed sum
   count: number
   transactions: Transaction[]
+  children: ChildSpend[]
 }
 
 export interface AllocationStock {

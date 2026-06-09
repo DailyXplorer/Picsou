@@ -194,13 +194,18 @@ public class CashflowFlowService {
                 ? agg.sum.divide(denominator, 4, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
             Category cat = agg.category;
+            // Leaf-scoped row, annotated with its parent so the client can group the subtree.
+            Category parent = cat != null ? cat.getParent() : null;
             categories.add(new CategorySpend(
                 cat != null ? cat.getId() : null,
                 cat != null ? cat.getSlug() : null,
                 cat != null ? cat.getName() : null,
                 cat != null ? cat.getColor() : null,
                 cat != null ? cat.getIcon() : null,
-                agg.sum, agg.count, share
+                agg.sum, agg.count, share,
+                parent != null ? parent.getId() : null,
+                parent != null ? parent.getName() : null,
+                parent != null ? parent.getColor() : null
             ));
         }
         categories.sort(Comparator.comparing(CategorySpend::amount).reversed());
@@ -215,19 +220,44 @@ public class CashflowFlowService {
             .orElseThrow(() -> ResourceNotFoundException.category(categoryId));
         Range r = range(memberId, period, today);
 
+        // A parent drill spans its whole subtree: the parent's own transactions plus every child's.
+        List<Category> childCats =
+            categoryRepository.findAllByMemberIdAndParentIdOrderBySortOrderAscIdAsc(memberId, categoryId);
+        List<Long> ids = new ArrayList<>();
+        ids.add(categoryId);
+        for (Category child : childCats) {
+            ids.add(child.getId());
+        }
+
         List<Transaction> txns =
-            transactionRepository.findByMemberIdAndCategoryIdAndDateBetween(memberId, categoryId, r.from, r.to);
+            transactionRepository.findByMemberIdAndCategoryIdInAndDateBetween(memberId, ids, r.from, r.to);
 
         BigDecimal total = BigDecimal.ZERO;
+        Map<Long, Agg> perChild = new HashMap<>();
         List<TransactionResponse> transactions = new ArrayList<>();
         for (Transaction tx : txns) {
             total = total.add(tx.getAmount());
             transactions.add(TransactionResponse.from(tx));
+            Category txCat = tx.getCategoryRef();
+            if (txCat != null) {
+                perChild.computeIfAbsent(txCat.getId(), k -> new Agg(txCat)).add(tx.getAmount());
+            }
+        }
+
+        // Per-child rollup (empty for a leaf category), in the children's own sort order.
+        List<SpendingDetailResponse.ChildSpend> children = new ArrayList<>();
+        for (Category child : childCats) {
+            Agg agg = perChild.get(child.getId());
+            children.add(new SpendingDetailResponse.ChildSpend(
+                child.getId(), child.getName(), child.getColor(), child.getIcon(),
+                agg != null ? agg.sum : BigDecimal.ZERO,
+                agg != null ? agg.count : 0
+            ));
         }
 
         return new SpendingDetailResponse(
             cat.getId(), cat.getSlug(), cat.getName(), cat.getColor(), cat.getIcon(),
-            period, r.from, r.to, total, txns.size(), transactions
+            period, r.from, r.to, total, txns.size(), transactions, children
         );
     }
 

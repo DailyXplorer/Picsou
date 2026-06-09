@@ -17,6 +17,12 @@ public record SpendingByCategoryResponse(
     BigDecimal totalExpense,
     List<CategorySpend> categories
 ) {
+    /**
+     * One leaf category's expense total. Rows stay leaf-scoped — never rolled up server-side, so
+     * a parent and its children are never double-counted. {@code parentId}/{@code parentName}/
+     * {@code parentColor} let the client group children under their parent and sum the subtree.
+     * All three are {@code null} for a top-level category and for the uncategorized bucket.
+     */
     public record CategorySpend(
         Long categoryId,
         String slug,
@@ -25,6 +31,9 @@ public record SpendingByCategoryResponse(
         String icon,
         BigDecimal amount,
         int count,
-        BigDecimal share
+        BigDecimal share,
+        Long parentId,
+        String parentName,
+        String parentColor
     ) {}
 }

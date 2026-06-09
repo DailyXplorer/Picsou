@@ -95,6 +95,77 @@ function BreakdownRow({ row, total }: { row: CategorySpend; total: number }) {
   )
 }
 
+const round2 = (n: number): number => Math.round(n * 100) / 100
+
+/** A parent and the leaf rows that roll up into it, with the subtree's summed amount/count. */
+interface ParentGroup {
+  parentId: number
+  parentName: string | null
+  parentColor: string | null
+  children: CategorySpend[]
+  amount: number
+  count: number
+}
+
+type DisplayItem =
+  | { kind: 'leaf'; amount: number; row: CategorySpend }
+  | { kind: 'group'; amount: number; group: ParentGroup }
+
+/**
+ * Fold the flat, leaf-scoped breakdown into a ranked list of display items: standalone leaves and
+ * parent groups (each gathering its children). Groups rank at their rolled-up total, so the list
+ * still reads biggest-spend-first while keeping a subtree visually together.
+ */
+function buildDisplay(categories: CategorySpend[]): DisplayItem[] {
+  const standalone: CategorySpend[] = []
+  const groups = new Map<number, ParentGroup>()
+  for (const row of categories) {
+    if (row.parentId == null) {
+      standalone.push(row)
+      continue
+    }
+    let g = groups.get(row.parentId)
+    if (!g) {
+      g = { parentId: row.parentId, parentName: row.parentName, parentColor: row.parentColor, children: [], amount: 0, count: 0 }
+      groups.set(row.parentId, g)
+    }
+    g.children.push(row)
+    g.amount = round2(g.amount + row.amount)
+    g.count += row.count
+  }
+  return [
+    ...standalone.map((row): DisplayItem => ({ kind: 'leaf', amount: row.amount, row })),
+    ...[...groups.values()].map((group): DisplayItem => ({ kind: 'group', amount: group.amount, group })),
+  ].sort((a, b) => b.amount - a.amount)
+}
+
+/** Render the parent as a (drillable) header row, then its children indented beneath a guide line. */
+function ParentGroupRows({ group, total }: { group: ParentGroup; total: number }) {
+  const header: CategorySpend = {
+    categoryId: group.parentId,
+    slug: null,
+    name: group.parentName,
+    color: group.parentColor,
+    icon: null,
+    amount: group.amount,
+    count: group.count,
+    share: total > 0 ? group.amount / total : 0,
+    parentId: null,
+    parentName: null,
+    parentColor: null,
+  }
+  return (
+    <div>
+      <BreakdownRow row={header} total={total} />
+      <div className="ml-4 border-l border-border/60 pl-1 sm:ml-6">
+        {group.children.map((c) => (
+          <BreakdownRow key={c.categoryId} row={c} total={total} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function SpendingPage() {
   const { t } = useTranslation()
   const [period, setPeriod] = useState<CashflowPeriod>('CYCLE')
@@ -154,13 +225,21 @@ export function SpendingPage() {
             <CardTitle className="text-base">{t('budget.flow.breakdown')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-0.5">
-            {breakdown.data.categories.map((row) => (
-              <BreakdownRow
-                key={row.categoryId ?? 'uncategorized'}
-                row={row}
-                total={breakdown.data.totalExpense}
-              />
-            ))}
+            {buildDisplay(breakdown.data.categories).map((item) =>
+              item.kind === 'leaf' ? (
+                <BreakdownRow
+                  key={item.row.categoryId ?? 'uncategorized'}
+                  row={item.row}
+                  total={breakdown.data.totalExpense}
+                />
+              ) : (
+                <ParentGroupRows
+                  key={`group-${item.group.parentId}`}
+                  group={item.group}
+                  total={breakdown.data.totalExpense}
+                />
+              ),
+            )}
           </CardContent>
         </Card>
       )}

@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -78,6 +79,27 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     BigDecimal sumByCategoryIdAndDateBetween(@Param("categoryId") Long categoryId,
                                              @Param("from") LocalDate from,
                                              @Param("to") LocalDate to);
+
+    /** A member's transactions across several categories over a range, newest first (parent drill). */
+    @Query("""
+        SELECT t FROM Transaction t
+        WHERE t.account.member.id = :memberId AND t.categoryRef.id IN :categoryIds
+        AND t.date BETWEEN :from AND :to
+        ORDER BY t.date DESC, t.id DESC
+        """)
+    List<Transaction> findByMemberIdAndCategoryIdInAndDateBetween(@Param("memberId") Long memberId,
+                                                                  @Param("categoryIds") Collection<Long> categoryIds,
+                                                                  @Param("from") LocalDate from,
+                                                                  @Param("to") LocalDate to);
+
+    /** Sum of (signed) amounts across several categories over a range — parent envelope rollup. */
+    @Query("""
+        SELECT COALESCE(SUM(t.amount), 0) FROM Transaction t
+        WHERE t.categoryRef.id IN :categoryIds AND t.date BETWEEN :from AND :to
+        """)
+    BigDecimal sumByCategoryIdInAndDateBetween(@Param("categoryIds") Collection<Long> categoryIds,
+                                               @Param("from") LocalDate from,
+                                               @Param("to") LocalDate to);
 
     /** Sum of (signed) amounts for a member, filtered by category kind, over a range. */
     @Query("""

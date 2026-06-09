@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Plus, Pencil, Trash2, Wallet } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { NumericInput } from '@/components/shared/NumericInput'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
@@ -114,6 +115,7 @@ function EnvelopeRow({ budget, onEdit, onDelete }: {
   onEdit: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation()
   const pct = Math.min(budget.percent, 100)
   const barTone = budget.overBudget
     ? 'bg-destructive'
@@ -124,7 +126,12 @@ function EnvelopeRow({ budget, onEdit, onDelete }: {
       <CardContent className="py-4">
         <div className="flex items-center gap-3">
           <ColorDot color={budget.categoryColor} className="size-3 shrink-0 rounded-full" />
-          <span className="font-medium">{budget.categoryName}</span>
+          <span className="truncate font-medium">{budget.categoryName}</span>
+          {budget.rollup && (
+            <Badge variant="ghost" className="shrink-0 text-muted-foreground">
+              {t('budget.envelope.includesSubcategories')}
+            </Badge>
+          )}
           <div className="ml-auto flex items-center gap-1">
             <Button size="icon" variant="ghost" onClick={onEdit} aria-label="edit">
               <Pencil className="size-4" />

@@ -399,6 +399,7 @@
     "detail": {
       "back": "Retour aux dépenses",
       "total": "Total de la période",
+      "subcategories": "Par sous-catégorie",
       "empty": "Aucune transaction dans cette catégorie sur la période.",
       "error": "Impossible de charger le détail de la catégorie.",
       "notFound": "Catégorie introuvable."
@@ -421,6 +422,7 @@
       "selectCategory": "Choisir une catégorie",
       "monthlyLimit": "Plafond mensuel",
       "formHint": "Définissez le montant maximum à dépenser sur le cycle.",
+      "includesSubcategories": "Sous-catégories incluses",
       "empty": "Aucune enveloppe",
       "emptyHint": "Créez une enveloppe pour suivre vos dépenses par catégorie.",
       "error": "Impossible de charger les enveloppes.",
@@ -485,6 +487,11 @@
       "kind": "Genre",
       "color": "Couleur",
       "default": "Par défaut",
+      "subcategory": "Sous-catégorie",
+      "parent": "Catégorie parente",
+      "parentNone": "Aucune (catégorie de premier niveau)",
+      "parentHint": "Rattachez cette catégorie à une parente pour la regrouper comme sous-catégorie.",
+      "parentLocked": "Cette catégorie a déjà des sous-catégories : elle ne peut pas en devenir une.",
       "formHint": "Le genre détermine si la catégorie compte comme revenu, dépense ou virement."
     },
     "rule": {

@@ -56,6 +56,12 @@ class CashflowFlowServiceTest {
         return Category.builder().id(id).name(name).color("#123456").kind(kind).slug(name.toLowerCase()).build();
     }
 
+    /** A sub-category: inherits its parent's kind, carries the back-reference for rollup tests. */
+    private static Category childOf(long id, String name, Category parent) {
+        return Category.builder().id(id).name(name).color("#123456").kind(parent.getKind())
+            .slug(name.toLowerCase()).parent(parent).build();
+    }
+
     private static Transaction tx(String amount, Category category) {
         return Transaction.builder().amount(bd(amount)).categoryRef(category)
             .date(LocalDate.of(2025, 3, 10)).build();
@@ -185,6 +191,33 @@ class CashflowFlowServiceTest {
         assertThat(resp.categories().get(2).categoryId()).isNull();
     }
 
+    @Test
+    void spendingByCategory_annotatesEachLeafRowWithItsParent() {
+        // Aggregation stays leaf-based; each row just carries its parent so the client can group.
+        Category maison = cat(7, "Maison", CategoryKind.EXPENSE);
+        Category courses = childOf(2, "Courses", maison);
+        givenTransactions(List.of(tx("-600", courses)));
+
+        SpendingByCategoryResponse resp = service.spendingByCategory(MEMBER, CashflowPeriod.CYCLE, TODAY);
+
+        SpendingByCategoryResponse.CategorySpend row = resp.categories().get(0);
+        assertThat(row.categoryId()).isEqualTo(2L);
+        assertThat(row.parentId()).isEqualTo(7L);
+        assertThat(row.parentName()).isEqualTo("Maison");
+        assertThat(row.parentColor()).isEqualTo("#123456");
+    }
+
+    @Test
+    void spendingByCategory_leavesParentFieldsNull_forRootAndUncategorized() {
+        Category transport = cat(4, "Transport", CategoryKind.EXPENSE); // root: no parent
+        givenTransactions(List.of(tx("-300", transport), tx("-100", null)));
+
+        SpendingByCategoryResponse resp = service.spendingByCategory(MEMBER, CashflowPeriod.CYCLE, TODAY);
+
+        assertThat(resp.categories().get(0).parentId()).isNull(); // root category
+        assertThat(resp.categories().get(1).parentId()).isNull(); // uncategorized bucket
+    }
+
     // ─── Category drill ──────────────────────────────────────────────────────
 
     @Test
@@ -192,7 +225,10 @@ class CashflowFlowServiceTest {
         Category courses = cat(2, "Courses", CategoryKind.EXPENSE);
         when(categoryRepository.findByIdAndMemberId(2L, MEMBER)).thenReturn(Optional.of(courses));
         when(budgetSettingsService.cycleStartDay(MEMBER)).thenReturn(1);
-        when(transactionRepository.findByMemberIdAndCategoryIdAndDateBetween(eq(MEMBER), eq(2L), any(), any()))
+        // Leaf category: no children, so the drill spans only this one category's transactions.
+        when(categoryRepository.findAllByMemberIdAndParentIdOrderBySortOrderAscIdAsc(MEMBER, 2L))
+            .thenReturn(List.of());
+        when(transactionRepository.findByMemberIdAndCategoryIdInAndDateBetween(eq(MEMBER), any(), any(), any()))
             .thenReturn(List.of(tx("-67.80", courses), tx("-45.30", courses)));
 
         SpendingDetailResponse resp = service.categoryDetail(MEMBER, 2L, CashflowPeriod.CYCLE, TODAY);
@@ -202,6 +238,59 @@ class CashflowFlowServiceTest {
         assertThat(resp.count()).isEqualTo(2);
         assertThat(resp.total()).isEqualByComparingTo("-113.10");
         assertThat(resp.transactions()).hasSize(2);
+        assertThat(resp.children()).isEmpty(); // a leaf drill has no per-child rollup
+    }
+
+    @Test
+    void categoryDetail_rollsUpChildren_whenDrillingParent() {
+        Category maison = cat(7, "Maison", CategoryKind.EXPENSE);
+        Category courses = childOf(2, "Courses", maison);
+        Category loyer = childOf(3, "Loyer", maison);
+        when(categoryRepository.findByIdAndMemberId(7L, MEMBER)).thenReturn(Optional.of(maison));
+        when(budgetSettingsService.cycleStartDay(MEMBER)).thenReturn(1);
+        when(categoryRepository.findAllByMemberIdAndParentIdOrderBySortOrderAscIdAsc(MEMBER, 7L))
+            .thenReturn(List.of(courses, loyer));
+        // The subtree query returns the parent's own spend plus each child's, newest first.
+        when(transactionRepository.findByMemberIdAndCategoryIdInAndDateBetween(eq(MEMBER), any(), any(), any()))
+            .thenReturn(List.of(
+                tx("-50", maison), tx("-600", courses), tx("-400", courses), tx("-900", loyer)
+            ));
+
+        SpendingDetailResponse resp = service.categoryDetail(MEMBER, 7L, CashflowPeriod.CYCLE, TODAY);
+
+        assertThat(resp.name()).isEqualTo("Maison");
+        assertThat(resp.count()).isEqualTo(4);
+        // Subtree total spans every listed transaction, including the parent's own €50.
+        assertThat(resp.total()).isEqualByComparingTo("-1950");
+        // Per-child rollup, in the children's sort order; the parent's direct spend is not a child row.
+        assertThat(resp.children()).hasSize(2);
+        assertThat(resp.children().get(0).categoryId()).isEqualTo(2L);
+        assertThat(resp.children().get(0).total()).isEqualByComparingTo("-1000");
+        assertThat(resp.children().get(0).count()).isEqualTo(2);
+        assertThat(resp.children().get(1).categoryId()).isEqualTo(3L);
+        assertThat(resp.children().get(1).total()).isEqualByComparingTo("-900");
+        assertThat(resp.children().get(1).count()).isEqualTo(1);
+    }
+
+    @Test
+    void categoryDetail_listsChildWithZeroSpend_whenNoTransactions() {
+        // A child with no transactions this cycle still appears in the rollup, at zero.
+        Category maison = cat(7, "Maison", CategoryKind.EXPENSE);
+        Category courses = childOf(2, "Courses", maison);
+        Category loyer = childOf(3, "Loyer", maison);
+        when(categoryRepository.findByIdAndMemberId(7L, MEMBER)).thenReturn(Optional.of(maison));
+        when(budgetSettingsService.cycleStartDay(MEMBER)).thenReturn(1);
+        when(categoryRepository.findAllByMemberIdAndParentIdOrderBySortOrderAscIdAsc(MEMBER, 7L))
+            .thenReturn(List.of(courses, loyer));
+        when(transactionRepository.findByMemberIdAndCategoryIdInAndDateBetween(eq(MEMBER), any(), any(), any()))
+            .thenReturn(List.of(tx("-600", courses)));
+
+        SpendingDetailResponse resp = service.categoryDetail(MEMBER, 7L, CashflowPeriod.CYCLE, TODAY);
+
+        assertThat(resp.children()).hasSize(2);
+        assertThat(resp.children().get(1).categoryId()).isEqualTo(3L);
+        assertThat(resp.children().get(1).total()).isEqualByComparingTo("0");
+        assertThat(resp.children().get(1).count()).isEqualTo(0);
     }
 
     @Test

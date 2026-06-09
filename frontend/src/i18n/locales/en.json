@@ -399,6 +399,7 @@
     "detail": {
       "back": "Back to spending",
       "total": "Period total",
+      "subcategories": "By sub-category",
       "empty": "No transactions in this category for the period.",
       "error": "Could not load category detail.",
       "notFound": "Category not found."
@@ -421,6 +422,7 @@
       "selectCategory": "Pick a category",
       "monthlyLimit": "Monthly limit",
       "formHint": "Set the maximum to spend over the cycle.",
+      "includesSubcategories": "Includes sub-categories",
       "empty": "No envelopes",
       "emptyHint": "Create an envelope to track spending by category.",
       "error": "Could not load envelopes.",
@@ -485,6 +487,11 @@
       "kind": "Kind",
       "color": "Color",
       "default": "Default",
+      "subcategory": "Sub-category",
+      "parent": "Parent category",
+      "parentNone": "None (top-level category)",
+      "parentHint": "Attach this category to a parent to group it as a sub-category.",
+      "parentLocked": "This category already has sub-categories, so it can't become one itself.",
       "formHint": "The kind sets whether the category counts as income, expense or transfer."
     },
     "rule": {

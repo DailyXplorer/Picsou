@@ -9,6 +9,7 @@ import type {
   CategorizationRule,
   Category,
   CategorySpend,
+  ChildSpend,
   FlowLink,
   FlowNode,
   RecurringActivity,
@@ -40,17 +41,27 @@ function daysFromNow(n: number): string {
 
 // ── Categories ────────────────────────────────────────────────────────────────
 
+// `parentId` is null for top-level categories. Logement (id 3) is a parent here, holding two
+// sub-categories (Loyer, Énergie) appended at the end — their spend rolls up to it. New entries
+// are APPENDED, never inserted, because the arrays below reference categories by index.
 export const mockCategories: Category[] = [
-  { id: 1, name: 'Salaire', kind: 'INCOME', color: '#10b981', icon: null, isDefault: true, archived: false, sortOrder: 0 },
-  { id: 2, name: 'Courses', kind: 'EXPENSE', color: '#f59e0b', icon: null, isDefault: true, archived: false, sortOrder: 1 },
-  { id: 3, name: 'Logement', kind: 'EXPENSE', color: '#6366f1', icon: null, isDefault: true, archived: false, sortOrder: 2 },
-  { id: 4, name: 'Transport', kind: 'EXPENSE', color: '#0ea5e9', icon: null, isDefault: true, archived: false, sortOrder: 3 },
-  { id: 5, name: 'Loisirs', kind: 'EXPENSE', color: '#ec4899', icon: null, isDefault: true, archived: false, sortOrder: 4 },
-  { id: 6, name: 'Abonnements', kind: 'EXPENSE', color: '#8b5cf6', icon: null, isDefault: true, archived: false, sortOrder: 5 },
-  { id: 7, name: 'Restaurants', kind: 'EXPENSE', color: '#ef4444', icon: null, isDefault: true, archived: false, sortOrder: 6 },
-  { id: 8, name: 'Épargne', kind: 'TRANSFER', color: '#22c55e', icon: null, isDefault: true, archived: false, sortOrder: 7 },
-  { id: 9, name: 'Investissement', kind: 'TRANSFER', color: '#14b8a6', icon: null, isDefault: true, archived: false, sortOrder: 8 },
+  { id: 1, name: 'Salaire', kind: 'INCOME', color: '#10b981', icon: null, isDefault: true, archived: false, sortOrder: 0, parentId: null },
+  { id: 2, name: 'Courses', kind: 'EXPENSE', color: '#f59e0b', icon: null, isDefault: true, archived: false, sortOrder: 1, parentId: null },
+  { id: 3, name: 'Logement', kind: 'EXPENSE', color: '#6366f1', icon: null, isDefault: true, archived: false, sortOrder: 2, parentId: null },
+  { id: 4, name: 'Transport', kind: 'EXPENSE', color: '#0ea5e9', icon: null, isDefault: true, archived: false, sortOrder: 3, parentId: null },
+  { id: 5, name: 'Loisirs', kind: 'EXPENSE', color: '#ec4899', icon: null, isDefault: true, archived: false, sortOrder: 4, parentId: null },
+  { id: 6, name: 'Abonnements', kind: 'EXPENSE', color: '#8b5cf6', icon: null, isDefault: true, archived: false, sortOrder: 5, parentId: null },
+  { id: 7, name: 'Restaurants', kind: 'EXPENSE', color: '#ef4444', icon: null, isDefault: true, archived: false, sortOrder: 6, parentId: null },
+  { id: 8, name: 'Épargne', kind: 'TRANSFER', color: '#22c55e', icon: null, isDefault: true, archived: false, sortOrder: 7, parentId: null },
+  { id: 9, name: 'Investissement', kind: 'TRANSFER', color: '#14b8a6', icon: null, isDefault: true, archived: false, sortOrder: 8, parentId: null },
+  // ── Sub-categories of Logement (id 3) ───────────────────────────────────────
+  { id: 10, name: 'Loyer', kind: 'EXPENSE', color: '#818cf8', icon: null, isDefault: false, archived: false, sortOrder: 9, parentId: 3 },
+  { id: 11, name: 'Énergie', kind: 'EXPENSE', color: '#a5b4fc', icon: null, isDefault: false, archived: false, sortOrder: 10, parentId: 3 },
 ]
+
+/** Index lookups for the sub-categories appended above (kept readable for the spend tables). */
+const LOYER = mockCategories[9]
+const ENERGIE = mockCategories[10]
 
 // ── Categorization rules ──────────────────────────────────────────────────────
 
@@ -88,7 +99,9 @@ export const mockUncategorized: UncategorizedTransaction[] = [
 
 // ── Envelopes ─────────────────────────────────────────────────────────────────
 
-function envelope(id: number, cat: Category, limit: number, spent: number): Budget {
+// `rollup` marks an envelope set on a *parent* category: its `spent` then covers the whole
+// subtree (here Loyer + Énergie under Logement). Leaf envelopes pass false.
+function envelope(id: number, cat: Category, limit: number, spent: number, rollup = false): Budget {
   const remaining = Math.round((limit - spent) * 100) / 100
   const percent = limit > 0 ? Math.round((spent / limit) * 100) : 0
   return {
@@ -103,6 +116,7 @@ function envelope(id: number, cat: Category, limit: number, spent: number): Budg
     remaining,
     percent,
     overBudget: spent > limit,
+    rollup,
     cycleStart: iso(CYCLE_START),
     cycleEnd: iso(CYCLE_END),
   }
@@ -110,7 +124,7 @@ function envelope(id: number, cat: Category, limit: number, spent: number): Budg
 
 export const mockBudgets: Budget[] = [
   envelope(1, mockCategories[1], 500, 412.3), // Courses
-  envelope(2, mockCategories[2], 1100, 1100), // Logement (at limit)
+  envelope(2, mockCategories[2], 1100, 1100, true), // Logement (parent — rolls up Loyer + Énergie, at limit)
   envelope(3, mockCategories[3], 200, 168.5), // Transport
   envelope(4, mockCategories[4], 150, 187.9), // Loisirs (over)
   envelope(5, mockCategories[5], 90, 53.97), // Abonnements
@@ -261,9 +275,13 @@ const r2 = (n: number): number => Math.round(n * 100) / 100
 
 const INCOME_BASE = 3200
 
-/** Base monthly spend per category (cycle); paired with mockCategories above. */
+// Spend is recorded against LEAF categories only — exactly like the backend, where a
+// transaction never attaches to a parent. Logement is now a parent, so its 1100 is split
+// across its two children: Loyer (900) + Énergie (200) = 1100, leaving every aggregate
+// total identical to before. The client rolls these back up under Logement via `parentId`.
 const SPEND_BASE: { cat: Category; amount: number }[] = [
-  { cat: mockCategories[2], amount: 1100 }, // Logement
+  { cat: LOYER, amount: 900 }, // Loyer (child of Logement)
+  { cat: ENERGIE, amount: 200 }, // Énergie (child of Logement)
   { cat: mockCategories[1], amount: 412.3 }, // Courses
   { cat: mockCategories[4], amount: 187.9 }, // Loisirs
   { cat: mockCategories[3], amount: 168.5 }, // Transport
@@ -276,11 +294,12 @@ const UNCATEGORIZED_BASE = 60
 const MERCHANTS_BY_CATEGORY: Record<number, string[]> = {
   1: ['Employeur SAS'],
   2: ['Carrefour', 'Monoprix', 'Boulangerie du Coin'],
-  3: ['Agence Immo', 'EDF'],
   4: ['SNCF', 'TotalEnergies'],
   5: ['Fnac', 'UGC'],
   6: ['Netflix', 'Spotify'],
   7: ['Le Bistrot', 'Sushi Shop'],
+  10: ['Agence Immo'], // Loyer (leaf under Logement)
+  11: ['EDF'], // Énergie (leaf under Logement)
 }
 
 /**
@@ -292,11 +311,12 @@ const MERCHANTS_BY_CATEGORY: Record<number, string[]> = {
 const TX_COUNT_BY_CATEGORY: Record<number, number> = {
   1: 1, // Salaire — single monthly inflow
   2: 9, // Courses — many small grocery trips
-  3: 2, // Logement — loyer + énergie
   4: 4, // Transport
   5: 3, // Loisirs
   6: 2, // Abonnements — Netflix + Spotify
   7: 5, // Restaurants
+  10: 1, // Loyer — single monthly debit
+  11: 1, // Énergie — single monthly debit
 }
 
 function periodRange(period: CashflowPeriod): { from: string; to: string } {
@@ -355,15 +375,23 @@ export function mockSpendingByCategory(period: CashflowPeriod): SpendingByCatego
   const { from, to } = periodRange(period)
 
   const rows = [
-    ...SPEND_BASE.map((s) => ({
-      categoryId: s.cat.id as number | null,
-      slug: null,
-      name: s.cat.name as string | null,
-      color: s.cat.color,
-      icon: null,
-      amount: r2(s.amount * factor),
-      count: TX_COUNT_BY_CATEGORY[s.cat.id] ?? 3,
-    })),
+    ...SPEND_BASE.map((s) => {
+      // Leaf rows carry their parent's identity so the client can fold them under a group
+      // header — the aggregation itself stays strictly leaf-scoped (no double-counting).
+      const parent = s.cat.parentId != null ? mockCategories.find((c) => c.id === s.cat.parentId) : null
+      return {
+        categoryId: s.cat.id as number | null,
+        slug: null,
+        name: s.cat.name as string | null,
+        color: s.cat.color,
+        icon: null,
+        amount: r2(s.amount * factor),
+        count: TX_COUNT_BY_CATEGORY[s.cat.id] ?? 3,
+        parentId: parent?.id ?? null,
+        parentName: parent?.name ?? null,
+        parentColor: parent?.color ?? null,
+      }
+    }),
     {
       categoryId: null,
       slug: null,
@@ -372,6 +400,9 @@ export function mockSpendingByCategory(period: CashflowPeriod): SpendingByCatego
       icon: null,
       amount: r2(UNCATEGORIZED_BASE * factor),
       count: 2,
+      parentId: null,
+      parentName: null,
+      parentColor: null,
     },
   ]
   const totalExpense = r2(rows.reduce((acc, r) => acc + r.amount, 0))
@@ -382,18 +413,19 @@ export function mockSpendingByCategory(period: CashflowPeriod): SpendingByCatego
   return { period, from, to, totalExpense, categories }
 }
 
-export function mockCategoryDetail(categoryId: number, period: CashflowPeriod): SpendingDetailResponse {
-  const factor = period === 'YTD' ? 6 : 1
-  const { from, to } = periodRange(period)
-  const cat = mockCategories.find((c) => c.id === categoryId)
-  const base = SPEND_BASE.find((s) => s.cat.id === categoryId)?.amount ?? 80
-  const merchants = MERCHANTS_BY_CATEGORY[categoryId] ?? ['Achat']
-  const isIncome = cat?.kind === 'INCOME'
-  const n = TX_COUNT_BY_CATEGORY[categoryId] ?? merchants.length
+/**
+ * Synthesize the transaction list for a single LEAF category over the period. The leaf's total
+ * is spread across `n` transactions with a deterministic, non-uniform split (so amounts look
+ * real rather than identical), and the last one absorbs rounding so the sum matches the breakdown
+ * total exactly. Transaction ids are namespaced by category id (`id*100 + i`) so a parent drill
+ * can concatenate several leaves' lists without colliding.
+ */
+function leafTransactions(cat: Category, factor: number): Transaction[] {
+  const base = SPEND_BASE.find((s) => s.cat.id === cat.id)?.amount ?? 80
+  const merchants = MERCHANTS_BY_CATEGORY[cat.id] ?? ['Achat']
+  const isIncome = cat.kind === 'INCOME'
+  const n = TX_COUNT_BY_CATEGORY[cat.id] ?? merchants.length
 
-  // Spread the category total across `n` transactions with a deterministic,
-  // non-uniform split (so amounts look real rather than identical), and let the
-  // last one absorb rounding so the sum matches the breakdown total exactly.
   const totalAbs = r2(base * factor)
   const weights = Array.from({ length: n }, (_, i) => 1 + ((i * 37) % 13) / 12)
   const wSum = weights.reduce((acc, w) => acc + w, 0)
@@ -405,15 +437,15 @@ export function mockCategoryDetail(categoryId: number, period: CashflowPeriod): 
     return a
   })
 
-  const transactions: Transaction[] = amounts.map((abs, i) => {
+  return amounts.map((abs, i) => {
     const merchant = merchants[i % merchants.length]
     return {
-      id: categoryId * 100 + i,
+      id: cat.id * 100 + i,
       date: daysFromNow(-(i * 3 + 2)),
       description: merchant.toUpperCase(),
       amount: isIncome ? abs : -abs,
       type: null,
-      category: cat?.name ?? null,
+      category: cat.name,
       nativeCurrency: 'EUR',
       isManual: false,
       txType: isIncome ? 'DEPOSIT' : 'WITHDRAWAL',
@@ -424,6 +456,40 @@ export function mockCategoryDetail(categoryId: number, period: CashflowPeriod): 
       merchantBrandId: null,
     }
   })
+}
+
+export function mockCategoryDetail(categoryId: number, period: CashflowPeriod): SpendingDetailResponse {
+  const factor = period === 'YTD' ? 6 : 1
+  const { from, to } = periodRange(period)
+  const cat = mockCategories.find((c) => c.id === categoryId)
+
+  // A parent drill rolls up its (non-archived) children: the transaction list is the union of the
+  // children's leaves, and `children` carries each child's signed subtotal + count. A leaf returns
+  // its own transactions with an empty `children` — mirroring CashflowFlowService.categoryDetail.
+  const childCats = mockCategories.filter((c) => c.parentId === categoryId && !c.archived)
+
+  let transactions: Transaction[]
+  let children: ChildSpend[]
+  if (childCats.length > 0) {
+    children = childCats.map((child) => {
+      const txns = leafTransactions(child, factor)
+      return {
+        categoryId: child.id,
+        name: child.name,
+        color: child.color,
+        icon: child.icon,
+        total: r2(txns.reduce((acc, t) => acc + t.amount, 0)),
+        count: txns.length,
+      }
+    })
+    transactions = childCats
+      .flatMap((child) => leafTransactions(child, factor))
+      .sort((a, b) => b.date.localeCompare(a.date)) // newest first across the whole subtree
+  } else {
+    transactions = cat ? leafTransactions(cat, factor) : []
+    children = []
+  }
+
   const total = r2(transactions.reduce((acc, t) => acc + t.amount, 0))
 
   return {
@@ -438,5 +504,6 @@ export function mockCategoryDetail(categoryId: number, period: CashflowPeriod): 
     total,
     count: transactions.length,
     transactions,
+    children,
   }
 }

@@ -94,17 +94,27 @@ function CategoryForm({ open, onOpenChange, editing }: {
   editing: Category | null
 }) {
   const { t } = useTranslation()
+  const { data: categories } = useCategories()
   const createCategory = useCreateCategory()
   const updateCategory = useUpdateCategory()
 
   const [name, setName] = useState(editing?.name ?? '')
   const [kind, setKind] = useState<CategoryKind>(editing?.kind ?? 'EXPENSE')
   const [color, setColor] = useState(editing?.color ?? '#6366f1')
+  const [parentId, setParentId] = useState<number | ''>(editing?.parentId ?? '')
   const pending = createCategory.isPending || updateCategory.isPending
+
+  // A category that already has sub-categories can't itself become one (the backend enforces a
+  // single level of nesting), so its parent selector is locked. Eligible parents are top-level
+  // categories of the same kind, not archived, and not the category being edited.
+  const hasChildren = (categories ?? []).some((c) => c.parentId === editing?.id)
+  const parentOptions = (categories ?? []).filter(
+    (c) => c.parentId == null && c.kind === kind && !c.archived && c.id !== editing?.id,
+  )
 
   function submit() {
     if (name.trim() === '') return
-    const payload = { name: name.trim(), kind, color }
+    const payload = { name: name.trim(), kind, color, parentId: parentId === '' ? null : Number(parentId) }
     const onDone = { onSuccess: () => onOpenChange(false) }
     if (editing) updateCategory.mutate({ id: editing.id, data: payload }, onDone)
     else createCategory.mutate(payload, onDone)
@@ -128,12 +138,29 @@ function CategoryForm({ open, onOpenChange, editing }: {
           <div className="space-y-2">
             <Label htmlFor="cat-kind">{t('budget.category.kind')}</Label>
             <select id="cat-kind" value={kind} disabled={editing != null}
-              onChange={(e) => setKind(e.target.value as CategoryKind)}
+              onChange={(e) => {
+                setKind(e.target.value as CategoryKind)
+                setParentId('') // a parent must share the child's kind — drop a now-invalid choice
+              }}
               className={`${SELECT_CLS} disabled:opacity-60`}>
               {KINDS.map((k) => (
                 <option key={k} value={k}>{t(KIND_META[k].labelKey)}</option>
               ))}
             </select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="cat-parent">{t('budget.category.parent')}</Label>
+            <select id="cat-parent" value={parentId} disabled={hasChildren}
+              onChange={(e) => setParentId(e.target.value === '' ? '' : Number(e.target.value))}
+              className={`${SELECT_CLS} disabled:opacity-60`}>
+              <option value="">{t('budget.category.parentNone')}</option>
+              {parentOptions.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              {hasChildren ? t('budget.category.parentLocked') : t('budget.category.parentHint')}
+            </p>
           </div>
           <div className="space-y-2">
             <Label>{t('budget.category.color')}</Label>
@@ -169,6 +196,52 @@ function CategoriesCard() {
     setFormOpen(true)
   }
 
+  // The backend hands back a flat list; we fold it into a one-level tree for display — roots in
+  // their given order, each immediately followed by its (indented) sub-categories. A single level
+  // of nesting is guaranteed server-side, so there is no deeper recursion to handle.
+  const roots = (categories ?? []).filter((c) => c.parentId == null)
+  const childrenOf = (parentId: number) => (categories ?? []).filter((c) => c.parentId === parentId)
+
+  function row(c: Category, child: boolean) {
+    return (
+      <div key={c.id} className={`flex items-center gap-3 py-2.5 ${child ? 'pl-5 sm:pl-7' : ''}`}>
+        {child && <span aria-hidden className="-ml-2 text-muted-foreground/50">↳</span>}
+        <ColorDot color={c.color} className="size-3 shrink-0 rounded-full" />
+        <span className={`truncate ${c.archived ? 'text-muted-foreground line-through' : ''}`}>
+          {c.name}
+        </span>
+        {child ? (
+          <Badge variant="ghost" className="text-muted-foreground">{t('budget.category.subcategory')}</Badge>
+        ) : (
+          <Badge variant="outline" className={KIND_META[c.kind].tone}>
+            {t(KIND_META[c.kind].labelKey)}
+          </Badge>
+        )}
+        {c.isDefault && (
+          <Badge variant="ghost" className="text-muted-foreground">
+            {t('budget.category.default')}
+          </Badge>
+        )}
+        <div className="ml-auto flex items-center gap-1">
+          <Button size="icon" variant="ghost" aria-label="edit" onClick={() => open(c)}>
+            <Pencil className="size-4" />
+          </Button>
+          {c.archived ? (
+            <Button size="icon" variant="ghost" aria-label="unarchive"
+              disabled={unarchive.isPending} onClick={() => unarchive.mutate(c.id)}>
+              <ArchiveRestore className="size-4" />
+            </Button>
+          ) : (
+            <Button size="icon" variant="ghost" aria-label="archive"
+              disabled={archive.isPending} onClick={() => archive.mutate(c.id)}>
+              <Archive className="size-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
@@ -184,36 +257,10 @@ function CategoriesCard() {
         {isLoading && <Skeleton className="h-24 w-full rounded-xl" />}
         {categories && (
           <div className="divide-y divide-border">
-            {categories.map((c) => (
-              <div key={c.id} className="flex items-center gap-3 py-2.5">
-                <ColorDot color={c.color} className="size-3 shrink-0 rounded-full" />
-                <span className={`truncate ${c.archived ? 'text-muted-foreground line-through' : ''}`}>
-                  {c.name}
-                </span>
-                <Badge variant="outline" className={KIND_META[c.kind].tone}>
-                  {t(KIND_META[c.kind].labelKey)}
-                </Badge>
-                {c.isDefault && (
-                  <Badge variant="ghost" className="text-muted-foreground">
-                    {t('budget.category.default')}
-                  </Badge>
-                )}
-                <div className="ml-auto flex items-center gap-1">
-                  <Button size="icon" variant="ghost" aria-label="edit" onClick={() => open(c)}>
-                    <Pencil className="size-4" />
-                  </Button>
-                  {c.archived ? (
-                    <Button size="icon" variant="ghost" aria-label="unarchive"
-                      disabled={unarchive.isPending} onClick={() => unarchive.mutate(c.id)}>
-                      <ArchiveRestore className="size-4" />
-                    </Button>
-                  ) : (
-                    <Button size="icon" variant="ghost" aria-label="archive"
-                      disabled={archive.isPending} onClick={() => archive.mutate(c.id)}>
-                      <Archive className="size-4" />
-                    </Button>
-                  )}
-                </div>
+            {roots.map((r) => (
+              <div key={r.id} className="divide-y divide-border/40">
+                {row(r, false)}
+                {childrenOf(r.id).map((c) => row(c, true))}
               </div>
             ))}
           </div>

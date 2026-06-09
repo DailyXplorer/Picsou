@@ -42,7 +42,7 @@ A single `BudgetLayout` (segmented sub-nav on desktop, bottom bar on mobile — 
 | `/budget/spending` | `SpendingPage` | Cashflow **flow diagram**: Sankey ≥ `md`, Flow Bars < `md` |
 | `/budget/spending/:categoryId` | `CategoryDetailPage` | Per-category drill: transactions with `MerchantAvatar` |
 | `/budget/subscriptions` | `SubscriptionsPage` | Recurring series **v2**: auto-confirm + runtime/price badges (`SubscriptionCard`), "what changed" feed + undo (`ActivityFeed`), upcoming agenda |
-| `/budget/envelopes` | `EnvelopesPage` | Envelopes + allocation *(migrated as-is; merged in M4)* |
+| `/budget/envelopes` | `EnvelopesPage` | Envelopes + allocation; a parent envelope rolls up its whole subtree (M4) |
 | `/budget/review` | `ReviewPage` | Uncategorized inbox — **contextual, not a permanent destination** |
 | `/budget/settings` | `BudgetSettingsPage` | Category management, pay cycle, logo opt-in |
 
@@ -131,6 +131,40 @@ It deliberately has no empty-rules early-out: the brand KB alone categorizes a r
   **deterministic colour derived from the name**, fully offline; switches to a proxied `<img>` only
   when `logo_fetch_enabled` (M5). Used across every transaction list.
 
+### Sub-categories (the category tree)
+
+Categories nest **one level deep** — a parent with leaf children (e.g. *Logement* → *Loyer*,
+*Énergie*). Transactions **only ever attach to a leaf**; a parent is a pure grouping node. That
+single rule is what keeps every total honest.
+
+- **Settings** (`pages/budget/ManageTab.tsx`) — `CategoryForm` carries a *parent* `<select>` listing
+  same-kind root categories; the list renders children indented under their parent with a
+  *sub-category* badge. The selector is **disabled once a category already has children** (a parent
+  can't become a child), mirroring the server's two-level cap.
+- **Structural invariants** (enforced in `CategoryService`, test-locked in `CategoryServiceTest`):
+  a parent and its children **share the same `kind`**; a category **cannot become its own ancestor**,
+  and a parent that has children cannot itself be re-parented (so there are never grandchildren);
+  **archiving a parent cascades to its children** (un-archiving likewise). `parent_id` is a self-FK
+  `ON DELETE SET NULL`, so deleting a parent re-roots its children rather than cascade-deleting them.
+- **The spending breakdown stays leaf-based** (`CashflowFlowService.spendingByCategory`). The server
+  aggregates **strictly per leaf** and annotates each row with `parentId/parentName/parentColor`; the
+  **client** (`SpendingPage.buildDisplay`) groups leaves under their parent and ranks each group at
+  its rolled-up total. There is exactly one row per leaf, so no euro is ever counted under both a
+  parent and a child — this is the double-counting firewall.
+- **Parent drill** (`CashflowFlowService.categoryDetail`, `pages/budget/CategoryDetailPage.tsx`) is
+  the *one* spending path that sums a subtree: anchored on a single category, it queries
+  `category_id IN (parent + children)` and returns a per-child rollup (`children: ChildSpend[]`) above
+  the subtree-wide transaction list; each child row drills one level deeper. A leaf drill has no
+  children and falls back to the flat list.
+- **Parent envelopes roll up** (`BudgetService.toResponse`, badge in `EnvelopesTab.tsx`). `rollup` is
+  **computed on read** (`!children.isEmpty()`), so an envelope on a parent automatically scores its
+  whole subtree the moment a child exists — no stored flag. To stop a child's spend being counted
+  twice, `assertNoEnvelopeOverlap` forbids a parent **and** any of its children both holding an
+  envelope.
+
+No migration was needed: `category.parent_id` + `slug` shipped in `V36` (M0) as foundation; M4 made
+the tree user-facing across Settings, the Spending breakdown, the drill, and Envelopes.
+
 ### Recurring v2 — detection, auto-confirm & the activity feed
 
 The pre-1.1.0 detector drifted on the raw `counterparty` and never auto-acted. M3 rebuilds it
@@ -196,9 +230,13 @@ runtime mapping), `controller/RecurringController.java`; DTOs `RecurringSeriesRe
 **new** `RecurringActivityResponse`, `RecurringActivityType`, `RecurringRuntimeStatus`;
 `repository/RecurringSeriesRepository.java`; migration `V38__recurring_v2.sql`.
 
-**Envelopes / Allocation** (pre-1.1.0 logic, migrated under the new IA pending M4):
-`model/Budget.java` + `BudgetService` + `BudgetController`; `service/budget/CashflowService.java`;
-`service/budget/AllocationService.java` + `AllocationController`.
+**Envelopes / Allocation** (pre-1.1.0 logic under the new IA; parent-envelope subtree rollup +
+overlap guard added in M4): `model/Budget.java` + `BudgetService` + `BudgetController`;
+`service/budget/CashflowService.java`; `service/budget/AllocationService.java` + `AllocationController`.
+
+**Sub-categories** (M4): `model/Category.java` (`parentId` self-FK), `service/budget/CategoryService.java`
+(tree invariants, archive cascade), `CashflowFlowService` (leaf-based annotation + parent drill),
+`BudgetService` (rollup); frontend `pages/budget/{ManageTab,SpendingPage,CategoryDetailPage,EnvelopesTab}.tsx`.
 
 **Frontend:** `pages/budget/BudgetLayout.tsx` + `budget-nav.ts` + the nested pages above;
 `pages/budget/{SubscriptionCard,ActivityFeed}.tsx` + `budget-meta.ts` (runtime/activity lookups);
@@ -230,6 +268,7 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
 | `enrich` always stamps label + brand | Clean names & brand links are universal, even for uncategorized transactions | Stamp only when categorized |
 | In-memory KB snapshot, `volatile` swap | Thread-safe, zero per-transaction I/O, hot-reloadable on version bump | Query the DB per transaction |
 | Category **tree** (`parent_id`) + `slug` | Sub-categories; stable join key between global brands and member categories | Flat category list / match on names |
+| **Leaf-only** spend aggregation + client-side parent grouping | One row per leaf can't double-count under both parent and child; the client groups and ranks by rolled-up total | Server-side subtree rollups for the breakdown |
 | Nested-route IA (`BudgetLayout`) | Clean, scalable navigation; Review becomes contextual | Single 7-tab page |
 | Sankey ≥ `md`, Flow Bars < `md` (conditional mount) | Sankey is unreadable on phones; `ResponsiveContainer` is 0×0 under `display:none` | One chart for all sizes / CSS hide |
 | Configurable `cycleStartDay` (1–28) | Budgets track the pay cycle, not the calendar month | Fixed calendar month |
@@ -253,6 +292,13 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
   ignores read-only transactions and hides this — only the Dockerized Postgres stack surfaces it.**
 - **The brand KB is read-only at match time** but `recategorizeUncategorized` *writes* — it must
   run in a writable transaction (same Postgres-only failure mode as above).
+- **Sub-category totals never double-count because aggregation is leaf-only.** `spendingByCategory`
+  returns one row per leaf (annotated with its parent) and the client groups; only single-anchored
+  subtree ops — the parent drill (`category_id IN (parent + children)`) and a parent envelope's
+  rollup — ever sum a subtree, and `assertNoEnvelopeOverlap` stops a parent *and* its child both
+  holding an envelope. Add any new "spending by parent" query the same way (anchored on one node) or
+  totals will drift. The tree is **two levels only** (`CategoryService` rejects grandchildren), and a
+  transaction always lands on a **leaf** — never a parent.
 - **`categoryRef != null` is the only thing protecting a user's choice.** Every categorization path
   goes through `apply`/`autoCategorize`, which short-circuits on an existing category. Don't add a
   path that assigns a category without that guard.
@@ -283,14 +329,18 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
 - `MerchantKnowledgeBaseTest` — PHRASE-before-WORD precedence, word-boundary matching, reload
 - `CategorizationServiceTest` — brand fallback **after** USER/AUTO, `categoryRef` guard never
   overridden, `merchant_label` always stamped
-- `CashflowFlowServiceTest` — hierarchy, conservation invariant, `TRANSFER` exclusion
+- `CashflowFlowServiceTest` — hierarchy, conservation invariant, `TRANSFER` exclusion, **leaf rows
+  annotated with their parent**, and **parent-drill child rollup** (incl. a child with zero spend)
+- `CategoryServiceTest` — tree invariants: parent attach/reparent, same-`kind` rule, two-level cap
+  (no grandchildren), archive/un-archive cascading to children
 - `RecurringDetectionServiceTest` (rewritten for v2) — stable identity, confidence math at the
   auto-confirm threshold, FIXED/VARIABLE classification, price-step detection, `IGNORED` never
   resurrected, `recurring_series_id` populated
 - `RecurringSeriesServiceTest` — runtime status relative to "today", activity feed (newest-first,
   price-change preferred, stale/user-confirmed excluded), context-aware undo
-- `BudgetCycleTest`, `BudgetServiceTest`, `CashflowServiceTest`, `AllocationServiceTest`,
-  `SyncService` ingestion tests
+- `BudgetCycleTest`, `BudgetServiceTest` (incl. **parent-envelope subtree rollup** + the
+  **overlap guard** rejecting a parent/child both budgeted), `CashflowServiceTest`,
+  `AllocationServiceTest`, `SyncService` ingestion tests
 - Frontend: `flow-utils.test.ts`, `MerchantAvatar.test.tsx`, `features/budget` hooks via
   `bunx vitest run`
 - **Postgres write-on-read test** (planned M5): seed/recategorize in a read-only transaction (H2

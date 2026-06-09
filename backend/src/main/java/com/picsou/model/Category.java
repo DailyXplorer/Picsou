@@ -29,6 +29,18 @@ public class Category extends AuditableEntity {
     @JoinColumn(name = "member_id", nullable = false)
     private FamilyMember member;
 
+    /**
+     * Optional parent, forming a strict <em>one-level</em> tree: a parent never itself has a
+     * parent (enforced in {@code CategoryService}). Sub-categories inherit their parent's
+     * {@link CategoryKind}; spending drills and budget envelopes roll a parent up over its whole
+     * subtree. The {@code parent_id} column ({@code ON DELETE SET NULL}) and its index ship in
+     * {@code V36}; only this mapping was missing.
+     */
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_id")
+    private Category parent;
+
     @Column(nullable = false, length = 100)
     private String name;
 

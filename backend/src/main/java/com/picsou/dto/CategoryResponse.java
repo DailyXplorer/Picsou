@@ -11,12 +11,16 @@ public record CategoryResponse(
     String icon,
     boolean isDefault,
     boolean archived,
-    int sortOrder
+    int sortOrder,
+    /** Parent category id, or {@code null} for a top-level category. */
+    Long parentId
 ) {
     public static CategoryResponse from(Category c) {
         return new CategoryResponse(
             c.getId(), c.getName(), c.getKind(), c.getColor(), c.getIcon(),
-            c.isDefault(), c.isArchived(), c.getSortOrder()
+            c.isDefault(), c.isArchived(), c.getSortOrder(),
+            // getParent() is lazy; reading the proxy's id never triggers a load.
+            c.getParent() != null ? c.getParent().getId() : null
         );
     }
 }

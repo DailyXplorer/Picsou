@@ -1,22 +1,49 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
-import { Card, CardContent } from '@/components/ui/card'
+import { ArrowLeft, ChevronRight } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { TransactionsList } from '@/components/shared/TransactionsList'
 import { useCategoryDetail } from '@/features/budget/hooks'
-import type { CashflowPeriod } from '@/types/api'
+import type { CashflowPeriod, ChildSpend } from '@/types/api'
 import { FALLBACK_COLOR } from './budget-meta'
 import { PeriodToggle } from './budget-utils'
 
 /**
  * `/budget/spending/:categoryId` — one category's transactions over the period. Keyed by
- * id (not slug) because user-created categories have no slug. Sub-categories are M4; for
- * now this is the category header + a read-only transaction list (MerchantAvatar rows).
+ * id (not slug) because user-created categories have no slug. When the category is a parent,
+ * `total`/`count`/`transactions` span its whole subtree and a per-sub-category rollup is shown
+ * above the (subtree-wide) transaction list; each sub-category drills one level deeper.
  */
+
+/** A tappable per-sub-category rollup row shown when drilling a parent category. */
+function SubcategoryRow({ child }: { child: ChildSpend }) {
+  const { t } = useTranslation()
+  return (
+    <Link
+      to={`/budget/spending/${child.categoryId}`}
+      className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-muted/60"
+    >
+      <span
+        className="inline-block size-2.5 shrink-0 rounded-full"
+        style={{ backgroundColor: child.color || FALLBACK_COLOR }}
+      />
+      <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium">{child.name}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {t('budget.flow.transactionsCount', { count: child.count })}
+          </span>
+        </span>
+        <CurrencyDisplay value={child.total} className="shrink-0 text-sm font-semibold tabular-nums" />
+      </div>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+    </Link>
+  )
+}
 export function CategoryDetailPage() {
   const { t } = useTranslation()
   const { categoryId } = useParams()
@@ -86,6 +113,19 @@ export function CategoryDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {data.children.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">{t('budget.detail.subcategories')}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-0.5">
+                {data.children.map((child) => (
+                  <SubcategoryRow key={child.categoryId} child={child} />
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           {data.count === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">

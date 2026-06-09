@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -51,7 +52,7 @@ public class BudgetService {
     public List<BudgetResponse> findAll(Long memberId) {
         BudgetCycle.CycleRange cycle = currentCycle(memberId);
         return budgetRepository.findAllByMemberIdOrderByIdAsc(memberId).stream()
-            .map(b -> toResponse(b, cycle))
+            .map(b -> toResponse(b, memberId, cycle))
             .toList();
     }
 
@@ -61,12 +62,13 @@ public class BudgetService {
         if (budgetRepository.existsByMemberIdAndCategoryId(memberId, category.getId())) {
             throw new IllegalArgumentException("A budget already exists for this category");
         }
+        assertNoEnvelopeOverlap(category, memberId);
         Budget budget = Budget.builder()
             .member(familyMemberRepository.getReferenceById(memberId))
             .category(category)
             .monthlyLimit(req.monthlyLimit())
             .build();
-        return toResponse(budgetRepository.save(budget), currentCycle(memberId));
+        return toResponse(budgetRepository.save(budget), memberId, currentCycle(memberId));
     }
 
     @Transactional
@@ -78,10 +80,11 @@ public class BudgetService {
             if (budgetRepository.existsByMemberIdAndCategoryId(memberId, category.getId())) {
                 throw new IllegalArgumentException("A budget already exists for this category");
             }
+            assertNoEnvelopeOverlap(category, memberId);
             budget.setCategory(category);
         }
         budget.setMonthlyLimit(req.monthlyLimit());
-        return toResponse(budgetRepository.save(budget), currentCycle(memberId));
+        return toResponse(budgetRepository.save(budget), memberId, currentCycle(memberId));
     }
 
     @Transactional
@@ -92,15 +95,50 @@ public class BudgetService {
 
     // ─── Internals ────────────────────────────────────────────────────────────
 
-    private BudgetResponse toResponse(Budget budget, BudgetCycle.CycleRange cycle) {
-        BigDecimal signed = transactionRepository.sumByCategoryIdAndDateBetween(
-            budget.getCategory().getId(), cycle.start(), cycle.end());
+    private BudgetResponse toResponse(Budget budget, Long memberId, BudgetCycle.CycleRange cycle) {
+        Category category = budget.getCategory();
+        List<Category> children = categoryRepository
+            .findAllByMemberIdAndParentIdOrderBySortOrderAscIdAsc(memberId, category.getId());
+        boolean rollup = !children.isEmpty();
+
+        // A parent envelope caps its whole subtree; a leaf envelope just its own category.
+        BigDecimal signed;
+        if (rollup) {
+            List<Long> ids = new ArrayList<>(children.size() + 1);
+            ids.add(category.getId());
+            for (Category child : children) {
+                ids.add(child.getId());
+            }
+            signed = transactionRepository.sumByCategoryIdInAndDateBetween(ids, cycle.start(), cycle.end());
+        } else {
+            signed = transactionRepository.sumByCategoryIdAndDateBetween(
+                category.getId(), cycle.start(), cycle.end());
+        }
         BigDecimal spent = signed.negate(); // outflow is negative → positive "spent"
         BigDecimal limit = budget.getMonthlyLimit();
         BigDecimal percent = limit.compareTo(BigDecimal.ZERO) > 0
             ? spent.divide(limit, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
             : BigDecimal.ZERO;
-        return BudgetResponse.from(budget, spent, percent, cycle.start(), cycle.end());
+        return BudgetResponse.from(budget, spent, percent, rollup, cycle.start(), cycle.end());
+    }
+
+    /**
+     * A parent envelope already covers its children's spend, so a parent and any of its children
+     * must never both hold an envelope — that would count the child's spend twice across the two
+     * cards. Rejects creating/re-pointing an envelope onto a category whose parent is budgeted, or
+     * onto a parent any of whose children is budgeted.
+     */
+    private void assertNoEnvelopeOverlap(Category category, Long memberId) {
+        if (category.getParent() != null
+            && budgetRepository.existsByMemberIdAndCategoryId(memberId, category.getParent().getId())) {
+            throw new IllegalArgumentException("This category's parent already has a budget");
+        }
+        for (Category child : categoryRepository
+                .findAllByMemberIdAndParentIdOrderBySortOrderAscIdAsc(memberId, category.getId())) {
+            if (budgetRepository.existsByMemberIdAndCategoryId(memberId, child.getId())) {
+                throw new IllegalArgumentException("A sub-category of this category already has a budget");
+            }
+        }
     }
 
     private BudgetCycle.CycleRange currentCycle(Long memberId) {
