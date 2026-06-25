@@ -45,7 +45,7 @@
 
 | Feature | Last updated | Note |
 |---------|-------------|------|
-| MCP server + scoped access-keys | 2026-06-05 | [mcp-server.md](./features/mcp-server.md) |
+| MCP server + scoped access-keys | 2026-06-26 | [mcp-server.md](./features/mcp-server.md) |
 | Frontend utilities (lib/utils.ts) | 2026-05-31 | [frontend-utils.md](./features/frontend-utils.md) |
 | Demo mode | 2026-04-08 | [demo-mode.md](./features/demo-mode.md) |
 | Theme (dark / light / system) + theme-adaptive rendering | 2026-06-02 | [theme-persistence.md](./features/theme-persistence.md) |
