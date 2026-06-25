@@ -1,6 +1,6 @@
 # Feature: Embedded MCP server + scoped access-keys
 
-> Last updated: 2026-06-05
+> Last updated: 2026-06-25
 
 ## Context
 
@@ -42,6 +42,7 @@ Three security properties are guaranteed structurally (not by per-call checks):
 - `config/AccessKeyAuthentication.java` — the `Authentication` a key runs as (principal = owner `AppUser`; authorities = scopes).
 - `config/AccessKeyAuthFilter.java` — validates the Bearer key for `/mcp/**` only; per-key Bucket4j throttle (429).
 - `config/SecurityConfig.java` — registers the filter (4th, anchored to `UsernamePasswordAuthenticationFilter`) and `requestMatchers("/mcp/**").authenticated()`.
+- `config/McpSecurityContextPropagationConfig.java` + `config/SecurityContextThreadLocalAccessor.java` — carry the authenticated `SecurityContext` from the servlet thread to Spring AI's reactive tool-execution thread (see Gotchas: scope enforcement across the thread hop).
 - `service/UserContext.java` — Property B guard at the top of `getMemberIdOverride()`.
 - `model/AccessKey.java` + `repository/AccessKeyRepository.java` + `db/migration/V37__access_keys.sql`.
 
@@ -126,6 +127,22 @@ and GDPR data export.
 
 ## Gotchas / Pitfalls
 
+- **Scope enforcement needs the security context across a thread hop.** `AccessKeyAuthFilter`
+  authenticates on the Tomcat servlet thread, but Spring AI (WebMvc+SSE) executes `@Tool` methods on a
+  Reactor scheduler thread. Because `SecurityContextHolder` is a plain `ThreadLocal`, that tool thread
+  saw no `Authentication`, so `ScopeEnforcementAspect` (and `UserContext`) found **no scopes** — every
+  scoped `tools/call` failed with `Missing required scope`, even for a key that holds the scope. Fixed by
+  `McpSecurityContextPropagationConfig`: it registers `SecurityContextThreadLocalAccessor` with the
+  Micrometer `ContextRegistry` and calls `Hooks.enableAutomaticContextPropagation()`, so Reactor captures
+  the `SecurityContext` at subscription and restores it around tool execution. The accessor is null-safe on
+  `restore()` because `SecurityContextHolder.setContext(null)` throws. Unit tests can't catch this — they
+  set the context on the test thread — so it only shows up driving the real SSE transport.
+- **The reverse proxy must forward `/mcp` with SSE settings.** An MCP client connects to the public origin
+  (`https://<host>/mcp`), not the backend port, so nginx/Vite must route `/mcp` to the backend with
+  `proxy_buffering off` + a long `proxy_read_timeout` (the GET `/mcp` stream is long-lived) — otherwise the
+  SSE events are withheld and the stream stalls. Configured in `frontend/nginx.conf`, `docker/nginx.conf`,
+  and the Vite dev proxy (`frontend/vite.config.ts`). Forgetting it yields a `404` (or, if `/` is a SPA
+  fallback, an HTML page) on `/mcp` while the backend is perfectly healthy on `:8080/mcp`.
 - **`SyncTools` must be named `@Component("picsouSyncTools")`.** Spring AI's
   `McpServerAutoConfiguration` already defines a bean named `syncTools` (the SYNC server's tool-spec
   list). A `@Component` defaulting to `syncTools` collides with it and aborts the context

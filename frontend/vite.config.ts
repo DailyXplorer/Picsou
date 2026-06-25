@@ -57,6 +57,13 @@ export default defineConfig({
         target: process.env.VITE_API_TARGET || 'http://localhost:8080',
         changeOrigin: true,
       },
+      // Embedded MCP server (HTTP+SSE): GET /mcp stream + POST /mcp/message.
+      // http-proxy streams Server-Sent Events as-is, so an MCP client can point
+      // at the dev origin (:5173) instead of reaching the backend directly.
+      '/mcp': {
+        target: process.env.VITE_API_TARGET || 'http://localhost:8080',
+        changeOrigin: true,
+      },
     },
   },
   build: {
