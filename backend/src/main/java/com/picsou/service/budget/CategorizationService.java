@@ -358,8 +358,8 @@ public class CategorizationService {
                 tx.getMerchantLabel() != null ? tx.getMerchantLabel() : tx.getDescription(),
                 tx.getDescription(),
                 tx.getAmount());
-            Optional<TransactionCategorizerPort.CategorySuggestion> answer =
-                categorizer.categorize(input, options, examples);
+            var r = categorizer.categorize(input, options, examples);
+            Optional<TransactionCategorizerPort.CategorySuggestion> answer = r.suggestion();
             if (answer.isEmpty()) {
                 continue;
             }

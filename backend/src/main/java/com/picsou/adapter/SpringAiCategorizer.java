@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
 
 import java.util.List;
 import java.util.Locale;
@@ -16,7 +17,8 @@ import java.util.Optional;
  * ({@code spring.ai.model.chat}); this adapter is provider-agnostic. The model is asked to pick
  * one of the member's category slugs and report a confidence; the structured JSON answer is parsed
  * by Spring AI's bean output converter. Any failure (provider down, unparseable answer) degrades to
- * an empty result so the categorization pipeline never breaks.
+ * a {@link CategorizationResult} with {@code status="ERROR"} so the categorization pipeline never
+ * breaks. Token usage, the prompt sent, and the raw response text are captured for audit logging.
  */
 public class SpringAiCategorizer implements TransactionCategorizerPort {
 
@@ -38,33 +40,71 @@ public class SpringAiCategorizer implements TransactionCategorizerPort {
     public record Answer(String categorySlug, double confidence) {}
 
     @Override
-    public Optional<CategorySuggestion> categorize(
+    public CategorizationResult categorize(
         CategorizationInput input,
         List<CategoryOption> categories,
         List<Example> examples
     ) {
         if (categories.isEmpty()) {
-            return Optional.empty();
+            return CategorizationResult.empty("EMPTY");
         }
+        String userPrompt = buildUserPrompt(input, categories, examples);
+        String fullPrompt = SYSTEM + "\n\n" + userPrompt;
+        long t0 = System.nanoTime();
         try {
-            Answer answer = chatClient.prompt()
+            var re = chatClient.prompt()
                 .system(SYSTEM)
-                .user(buildUserPrompt(input, categories, examples))
+                .user(userPrompt)
                 .call()
-                .entity(Answer.class);
-            if (answer == null) {
-                return Optional.empty();
+                .responseEntity(Answer.class);
+            Answer answer = re.entity();
+            ChatResponse resp = re.response();
+            long ms = (System.nanoTime() - t0) / 1_000_000;
+
+            Integer pt = null, ct = null, tt = null;
+            String respText = null;
+            if (resp != null) {
+                var meta = resp.getMetadata();
+                if (meta != null) {
+                    var u = meta.getUsage();
+                    if (u != null) {
+                        pt = asInt(u.getPromptTokens());
+                        ct = asInt(u.getCompletionTokens());
+                        tt = asInt(u.getTotalTokens());
+                    }
+                }
+                if (resp.getResult() != null && resp.getResult().getOutput() != null) {
+                    respText = resp.getResult().getOutput().getText();
+                }
             }
-            String slug = answer.categorySlug() == null
-                ? "" : answer.categorySlug().trim().toLowerCase(Locale.ROOT);
-            if (slug.isEmpty() || slug.equals("unknown")) {
-                return Optional.empty();
-            }
-            return Optional.of(new CategorySuggestion(slug, answer.confidence()));
+
+            Optional<CategorySuggestion> sug = toSuggestion(answer);
+            return new CategorizationResult(sug, fullPrompt, respText, pt, ct, tt, ms,
+                sug.isPresent() ? "OK" : "EMPTY", null);
         } catch (Exception e) {
+            long ms = (System.nanoTime() - t0) / 1_000_000;
             log.warn("AI categorization failed for '{}': {}", input.merchantLabel(), e.getMessage());
+            return new CategorizationResult(Optional.empty(), fullPrompt, null, null, null, null, ms, "ERROR",
+                e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+        }
+    }
+
+    /** Extract slug-normalize/unknown/empty logic from the model's raw answer. */
+    private Optional<CategorySuggestion> toSuggestion(Answer answer) {
+        if (answer == null) {
             return Optional.empty();
         }
+        String slug = answer.categorySlug() == null
+            ? "" : answer.categorySlug().trim().toLowerCase(Locale.ROOT);
+        if (slug.isEmpty() || slug.equals("unknown")) {
+            return Optional.empty();
+        }
+        return Optional.of(new CategorySuggestion(slug, answer.confidence()));
+    }
+
+    /** Null-safe conversion of a {@link Number} to {@link Integer}. */
+    private static Integer asInt(Number n) {
+        return n == null ? null : n.intValue();
     }
 
     private static String buildUserPrompt(

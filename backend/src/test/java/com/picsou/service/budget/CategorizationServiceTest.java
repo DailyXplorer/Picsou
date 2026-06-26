@@ -281,7 +281,9 @@ class CategorizationServiceTest {
             .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.AUTO_HIGH_CONFIDENCE, 75)));
         stubAiInputs(courses, unc);
         when(categorizer.categorize(any(), any(), any()))
-            .thenReturn(Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.90)));
+            .thenReturn(new TransactionCategorizerPort.CategorizationResult(
+                Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.90)),
+                null, null, null, null, null, 0L, "OK", null));
 
         var result = service.aiCategorizeUncategorized(MEMBER_ID);
 
@@ -300,7 +302,9 @@ class CategorizationServiceTest {
             .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.AUTO_HIGH_CONFIDENCE, 75)));
         stubAiInputs(courses, unc);
         when(categorizer.categorize(any(), any(), any()))
-            .thenReturn(Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.50)));
+            .thenReturn(new TransactionCategorizerPort.CategorizationResult(
+                Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.50)),
+                null, null, null, null, null, 0L, "OK", null));
 
         var result = service.aiCategorizeUncategorized(MEMBER_ID);
 
@@ -319,7 +323,9 @@ class CategorizationServiceTest {
             .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.SUGGEST, 75)));
         stubAiInputs(courses, unc);
         when(categorizer.categorize(any(), any(), any()))
-            .thenReturn(Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.99)));
+            .thenReturn(new TransactionCategorizerPort.CategorizationResult(
+                Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.99)),
+                null, null, null, null, null, 0L, "OK", null));
 
         var result = service.aiCategorizeUncategorized(MEMBER_ID);
 
@@ -338,7 +344,9 @@ class CategorizationServiceTest {
             .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.AUTO_ALL, 75)));
         stubAiInputs(courses, unc);
         when(categorizer.categorize(any(), any(), any()))
-            .thenReturn(Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.05)));
+            .thenReturn(new TransactionCategorizerPort.CategorizationResult(
+                Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.05)),
+                null, null, null, null, null, 0L, "OK", null));
 
         var result = service.aiCategorizeUncategorized(MEMBER_ID);
 
@@ -354,7 +362,9 @@ class CategorizationServiceTest {
             .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.AUTO_ALL, 75)));
         stubAiInputs(courses, unc);
         when(categorizer.categorize(any(), any(), any()))
-            .thenReturn(Optional.of(new TransactionCategorizerPort.CategorySuggestion("restaurants", 0.95)));
+            .thenReturn(new TransactionCategorizerPort.CategorizationResult(
+                Optional.of(new TransactionCategorizerPort.CategorySuggestion("restaurants", 0.95)),
+                null, null, null, null, null, 0L, "OK", null));
 
         var result = service.aiCategorizeUncategorized(MEMBER_ID);
 
@@ -371,7 +381,8 @@ class CategorizationServiceTest {
         when(settingsRepository.findByMemberId(MEMBER_ID))
             .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.AUTO_ALL, 75)));
         stubAiInputs(courses, unc);
-        when(categorizer.categorize(any(), any(), any())).thenReturn(Optional.empty());
+        when(categorizer.categorize(any(), any(), any()))
+            .thenReturn(TransactionCategorizerPort.CategorizationResult.empty("EMPTY"));
 
         var result = service.aiCategorizeUncategorized(MEMBER_ID);
 

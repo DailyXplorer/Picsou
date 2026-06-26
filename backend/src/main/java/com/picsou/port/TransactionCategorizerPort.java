@@ -10,8 +10,8 @@ import java.util.Optional;
  * port is only consulted for the long tail of transactions left uncategorized.
  *
  * <p>Implementations must never throw into the categorization pipeline — on any provider
- * failure (timeout, bad output, provider down) they return {@link Optional#empty()}, exactly
- * like the price providers degrade to an empty result. The default wiring is a no-op so the
+ * failure (timeout, bad output, provider down) they return a {@link CategorizationResult}
+ * with {@code status="ERROR"} and an empty suggestion. The default wiring is a no-op so the
  * feature is fully OFF until an operator configures a provider.
  */
 public interface TransactionCategorizerPort {
@@ -22,10 +22,10 @@ public interface TransactionCategorizerPort {
      * @param input      the transaction's classifiable signal (cleaned label, raw memo, amount)
      * @param categories the member's own categories the model must choose among (its taxonomy)
      * @param examples   a few of the member's recently hand-categorized transactions (few-shot)
-     * @return the chosen category slug + a 0..1 confidence, or empty if the model abstained,
-     *         answered with an unknown slug, or the provider failed
+     * @return a rich result capturing the suggestion (if any), the prompt sent, the response
+     *         text, token usage, latency, and a status code
      */
-    Optional<CategorySuggestion> categorize(
+    CategorizationResult categorize(
         CategorizationInput input,
         List<CategoryOption> categories,
         List<Example> examples
@@ -42,4 +42,31 @@ public interface TransactionCategorizerPort {
 
     /** The model's answer: the chosen category {@code slug} and a self-reported {@code confidence} in 0..1. */
     record CategorySuggestion(String categorySlug, double confidence) {}
+
+    /**
+     * Rich result of one categorization attempt.
+     *
+     * <p>{@code status} is one of:
+     * <ul>
+     *   <li>{@code "OK"} — suggestion is present and the slug was recognized</li>
+     *   <li>{@code "EMPTY"} — no categories provided, or model abstained / returned unknown slug</li>
+     *   <li>{@code "ERROR"} — provider exception; {@code error} carries the message</li>
+     *   <li>{@code "DISABLED"} — no AI provider configured (noop)</li>
+     * </ul>
+     */
+    record CategorizationResult(
+        Optional<CategorySuggestion> suggestion,
+        String prompt,
+        String response,
+        Integer promptTokens,
+        Integer completionTokens,
+        Integer totalTokens,
+        long latencyMs,
+        String status,
+        String error
+    ) {
+        public static CategorizationResult empty(String status) {
+            return new CategorizationResult(Optional.empty(), null, null, null, null, null, 0, status, null);
+        }
+    }
 }

@@ -2,6 +2,7 @@ package com.picsou.adapter;
 
 import com.picsou.config.AiConfigProvider;
 import com.picsou.port.TransactionCategorizerPort;
+import com.picsou.port.TransactionCategorizerPort.CategorizationResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -35,14 +36,18 @@ class DynamicTransactionCategorizerTest {
             List.of(new TransactionCategorizerPort.Example("Fnac", "shopping"));
         TransactionCategorizerPort.CategorySuggestion suggestion =
             new TransactionCategorizerPort.CategorySuggestion("shopping", 0.95);
+        CategorizationResult delegateResult =
+            new CategorizationResult(Optional.of(suggestion), "prompt", "response", 10, 5, 15, 120L, "OK", null);
 
         when(provider.currentCategorizer()).thenReturn(delegate);
-        when(delegate.categorize(input, cats, examples)).thenReturn(Optional.of(suggestion));
+        when(delegate.categorize(input, cats, examples)).thenReturn(delegateResult);
 
-        Optional<TransactionCategorizerPort.CategorySuggestion> result =
+        CategorizationResult result =
             new DynamicTransactionCategorizer(provider).categorize(input, cats, examples);
 
-        assertThat(result).contains(suggestion);
+        assertThat(result).isSameAs(delegateResult);
+        assertThat(result.suggestion()).contains(suggestion);
+        assertThat(result.status()).isEqualTo("OK");
     }
 
     // ─── 2. unconfigured_returnsEmpty ────────────────────────────────────────
@@ -57,9 +62,10 @@ class DynamicTransactionCategorizerTest {
 
         when(provider.currentCategorizer()).thenReturn(new NoopCategorizer());
 
-        Optional<TransactionCategorizerPort.CategorySuggestion> result =
+        CategorizationResult result =
             new DynamicTransactionCategorizer(provider).categorize(input, cats, examples);
 
-        assertThat(result).isEmpty();
+        assertThat(result.suggestion()).isEmpty();
+        assertThat(result.status()).isEqualTo("DISABLED");
     }
 }

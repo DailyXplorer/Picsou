@@ -3,7 +3,6 @@ package com.picsou.adapter;
 import com.picsou.port.TransactionCategorizerPort;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Default {@link TransactionCategorizerPort} when no AI provider is configured
@@ -14,11 +13,11 @@ import java.util.Optional;
 public class NoopCategorizer implements TransactionCategorizerPort {
 
     @Override
-    public Optional<CategorySuggestion> categorize(
+    public CategorizationResult categorize(
         CategorizationInput input,
         List<CategoryOption> categories,
         List<Example> examples
     ) {
-        return Optional.empty();
+        return CategorizationResult.empty("DISABLED");
     }
 }
