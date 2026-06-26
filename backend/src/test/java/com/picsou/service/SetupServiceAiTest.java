@@ -44,7 +44,7 @@ class SetupServiceAiTest {
         service.writeAiConfig("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", null);
 
         ArgumentCaptor<AppSetting> captor = ArgumentCaptor.forClass(AppSetting.class);
-        verify(settingRepository, org.mockito.Mockito.atLeast(3)).save(captor.capture());
+        verify(settingRepository, org.mockito.Mockito.times(3)).save(captor.capture());
 
         List<AppSetting> saved = captor.getAllValues();
         Set<String> keys = saved.stream().map(AppSetting::getKey).collect(Collectors.toSet());
@@ -71,11 +71,12 @@ class SetupServiceAiTest {
         service.writeAiConfig("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", null);
 
         ArgumentCaptor<AppSetting> captor = ArgumentCaptor.forClass(AppSetting.class);
-        verify(settingRepository, org.mockito.Mockito.atLeast(1)).save(captor.capture());
+        verify(settingRepository, org.mockito.Mockito.times(3)).save(captor.capture());
 
         Set<String> keys = captor.getAllValues().stream()
             .map(AppSetting::getKey)
             .collect(Collectors.toSet());
+        assertThat(keys).contains("ai.provider", "ai.model", "ai.base-url");
         assertThat(keys).doesNotContain("ai.api-key");
     }
 
@@ -86,7 +87,7 @@ class SetupServiceAiTest {
         service.writeAiConfig("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "CIPHERTEXT");
 
         ArgumentCaptor<AppSetting> captor = ArgumentCaptor.forClass(AppSetting.class);
-        verify(settingRepository, org.mockito.Mockito.atLeast(4)).save(captor.capture());
+        verify(settingRepository, org.mockito.Mockito.times(4)).save(captor.capture());
 
         assertThat(captor.getAllValues()).anySatisfy(s -> {
             assertThat(s.getKey()).isEqualTo("ai.api-key");
