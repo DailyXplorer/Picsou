@@ -41,6 +41,7 @@
 | 2026-06-05 | [Access-key auth + embedded MCP server](./decisions/2026-06-05-access-key-auth-and-embedded-mcp.md) | Active |
 | 2026-06-09 | [Offline merchant knowledge base and nested-route Budget IA](./decisions/2026-06-09-merchant-kb-and-budget-ia.md) | Active |
 | 2026-06-26 | [Optional AI transaction categorization via TransactionCategorizerPort](./decisions/2026-06-26-ai-transaction-categorization.md) | Active |
+| 2026-06-26 | [AI provider runtime admin config (DB-only, no restart)](./decisions/2026-06-26-ai-provider-runtime-admin-config.md) | Active |
 
 ## Feature notes
 
