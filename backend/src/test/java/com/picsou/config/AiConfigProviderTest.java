@@ -44,12 +44,12 @@ class AiConfigProviderTest {
 
     @Test
     void save_encryptsKey_andReloads() {
-        provider.save("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "rawkey");
+        provider.save("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "rawkey", null);
 
         ArgumentCaptor<String> encryptedCaptor = ArgumentCaptor.forClass(String.class);
         verify(setupService).writeAiConfig(
             eq("anthropic"), eq("claude-haiku-4-5"), eq("https://api.anthropic.com"),
-            encryptedCaptor.capture()
+            encryptedCaptor.capture(), isNull()
         );
         String captured = encryptedCaptor.getValue();
         assertThat(captured).isNotNull();
@@ -60,9 +60,9 @@ class AiConfigProviderTest {
 
     @Test
     void save_blankKey_passesNullToWriteAiConfig() {
-        provider.save("anthropic", "m", "u", "   ");
+        provider.save("anthropic", "m", "u", "   ", null);
 
-        verify(setupService).writeAiConfig("anthropic", "m", "u", null);
+        verify(setupService).writeAiConfig("anthropic", "m", "u", null, null);
     }
 
     // ─── 2b. save_disable_clearsKey ──────────────────────────────────────────
@@ -71,9 +71,9 @@ class AiConfigProviderTest {
     void save_disable_clearsKey() {
         ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
 
-        provider.save("none", "", "", "");
+        provider.save("none", "", "", "", null);
 
-        verify(setupService).writeAiConfig(eq("none"), eq(""), eq(""), keyCaptor.capture());
+        verify(setupService).writeAiConfig(eq("none"), eq(""), eq(""), keyCaptor.capture(), isNull());
         assertThat(keyCaptor.getValue()).isEqualTo("");
     }
 
@@ -195,11 +195,43 @@ class AiConfigProviderTest {
         verify(factory, times(1)).build(any());
 
         // save() evicts the cache
-        provider.save("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "rawkey");
+        provider.save("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "rawkey", null);
 
         // Next currentCategorizer() call must rebuild — factory called a second time
         provider.currentCategorizer();
         verify(factory, times(2)).build(any());
+    }
+
+    // ─── 10. maxConcurrency_defaultsTo4WhenUnset ─────────────────────────────
+
+    @Test
+    void maxConcurrency_defaultsTo4WhenUnset() {
+        when(setupService.readSetting(SetupService.KEY_AI_MAX_CONCURRENCY)).thenReturn(Optional.empty());
+
+        assertThat(provider.maxConcurrency()).isEqualTo(4);
+    }
+
+    // ─── 11. maxConcurrency_clamped ──────────────────────────────────────────
+
+    @Test
+    void maxConcurrency_clamped() {
+        when(setupService.readSetting(SetupService.KEY_AI_MAX_CONCURRENCY)).thenReturn(Optional.of("0"));
+        assertThat(provider.maxConcurrency()).isEqualTo(1);
+
+        when(setupService.readSetting(SetupService.KEY_AI_MAX_CONCURRENCY)).thenReturn(Optional.of("99"));
+        assertThat(provider.maxConcurrency()).isEqualTo(16);
+
+        when(setupService.readSetting(SetupService.KEY_AI_MAX_CONCURRENCY)).thenReturn(Optional.of("8"));
+        assertThat(provider.maxConcurrency()).isEqualTo(8);
+    }
+
+    // ─── 12. save_persistsMaxConcurrency ─────────────────────────────────────
+
+    @Test
+    void save_persistsMaxConcurrency() {
+        provider.save("anthropic", "m", "u", "rawkey", 6);
+
+        verify(setupService).writeAiConfig(eq("anthropic"), eq("m"), eq("u"), any(), eq(6));
     }
 
     /*

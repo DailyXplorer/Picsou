@@ -153,17 +153,17 @@ class AdminControllerTest {
 
     @Test
     void updateAi_delegatesToSave() {
-        var request = new AdminAiRequest("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "sk-ant");
+        var request = new AdminAiRequest("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "sk-ant", 4);
         var response = controller.updateAi(request);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-        verify(aiConfigProvider).save("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "sk-ant");
+        verify(aiConfigProvider).save("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "sk-ant", 4);
     }
 
     @Test
     void testAi_returnsProviderResult() {
         when(aiConfigProvider.test(any(), any(), any(), any()))
             .thenReturn(new AiTestResponse(true, "Connected."));
-        var response = controller.testAi(new AdminAiRequest("anthropic", "m", "u", null));
+        var response = controller.testAi(new AdminAiRequest("anthropic", "m", "u", null, null));
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().ok()).isTrue();
@@ -184,6 +184,7 @@ class AdminControllerTest {
         when(aiConfigProvider.storedModel()).thenReturn("m");
         when(aiConfigProvider.storedBaseUrl()).thenReturn("u");
         when(aiConfigProvider.apiKeyPresent()).thenReturn(true);
+        when(aiConfigProvider.maxConcurrency()).thenReturn(6);
 
         var body = controller.getSettings().getBody();
 
@@ -193,5 +194,6 @@ class AdminControllerTest {
         assertThat(body.ai().model()).isEqualTo("m");
         assertThat(body.ai().baseUrl()).isEqualTo("u");
         assertThat(body.ai().apiKeyPresent()).isTrue();
+        assertThat(body.ai().maxConcurrency()).isEqualTo(6);
     }
 }

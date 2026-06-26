@@ -109,12 +109,12 @@ public class AiConfigProvider {
      * {@code null} to {@link SetupService#writeAiConfig} which skips the key update). A non-blank
      * value is encrypted before storage. Calls {@link #reload()} afterwards.
      */
-    public void save(String provider, String model, String baseUrl, String rawApiKeyOrBlank) {
+    public void save(String provider, String model, String baseUrl, String rawApiKeyOrBlank, Integer maxConcurrency) {
         boolean disabling = AiProvider.fromKey(provider).isEmpty();
         String encrypted = disabling
             ? ""  // clear the stored key when AI is turned off
             : (rawApiKeyOrBlank == null || rawApiKeyOrBlank.isBlank() ? null : crypto.encrypt(rawApiKeyOrBlank));
-        setupService.writeAiConfig(provider, model, baseUrl, encrypted);
+        setupService.writeAiConfig(provider, model, baseUrl, encrypted, maxConcurrency);
         reload();
     }
 
@@ -148,6 +148,22 @@ public class AiConfigProvider {
             return new AiTestResponse(false,
                 e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
         }
+    }
+
+    // ─── Concurrency setting ─────────────────────────────────────────────────
+
+    /**
+     * Returns the configured max concurrency for AI categorization jobs (default 4, clamped 1..16).
+     */
+    public int maxConcurrency() {
+        int v = setupService.readSetting(SetupService.KEY_AI_MAX_CONCURRENCY).map(s -> {
+            try {
+                return Integer.parseInt(s.trim());
+            } catch (NumberFormatException e) {
+                return 4;
+            }
+        }).orElse(4);
+        return Math.max(1, Math.min(16, v));
     }
 
     // ─── Status accessors (for admin GET) ────────────────────────────────────

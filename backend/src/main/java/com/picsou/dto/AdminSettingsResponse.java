@@ -9,5 +9,5 @@ public record AdminSettingsResponse(
 ) {
     public record SecuritySettings(List<String> allowedOrigins, boolean secureCookies) {}
     public record EnableBankingSettings(String applicationId, String redirectUri, boolean privateKeyPresent) {}
-    public record AiSettings(String provider, String model, String baseUrl, boolean apiKeyPresent) {}
+    public record AiSettings(String provider, String model, String baseUrl, boolean apiKeyPresent, int maxConcurrency) {}
 }

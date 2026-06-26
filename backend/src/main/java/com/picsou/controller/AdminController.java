@@ -76,7 +76,8 @@ public class AdminController {
             aiConfigProvider.storedProvider(),
             aiConfigProvider.storedModel(),
             aiConfigProvider.storedBaseUrl(),
-            aiConfigProvider.apiKeyPresent()
+            aiConfigProvider.apiKeyPresent(),
+            aiConfigProvider.maxConcurrency()
         );
 
         return ResponseEntity.ok(new AdminSettingsResponse(
@@ -149,7 +150,7 @@ public class AdminController {
 
     @PutMapping("/settings/ai")
     public ResponseEntity<Void> updateAi(@Valid @RequestBody AdminAiRequest request) {
-        aiConfigProvider.save(request.provider(), request.model(), request.baseUrl(), request.apiKey());
+        aiConfigProvider.save(request.provider(), request.model(), request.baseUrl(), request.apiKey(), request.maxConcurrency());
         return ResponseEntity.noContent().build();
     }
 
