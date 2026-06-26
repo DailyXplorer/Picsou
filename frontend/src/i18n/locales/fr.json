@@ -861,6 +861,7 @@
       "baseUrl": "URL de base",
       "apiKey": "Clé API",
       "apiKeyHintPresent": "Une clé est déjà enregistrée — laissez vide pour la conserver.",
+      "apiKeyRequired": "Une clé API est requise lors du changement de fournisseur.",
       "disabledHint": "La catégorisation IA est désactivée. Choisissez un fournisseur pour l'activer.",
       "test": "Tester la connexion",
       "testing": "Test en cours…",

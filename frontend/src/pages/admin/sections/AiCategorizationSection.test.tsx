@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { AiCategorizationSection } from './AiCategorizationSection'
 
 // Mutable state the mocked hooks read, so each test can vary returned data.
@@ -107,12 +107,33 @@ describe('AiCategorizationSection', () => {
     expect(screen.queryByText('admin.ai.test')).not.toBeInTheDocument()
   })
 
-  it('shows the apiKeyHintPresent hint when apiKeyPresent is true', () => {
+  it('shows the apiKeyHintPresent hint when apiKeyPresent is true and provider unchanged', () => {
     render(
       <AiCategorizationSection
         settings={{ ...DEFAULT_SETTINGS, provider: 'openai', apiKeyPresent: true }}
       />,
     )
     expect(screen.getByText('admin.ai.apiKeyHintPresent')).toBeInTheDocument()
+  })
+
+  it('blocks save and shows apiKeyRequired error when provider changed and api key is blank', async () => {
+    render(
+      <AiCategorizationSection
+        settings={{ provider: 'anthropic', model: '', baseUrl: '', apiKeyPresent: true }}
+      />,
+    )
+    // Switch to a different provider
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'openai' } })
+
+    // Submit with blank api key
+    fireEvent.click(screen.getByText('admin.ai.save'))
+
+    // Save mutation must NOT have been called
+    await waitFor(() => {
+      expect(state.updateMutateAsync).not.toHaveBeenCalled()
+    })
+    // Error message must appear
+    expect(screen.getByText('admin.ai.apiKeyRequired')).toBeInTheDocument()
   })
 })

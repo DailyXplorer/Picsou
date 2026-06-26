@@ -110,9 +110,10 @@ public class AiConfigProvider {
      * value is encrypted before storage. Calls {@link #reload()} afterwards.
      */
     public void save(String provider, String model, String baseUrl, String rawApiKeyOrBlank) {
-        String encrypted = (rawApiKeyOrBlank == null || rawApiKeyOrBlank.isBlank())
-            ? null
-            : crypto.encrypt(rawApiKeyOrBlank);
+        boolean disabling = AiProvider.fromKey(provider).isEmpty();
+        String encrypted = disabling
+            ? ""  // clear the stored key when AI is turned off
+            : (rawApiKeyOrBlank == null || rawApiKeyOrBlank.isBlank() ? null : crypto.encrypt(rawApiKeyOrBlank));
         setupService.writeAiConfig(provider, model, baseUrl, encrypted);
         reload();
     }

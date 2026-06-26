@@ -65,6 +65,18 @@ class AiConfigProviderTest {
         verify(setupService).writeAiConfig("anthropic", "m", "u", null);
     }
 
+    // ─── 2b. save_disable_clearsKey ──────────────────────────────────────────
+
+    @Test
+    void save_disable_clearsKey() {
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+
+        provider.save("none", "", "", "");
+
+        verify(setupService).writeAiConfig(eq("none"), eq(""), eq(""), keyCaptor.capture());
+        assertThat(keyCaptor.getValue()).isEqualTo("");
+    }
+
     // ─── 3. current_decryptsStoredKey ────────────────────────────────────────
 
     @Test

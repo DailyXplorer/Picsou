@@ -23,7 +23,7 @@ Two requirements emerged:
 Move all AI provider configuration — provider type, API key, model, base URL — out of environment
 variables and into the `app_setting` table (DB-only). The change introduces:
 
-- **`AiProvider` enum** (`OPENAI`, `OPEN_ROUTER`, `ANTHROPIC`, `OLLAMA`) — exhaustive provider set.
+- **`AiProvider` enum** (`OPENAI`, `OPENROUTER`, `ANTHROPIC`, `OLLAMA`) — exhaustive provider set.
 - **`AiChatModelFactory`** — builds a `ChatModel` instance manually at runtime from the DB config,
   bypassing Spring AI auto-configuration entirely. OpenRouter reuses the OpenAI-compatible client
   with its custom base URL.

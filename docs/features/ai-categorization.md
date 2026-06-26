@@ -39,11 +39,11 @@ inbox can render "AI: Transport · 92%" and pre-select that category — accepti
 - `backend/.../adapter/SpringAiCategorizer.java` — Spring AI `ChatClient` implementation
 - `backend/.../adapter/NoopCategorizer.java` — default when no provider is configured
 - `backend/.../adapter/DynamicTransactionCategorizer.java` — `TransactionCategorizerPort` bean; delegates to cached categorizer from `AiConfigProvider`
-- `backend/.../config/AiCategorizationConfig.java` — picks the bean from `ObjectProvider<ChatModel>`
+- `backend/.../config/AiCategorizationConfig.java` — wires the `TransactionCategorizerPort` as a `DynamicTransactionCategorizer` (resolves the provider at call time via `AiConfigProvider`)
 - `backend/.../config/AiChatModelFactory.java` — builds a `ChatModel` at runtime from DB config (OpenAI/OpenRouter/Anthropic/Ollama)
 - `backend/.../config/AiConfigProvider.java` — resolves + caches the active categorizer; rebuilt on save (no restart)
-- `backend/.../config/AiProviderConfig.java` — `@ConfigurationProperties` for provider defaults
-- `backend/.../model/AiProvider.java` — enum: `OPENAI`, `OPEN_ROUTER`, `ANTHROPIC`, `OLLAMA`
+- `backend/.../config/AiProviderConfig.java` — plain Java `record` for provider config
+- `backend/.../model/AiProvider.java` — enum: `OPENAI`, `OPENROUTER`, `ANTHROPIC`, `OLLAMA`
 - `backend/.../service/budget/CategorizationService.java` — `aiCategorizeUncategorized(memberId)`
 - `backend/.../controller/TransactionCategorizationController.java` — `POST /api/transactions/categorize-ai`
 - `backend/.../controller/AdminController.java` — `PUT /api/admin/settings/ai` + `POST /api/admin/settings/ai/test`

@@ -861,6 +861,7 @@
       "baseUrl": "Base URL",
       "apiKey": "API key",
       "apiKeyHintPresent": "A key is already saved — leave blank to keep it.",
+      "apiKeyRequired": "An API key is required when changing provider.",
       "disabledHint": "AI categorization is off. Choose a provider to enable it.",
       "test": "Test connection",
       "testing": "Testing…",

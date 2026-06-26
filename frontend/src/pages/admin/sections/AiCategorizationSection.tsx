@@ -47,7 +47,7 @@ export function AiCategorizationSection({ settings }: { settings: AdminAiSetting
   const update = useUpdateAi()
   const testAi = useTestAi()
 
-  const { register, handleSubmit, reset, watch, getValues, formState } = useForm<FormValues>({
+  const { register, handleSubmit, reset, watch, getValues, setError, formState } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       provider: settings.provider,
@@ -68,8 +68,14 @@ export function AiCategorizationSection({ settings }: { settings: AdminAiSetting
 
   const provider = watch('provider')
   const defaults = PROVIDER_DEFAULTS[provider] ?? null
+  const keyKept = settings.apiKeyPresent && provider === settings.provider
 
   const onSubmit = handleSubmit(async (values) => {
+    const needsKey = values.provider !== 'none' && values.provider !== 'ollama'
+    if (needsKey && !keyKept && !values.apiKey) {
+      setError('apiKey', { type: 'manual', message: t('admin.ai.apiKeyRequired') })
+      return
+    }
     await update.mutateAsync(values as unknown as AdminAiRequest)
   })
 
@@ -138,9 +144,14 @@ export function AiCategorizationSection({ settings }: { settings: AdminAiSetting
                     type="password"
                     {...register('apiKey')}
                   />
-                  {settings.apiKeyPresent && (
+                  {keyKept && (
                     <p className="text-xs text-muted-foreground">
                       {t('admin.ai.apiKeyHintPresent')}
+                    </p>
+                  )}
+                  {formState.errors.apiKey && (
+                    <p role="alert" className="text-xs text-destructive">
+                      {formState.errors.apiKey.message}
                     </p>
                   )}
                 </div>
