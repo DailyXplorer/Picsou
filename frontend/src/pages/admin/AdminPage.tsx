@@ -4,6 +4,7 @@ import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { useAdminSettings } from '@/features/admin/hooks'
 import { SecuritySection } from './sections/SecuritySection'
 import { EnableBankingSection } from './sections/EnableBankingSection'
+import { AiCategorizationSection } from './sections/AiCategorizationSection'
 import { IntegrationsSection } from './sections/IntegrationsSection'
 import { MembersSection } from './sections/MembersSection'
 
@@ -21,6 +22,7 @@ export function AdminPage() {
           <MembersSection />
           <SecuritySection settings={data.security} />
           <EnableBankingSection settings={data.enableBanking} />
+          <AiCategorizationSection settings={data.ai} />
           <IntegrationsSection integrations={data.integrations} />
         </>
       )}
