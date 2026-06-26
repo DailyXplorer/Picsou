@@ -130,17 +130,12 @@ public class AiConfigProvider {
     public AiTestResponse test(String provider, String model, String baseUrl, String rawApiKeyOrBlank) {
         Optional<AiProvider> p = AiProvider.fromKey(provider);
         if (p.isEmpty()) return new AiTestResponse(false, "No provider selected.");
-
-        String key = (rawApiKeyOrBlank == null || rawApiKeyOrBlank.isBlank())
-            ? current().map(AiProviderConfig::apiKey).orElse(null)
-            : rawApiKeyOrBlank;
-
-        Optional<ChatModel> built = factory.build(new AiProviderConfig(p.get(), key, model, baseUrl));
-        if (built.isEmpty()) {
-            return new AiTestResponse(false, "An API key is required for " + p.get() + ".");
-        }
-
         try {
+            String key = (rawApiKeyOrBlank == null || rawApiKeyOrBlank.isBlank())
+                ? current().map(AiProviderConfig::apiKey).orElse(null)
+                : rawApiKeyOrBlank;
+            Optional<ChatModel> built = factory.build(new AiProviderConfig(p.get(), key, model, baseUrl));
+            if (built.isEmpty()) return new AiTestResponse(false, "An API key is required for " + p.get() + ".");
             String reply = ChatClient.create(built.get())
                 .prompt()
                 .user("Reply with the single word: OK")

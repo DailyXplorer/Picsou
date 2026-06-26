@@ -152,6 +152,44 @@ class AiConfigProviderTest {
         assertThat(result.message()).containsIgnoringCase("key");
     }
 
+    // ─── 8. test_factoryThrows_returnsNotOk ──────────────────────────────────
+
+    @Test
+    void test_factoryThrows_returnsNotOk() {
+        when(factory.build(any())).thenThrow(new RuntimeException("boom"));
+
+        AiTestResponse result = provider.test("openai", "m", "u", "somekey");
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.message()).contains("boom");
+    }
+
+    // ─── 9. save_evictsCache ─────────────────────────────────────────────────
+
+    @Test
+    void save_evictsCache() {
+        lenient().when(setupService.readSetting(SetupService.KEY_AI_PROVIDER))
+            .thenReturn(Optional.of("anthropic"));
+        lenient().when(setupService.readSetting(SetupService.KEY_AI_MODEL))
+            .thenReturn(Optional.of("claude-haiku-4-5"));
+        lenient().when(setupService.readSetting(SetupService.KEY_AI_BASE_URL))
+            .thenReturn(Optional.of("https://api.anthropic.com"));
+        lenient().when(setupService.readSetting(SetupService.KEY_AI_API_KEY))
+            .thenReturn(Optional.of(crypto.encrypt("k")));
+        when(factory.build(any())).thenReturn(Optional.of(mock(ChatModel.class)));
+
+        // Prime the cache — factory must be called once
+        provider.currentCategorizer();
+        verify(factory, times(1)).build(any());
+
+        // save() evicts the cache
+        provider.save("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "rawkey");
+
+        // Next currentCategorizer() call must rebuild — factory called a second time
+        provider.currentCategorizer();
+        verify(factory, times(2)).build(any());
+    }
+
     /*
      * NOTE: The live happy-path test() call (real ChatClient firing a network
      * request and returning "OK") is NOT covered here — it requires a live API
