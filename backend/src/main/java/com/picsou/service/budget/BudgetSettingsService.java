@@ -67,6 +67,9 @@ public class BudgetSettingsService {
         BudgetSettings settings = getOrCreate(memberId);
         settings.setCycleStartDay(req.cycleStartDay());
         settings.setLogoFetchEnabled(req.logoFetchEnabled());
+        settings.setAiCategorizationEnabled(req.aiCategorizationEnabled());
+        settings.setAiMode(req.aiMode());
+        settings.setAiConfidenceThreshold(req.aiConfidenceThreshold());
         settings.setUpdatedAt(Instant.now());
         return toResponse(settingsRepository.save(settings), LocalDate.now());
     }

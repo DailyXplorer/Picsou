@@ -1,0 +1,45 @@
+package com.picsou.port;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Optional LLM-backed categorizer. It is a <em>fallback</em>: the deterministic pipeline
+ * (USER/AUTO rules + the offline merchant knowledge base) runs first and always wins; this
+ * port is only consulted for the long tail of transactions left uncategorized.
+ *
+ * <p>Implementations must never throw into the categorization pipeline — on any provider
+ * failure (timeout, bad output, provider down) they return {@link Optional#empty()}, exactly
+ * like the price providers degrade to an empty result. The default wiring is a no-op so the
+ * feature is fully OFF until an operator configures a provider.
+ */
+public interface TransactionCategorizerPort {
+
+    /**
+     * Propose a category for one transaction.
+     *
+     * @param input      the transaction's classifiable signal (cleaned label, raw memo, amount)
+     * @param categories the member's own categories the model must choose among (its taxonomy)
+     * @param examples   a few of the member's recently hand-categorized transactions (few-shot)
+     * @return the chosen category slug + a 0..1 confidence, or empty if the model abstained,
+     *         answered with an unknown slug, or the provider failed
+     */
+    Optional<CategorySuggestion> categorize(
+        CategorizationInput input,
+        List<CategoryOption> categories,
+        List<Example> examples
+    );
+
+    /** The classifiable signal of one transaction. {@code merchantLabel} is the cleaned name. */
+    record CategorizationInput(String merchantLabel, String description, BigDecimal amount) {}
+
+    /** One of the member's categories the model may pick: a stable {@code slug} + display {@code name}. */
+    record CategoryOption(String slug, String name) {}
+
+    /** A few-shot example: a past merchant label and the category slug the member assigned it. */
+    record Example(String merchantLabel, String categorySlug) {}
+
+    /** The model's answer: the chosen category {@code slug} and a self-reported {@code confidence} in 0..1. */
+    record CategorySuggestion(String categorySlug, double confidence) {}
+}

@@ -487,6 +487,8 @@
     "categorize": {
       "subtitle": "Affectez une catégorie aux transactions non classées.",
       "recategorize": "Recatégoriser",
+      "categorizeAi": "Catégoriser avec l'IA",
+      "aiSuggested": "IA : {{name}} · {{confidence}} %",
       "selectCategory": "Choisir une catégorie",
       "learnRule": "Mémoriser une règle",
       "assign": "Affecter",
@@ -536,6 +538,22 @@
       "logoTitle": "Logos des marques",
       "logoHint": "Récupère les logos des marques en ligne pour les afficher à la place des monogrammes. Désactivé par défaut, purement cosmétique — n'influence jamais la catégorisation.",
       "logoFetchLabel": "Afficher les logos en ligne",
+      "aiTitle": "Catégorisation par IA",
+      "aiHint": "Laisse un modèle proposer une catégorie pour les marchands que vos règles et la liste de marques ne reconnaissent pas. Désactivé par défaut ; ne traite que les transactions restées non catégorisées.",
+      "aiEnableLabel": "Activer les suggestions IA",
+      "aiModeLabel": "Ce que l'IA fait de sa réponse",
+      "aiModeOption": {
+        "SUGGEST": "Seulement suggérer",
+        "AUTO_HIGH_CONFIDENCE": "Appliquer si l'IA est sûre",
+        "AUTO_ALL": "Toujours appliquer"
+      },
+      "aiModeHint": {
+        "SUGGEST": "L'IA propose seulement une catégorie dans l'inbox ; rien n'est appliqué tant que vous ne validez pas.",
+        "AUTO_HIGH_CONFIDENCE": "Applique la catégorie automatiquement au-dessus du seuil de confiance ; sinon laisse une suggestion.",
+        "AUTO_ALL": "Applique toujours la meilleure réponse de l'IA. Le plus rapide, mais quelques erreurs seront à corriger."
+      },
+      "aiThresholdLabel": "Seuil de confiance",
+      "aiThresholdHint": "En dessous, l'IA laisse une suggestion au lieu d'appliquer la catégorie.",
       "error": "Impossible de charger les réglages."
     }
   },

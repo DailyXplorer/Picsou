@@ -47,6 +47,25 @@ public class BudgetSettings {
     @Builder.Default
     private boolean logoFetchEnabled = false;
 
+    /**
+     * Opt-in toggle (OFF by default) for the AI categorizer. When false the optional LLM
+     * fallback never runs and the deterministic pipeline (rules + brand KB) is the only path.
+     */
+    @Column(name = "ai_categorization_enabled", nullable = false)
+    @Builder.Default
+    private boolean aiCategorizationEnabled = false;
+
+    /** How an AI suggestion is applied: suggest-only / auto on high confidence / auto-all. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ai_mode", nullable = false, length = 24)
+    @Builder.Default
+    private AiCategorizationMode aiMode = AiCategorizationMode.AUTO_HIGH_CONFIDENCE;
+
+    /** Sensitivity gate (0–100) for {@link AiCategorizationMode#AUTO_HIGH_CONFIDENCE}. */
+    @Column(name = "ai_confidence_threshold", nullable = false)
+    @Builder.Default
+    private int aiConfidenceThreshold = 75;
+
     @Column(name = "updated_at", nullable = false)
     @Builder.Default
     private Instant updatedAt = Instant.now();

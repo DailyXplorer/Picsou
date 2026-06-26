@@ -49,6 +49,19 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
         """)
     List<Transaction> findUncategorizedByMemberId(@Param("memberId") Long memberId);
 
+    /**
+     * The member's most recent hand/auto-categorized, labelled transactions — used as few-shot
+     * examples for the AI categorizer so it learns the member's taxonomy from their own history.
+     * Pass a {@code Pageable} (e.g. {@code PageRequest.of(0, 8)}) to bound the count.
+     */
+    @Query("""
+        SELECT t FROM Transaction t
+        WHERE t.account.member.id = :memberId AND t.categoryRef IS NOT NULL AND t.merchantLabel IS NOT NULL
+        ORDER BY t.date DESC, t.id DESC
+        """)
+    List<Transaction> findRecentCategorizedByMemberId(@Param("memberId") Long memberId,
+                                                      org.springframework.data.domain.Pageable pageable);
+
     /** All member transactions in a date range (cashflow / detection input). */
     @Query("""
         SELECT t FROM Transaction t

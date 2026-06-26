@@ -1,5 +1,6 @@
 import { api } from '@/lib/api-client'
 import type {
+  AiCategorizeResult,
   AllocationResponse,
   Budget,
   BudgetRequest,
@@ -55,6 +56,9 @@ export const budgetApi = {
     api.get<UncategorizedTransaction[]>('/transactions/uncategorized').then(r => r.data),
   categorize: (id: number, data: CategorizeRequest) =>
     api.put(`/transactions/${id}/category`, data),
+  /** Optional AI fallback over the inbox; no-op server-side unless AI categorization is enabled. */
+  categorizeAi: () =>
+    api.post<AiCategorizeResult>('/transactions/categorize-ai').then(r => r.data),
 
   // ─── Envelopes ────────────────────────────────────────────────────────────
   listBudgets: () => api.get<Budget[]>('/budgets').then(r => r.data),

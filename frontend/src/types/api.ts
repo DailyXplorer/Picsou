@@ -441,6 +441,10 @@ export interface UncategorizedTransaction {
   merchantLabel: string | null
   /** Matched brand id from the offline knowledge base, or null. */
   merchantBrandId: number | null
+  /** AI-proposed category id pending the member's confirmation, or null when there is no suggestion. */
+  aiSuggestedCategoryId: number | null
+  /** Self-reported confidence (0–100) attached to the AI suggestion, or null. */
+  aiConfidence: number | null
 }
 
 /** A monthly envelope with its current-cycle progress (computed on read). */
@@ -467,9 +471,18 @@ export interface BudgetRequest {
   monthlyLimit: number
 }
 
+/** How an AI category suggestion is applied. Mirrors the backend AiCategorizationMode enum. */
+export type AiCategorizationMode = 'SUGGEST' | 'AUTO_HIGH_CONFIDENCE' | 'AUTO_ALL'
+
 export interface BudgetSettings {
   cycleStartDay: number
   logoFetchEnabled: boolean
+  /** Master opt-in for the optional AI categorizer (OFF by default). */
+  aiCategorizationEnabled: boolean
+  /** How an AI suggestion is applied: suggest-only / auto on high confidence / auto-all. */
+  aiMode: AiCategorizationMode
+  /** Sensitivity gate (0–100) for AUTO_HIGH_CONFIDENCE. */
+  aiConfidenceThreshold: number
   currentCycleStart: string
   currentCycleEnd: string
 }
@@ -477,6 +490,15 @@ export interface BudgetSettings {
 export interface BudgetSettingsRequest {
   cycleStartDay: number
   logoFetchEnabled: boolean
+  aiCategorizationEnabled: boolean
+  aiMode: AiCategorizationMode
+  aiConfidenceThreshold: number
+}
+
+/** Result of running the AI categorizer over the inbox. */
+export interface AiCategorizeResult {
+  applied: number
+  suggested: number
 }
 
 export interface CashflowBucket {

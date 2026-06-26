@@ -26,7 +26,9 @@ public record TransactionResponse(
     String categoryName,
     String counterparty,
     String merchantLabel,
-    Long merchantBrandId
+    Long merchantBrandId,
+    Long aiSuggestedCategoryId,
+    Integer aiConfidence
 ) {
     public static TransactionResponse from(Transaction t) {
         return new TransactionResponse(
@@ -48,7 +50,9 @@ public record TransactionResponse(
             t.getCategoryRef() != null ? t.getCategoryRef().getName() : null,
             t.getCounterparty(),
             t.getMerchantLabel(),
-            t.getMerchantBrandId()
+            t.getMerchantBrandId(),
+            t.getAiSuggestedCategoryId(),
+            t.getAiConfidence()
         );
     }
 }

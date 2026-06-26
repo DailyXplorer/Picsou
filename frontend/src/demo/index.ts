@@ -389,6 +389,8 @@ handlers.set(key('GET', '/transactions/uncategorized'), () => mockUncategorized)
 for (const tx of mockUncategorized) {
   handlers.set(key('PUT', `/transactions/${tx.id}/category`), () => ({}))
 }
+// Optional AI categorizer over the inbox (demo: plausible counts; fixtures already carry suggestions).
+handlers.set(key('POST', '/transactions/categorize-ai'), () => ({ applied: 1, suggested: 2 }))
 
 // Envelopes
 handlers.set(key('GET', '/budgets'), () => mockBudgets)
@@ -421,6 +423,9 @@ handlers.set(key('PUT', '/budget/settings'), (config) => {
     ...mockBudgetSettings,
     cycleStartDay: body.cycleStartDay ?? mockBudgetSettings.cycleStartDay,
     logoFetchEnabled: body.logoFetchEnabled ?? mockBudgetSettings.logoFetchEnabled,
+    aiCategorizationEnabled: body.aiCategorizationEnabled ?? mockBudgetSettings.aiCategorizationEnabled,
+    aiMode: body.aiMode ?? mockBudgetSettings.aiMode,
+    aiConfidenceThreshold: body.aiConfidenceThreshold ?? mockBudgetSettings.aiConfidenceThreshold,
   }
 })
 

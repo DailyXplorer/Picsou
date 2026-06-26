@@ -31,12 +31,13 @@ import {
   useUpdateCategory,
 } from '@/features/budget/hooks'
 import { formatDate, getLocale } from '@/lib/utils'
-import type { Category, CategoryKind, RuleMatchType } from '@/types/api'
+import type { AiCategorizationMode, Category, CategoryKind, RuleMatchType } from '@/types/api'
 import { ColorDot } from './budget-utils'
 import { KIND_META } from './budget-meta'
 
 const KINDS: CategoryKind[] = ['INCOME', 'EXPENSE', 'TRANSFER']
 const MATCH_TYPES: RuleMatchType[] = ['COUNTERPARTY', 'KEYWORD']
+const AI_MODES: AiCategorizationMode[] = ['SUGGEST', 'AUTO_HIGH_CONFIDENCE', 'AUTO_ALL']
 const SELECT_CLS =
   'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus:border-ring'
 
@@ -78,6 +79,9 @@ function CycleSettingsCard() {
               onClick={() => day !== '' && update.mutate({
                 cycleStartDay: Number(day),
                 logoFetchEnabled: data.logoFetchEnabled,
+                aiCategorizationEnabled: data.aiCategorizationEnabled,
+                aiMode: data.aiMode,
+                aiConfidenceThreshold: data.aiConfidenceThreshold,
               })}>
               {update.isPending ? t('common.loading') : t('common.save')}
             </Button>
@@ -122,10 +126,129 @@ function LogoSettingsCard() {
               checked={data.logoFetchEnabled}
               disabled={update.isPending}
               onCheckedChange={(checked) =>
-                update.mutate({ cycleStartDay: data.cycleStartDay, logoFetchEnabled: checked })
+                update.mutate({
+                  cycleStartDay: data.cycleStartDay,
+                  logoFetchEnabled: checked,
+                  aiCategorizationEnabled: data.aiCategorizationEnabled,
+                  aiMode: data.aiMode,
+                  aiConfidenceThreshold: data.aiConfidenceThreshold,
+                })
               }
             />
           </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── AI categorization (opt-in) ──────────────────────────────────────────────
+
+function AiCategorizationCard() {
+  const { t } = useTranslation()
+  const { data, isLoading, isError, refetch } = useBudgetSettings()
+  const update = useUpdateBudgetSettings()
+
+  // The threshold slider needs live local feedback while dragging; sync it from the loaded
+  // value once (during render, no effect) like CycleSettingsCard does, then commit on release.
+  const [threshold, setThreshold] = useState(75)
+  const [synced, setSynced] = useState(false)
+  if (!synced && data) {
+    setSynced(true)
+    setThreshold(data.aiConfidenceThreshold)
+  }
+
+  // Each control sends the whole settings object (the backend replaces it wholesale), so fold the
+  // single changed field over the current values.
+  function save(patch: {
+    aiCategorizationEnabled?: boolean
+    aiMode?: AiCategorizationMode
+    aiConfidenceThreshold?: number
+  }) {
+    if (!data) return
+    update.mutate({
+      cycleStartDay: data.cycleStartDay,
+      logoFetchEnabled: data.logoFetchEnabled,
+      aiCategorizationEnabled: data.aiCategorizationEnabled,
+      aiMode: data.aiMode,
+      aiConfidenceThreshold: data.aiConfidenceThreshold,
+      ...patch,
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('budget.settings.aiTitle')}</CardTitle>
+        <CardDescription>{t('budget.settings.aiHint')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading && <Skeleton className="h-9 w-full rounded-md" />}
+        {!isLoading && isError && !data && (
+          <ErrorState message={t('budget.settings.error')} onRetry={() => void refetch()} />
+        )}
+        {data && (
+          <>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="ai-enabled" className="font-normal text-muted-foreground">
+                {t('budget.settings.aiEnableLabel')}
+              </Label>
+              <Switch
+                id="ai-enabled"
+                checked={data.aiCategorizationEnabled}
+                disabled={update.isPending}
+                onCheckedChange={(checked) => save({ aiCategorizationEnabled: checked })}
+              />
+            </div>
+
+            {data.aiCategorizationEnabled && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="ai-mode">{t('budget.settings.aiModeLabel')}</Label>
+                  <select
+                    id="ai-mode"
+                    value={data.aiMode}
+                    disabled={update.isPending}
+                    onChange={(e) => save({ aiMode: e.target.value as AiCategorizationMode })}
+                    className={SELECT_CLS}
+                  >
+                    {AI_MODES.map((m) => (
+                      <option key={m} value={m}>{t(`budget.settings.aiModeOption.${m}`)}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    {t(`budget.settings.aiModeHint.${data.aiMode}`)}
+                  </p>
+                </div>
+
+                {data.aiMode === 'AUTO_HIGH_CONFIDENCE' && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="ai-threshold">{t('budget.settings.aiThresholdLabel')}</Label>
+                      <span className="text-sm tabular-nums text-muted-foreground">{threshold}%</span>
+                    </div>
+                    <input
+                      id="ai-threshold"
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={threshold}
+                      disabled={update.isPending}
+                      onChange={(e) => setThreshold(Number(e.target.value))}
+                      onPointerUp={() => save({ aiConfidenceThreshold: threshold })}
+                      onKeyUp={() => save({ aiConfidenceThreshold: threshold })}
+                      onBlur={() => save({ aiConfidenceThreshold: threshold })}
+                      className="w-full accent-primary"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t('budget.settings.aiThresholdHint')}
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -451,6 +574,7 @@ export function ManageTab() {
     <div className="space-y-4">
       <CycleSettingsCard />
       <LogoSettingsCard />
+      <AiCategorizationCard />
       <CategoriesCard />
       <RulesCard />
     </div>

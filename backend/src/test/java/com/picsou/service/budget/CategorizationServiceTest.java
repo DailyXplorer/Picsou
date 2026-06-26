@@ -1,5 +1,7 @@
 package com.picsou.service.budget;
 
+import com.picsou.model.AiCategorizationMode;
+import com.picsou.model.BudgetSettings;
 import com.picsou.model.CategorizationRule;
 import com.picsou.model.Category;
 import com.picsou.model.CategoryKind;
@@ -7,6 +9,8 @@ import com.picsou.model.FamilyMember;
 import com.picsou.model.RuleMatchType;
 import com.picsou.model.RuleSource;
 import com.picsou.model.Transaction;
+import com.picsou.port.TransactionCategorizerPort;
+import com.picsou.repository.BudgetSettingsRepository;
 import com.picsou.repository.CategorizationRuleRepository;
 import com.picsou.repository.CategoryRepository;
 import com.picsou.repository.FamilyMemberRepository;
@@ -18,6 +22,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -25,8 +30,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,6 +45,8 @@ class CategorizationServiceTest {
     @Mock FamilyMemberRepository familyMemberRepository;
     @Mock MerchantKnowledgeBase knowledgeBase;
     @Mock CategoryService categoryService;
+    @Mock BudgetSettingsRepository settingsRepository;
+    @Mock TransactionCategorizerPort categorizer;
 
     @InjectMocks CategorizationService service;
 
@@ -227,5 +236,147 @@ class CategorizationServiceTest {
         assertThat(t.getCategoryRef()).isNull();
         assertThat(t.getMerchantLabel()).isEqualTo("Boulangerie Dupont");
         assertThat(t.getMerchantBrandId()).isNull();
+    }
+
+    // ─── AI fallback (optional, opt-in) ────────────────────────────────────────
+
+    private Category categoryWithSlug(Long id, String slug, String name) {
+        return Category.builder().id(id).kind(CategoryKind.EXPENSE).name(name).slug(slug).build();
+    }
+
+    private BudgetSettings aiSettings(boolean enabled, AiCategorizationMode mode, int threshold) {
+        return BudgetSettings.builder()
+            .aiCategorizationEnabled(enabled).aiMode(mode).aiConfidenceThreshold(threshold).build();
+    }
+
+    private Transaction uncategorized(String label, String description, String amount) {
+        return Transaction.builder().merchantLabel(label).description(description).amount(new BigDecimal(amount)).build();
+    }
+
+    /** Stub the per-member inputs the AI pass loads: one slugged category, no few-shot, one uncategorized tx. */
+    private void stubAiInputs(Category category, Transaction uncategorizedTx) {
+        when(categoryRepository.findAllByMemberIdAndArchivedFalseOrderBySortOrderAscIdAsc(MEMBER_ID))
+            .thenReturn(List.of(category));
+        when(transactionRepository.findRecentCategorizedByMemberId(eq(MEMBER_ID), any())).thenReturn(List.of());
+        when(transactionRepository.findUncategorizedByMemberId(MEMBER_ID)).thenReturn(List.of(uncategorizedTx));
+    }
+
+    @Test
+    void aiCategorize_whenDisabled_isNoopAndNeverCallsModel() {
+        when(settingsRepository.findByMemberId(MEMBER_ID))
+            .thenReturn(Optional.of(aiSettings(false, AiCategorizationMode.AUTO_ALL, 75)));
+
+        var result = service.aiCategorizeUncategorized(MEMBER_ID);
+
+        assertThat(result.applied()).isZero();
+        assertThat(result.suggested()).isZero();
+        verifyNoInteractions(categorizer);
+    }
+
+    @Test
+    void aiCategorize_autoHighConfidence_appliesAtOrAboveThreshold() {
+        Category courses = categoryWithSlug(1L, "courses", "Courses");
+        Transaction unc = uncategorized("Carrefour", "CB CARREFOUR", "42.30");
+        when(settingsRepository.findByMemberId(MEMBER_ID))
+            .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.AUTO_HIGH_CONFIDENCE, 75)));
+        stubAiInputs(courses, unc);
+        when(categorizer.categorize(any(), any(), any()))
+            .thenReturn(Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.90)));
+
+        var result = service.aiCategorizeUncategorized(MEMBER_ID);
+
+        assertThat(result.applied()).isEqualTo(1);
+        assertThat(result.suggested()).isZero();
+        assertThat(unc.getCategoryRef()).isEqualTo(courses);
+        assertThat(unc.getAiSuggestedCategoryId()).isNull();
+        assertThat(unc.getAiConfidence()).isNull();
+    }
+
+    @Test
+    void aiCategorize_autoHighConfidence_belowThreshold_storesSuggestionInsteadOfApplying() {
+        Category courses = categoryWithSlug(1L, "courses", "Courses");
+        Transaction unc = uncategorized("Carrefour", "CB CARREFOUR", "42.30");
+        when(settingsRepository.findByMemberId(MEMBER_ID))
+            .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.AUTO_HIGH_CONFIDENCE, 75)));
+        stubAiInputs(courses, unc);
+        when(categorizer.categorize(any(), any(), any()))
+            .thenReturn(Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.50)));
+
+        var result = service.aiCategorizeUncategorized(MEMBER_ID);
+
+        assertThat(result.applied()).isZero();
+        assertThat(result.suggested()).isEqualTo(1);
+        assertThat(unc.getCategoryRef()).isNull();
+        assertThat(unc.getAiSuggestedCategoryId()).isEqualTo(1L);
+        assertThat(unc.getAiConfidence()).isEqualTo(50);
+    }
+
+    @Test
+    void aiCategorize_suggestMode_neverApplies_evenAtFullConfidence() {
+        Category courses = categoryWithSlug(1L, "courses", "Courses");
+        Transaction unc = uncategorized("Carrefour", "CB CARREFOUR", "42.30");
+        when(settingsRepository.findByMemberId(MEMBER_ID))
+            .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.SUGGEST, 75)));
+        stubAiInputs(courses, unc);
+        when(categorizer.categorize(any(), any(), any()))
+            .thenReturn(Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.99)));
+
+        var result = service.aiCategorizeUncategorized(MEMBER_ID);
+
+        assertThat(result.applied()).isZero();
+        assertThat(result.suggested()).isEqualTo(1);
+        assertThat(unc.getCategoryRef()).isNull();
+        assertThat(unc.getAiSuggestedCategoryId()).isEqualTo(1L);
+        assertThat(unc.getAiConfidence()).isEqualTo(99);
+    }
+
+    @Test
+    void aiCategorize_autoAll_appliesRegardlessOfConfidence() {
+        Category courses = categoryWithSlug(1L, "courses", "Courses");
+        Transaction unc = uncategorized("Carrefour", "CB CARREFOUR", "42.30");
+        when(settingsRepository.findByMemberId(MEMBER_ID))
+            .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.AUTO_ALL, 75)));
+        stubAiInputs(courses, unc);
+        when(categorizer.categorize(any(), any(), any()))
+            .thenReturn(Optional.of(new TransactionCategorizerPort.CategorySuggestion("courses", 0.05)));
+
+        var result = service.aiCategorizeUncategorized(MEMBER_ID);
+
+        assertThat(result.applied()).isEqualTo(1);
+        assertThat(unc.getCategoryRef()).isEqualTo(courses);
+    }
+
+    @Test
+    void aiCategorize_unknownSlug_isIgnored() {
+        Category courses = categoryWithSlug(1L, "courses", "Courses");
+        Transaction unc = uncategorized("Mystery Shop", "CB MYSTERY", "9.99");
+        when(settingsRepository.findByMemberId(MEMBER_ID))
+            .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.AUTO_ALL, 75)));
+        stubAiInputs(courses, unc);
+        when(categorizer.categorize(any(), any(), any()))
+            .thenReturn(Optional.of(new TransactionCategorizerPort.CategorySuggestion("restaurants", 0.95)));
+
+        var result = service.aiCategorizeUncategorized(MEMBER_ID);
+
+        assertThat(result.applied()).isZero();
+        assertThat(result.suggested()).isZero();
+        assertThat(unc.getCategoryRef()).isNull();
+        assertThat(unc.getAiSuggestedCategoryId()).isNull();
+    }
+
+    @Test
+    void aiCategorize_modelAbstains_isIgnored() {
+        Category courses = categoryWithSlug(1L, "courses", "Courses");
+        Transaction unc = uncategorized("Mystery Shop", "CB MYSTERY", "9.99");
+        when(settingsRepository.findByMemberId(MEMBER_ID))
+            .thenReturn(Optional.of(aiSettings(true, AiCategorizationMode.AUTO_ALL, 75)));
+        stubAiInputs(courses, unc);
+        when(categorizer.categorize(any(), any(), any())).thenReturn(Optional.empty());
+
+        var result = service.aiCategorizeUncategorized(MEMBER_ID);
+
+        assertThat(result.applied()).isZero();
+        assertThat(result.suggested()).isZero();
+        assertThat(unc.getAiSuggestedCategoryId()).isNull();
     }
 }

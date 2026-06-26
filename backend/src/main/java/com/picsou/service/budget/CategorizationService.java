@@ -5,22 +5,27 @@ import com.picsou.dto.CategorizationRuleResponse;
 import com.picsou.dto.CategoryResponse;
 import com.picsou.dto.TransactionResponse;
 import com.picsou.exception.ResourceNotFoundException;
+import com.picsou.model.BudgetSettings;
 import com.picsou.model.CategorizationRule;
 import com.picsou.model.Category;
 import com.picsou.model.FamilyMember;
 import com.picsou.model.RuleMatchType;
 import com.picsou.model.RuleSource;
 import com.picsou.model.Transaction;
+import com.picsou.port.TransactionCategorizerPort;
+import com.picsou.repository.BudgetSettingsRepository;
 import com.picsou.repository.CategorizationRuleRepository;
 import com.picsou.repository.CategoryRepository;
 import com.picsou.repository.FamilyMemberRepository;
 import com.picsou.repository.TransactionRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -54,6 +59,8 @@ public class CategorizationService {
     private final FamilyMemberRepository familyMemberRepository;
     private final MerchantKnowledgeBase knowledgeBase;
     private final CategoryService categoryService;
+    private final BudgetSettingsRepository settingsRepository;
+    private final TransactionCategorizerPort categorizer;
 
     public CategorizationService(
         CategorizationRuleRepository ruleRepository,
@@ -61,7 +68,9 @@ public class CategorizationService {
         TransactionRepository transactionRepository,
         FamilyMemberRepository familyMemberRepository,
         MerchantKnowledgeBase knowledgeBase,
-        CategoryService categoryService
+        CategoryService categoryService,
+        BudgetSettingsRepository settingsRepository,
+        TransactionCategorizerPort categorizer
     ) {
         this.ruleRepository = ruleRepository;
         this.categoryRepository = categoryRepository;
@@ -69,6 +78,8 @@ public class CategorizationService {
         this.familyMemberRepository = familyMemberRepository;
         this.knowledgeBase = knowledgeBase;
         this.categoryService = categoryService;
+        this.settingsRepository = settingsRepository;
+        this.categorizer = categorizer;
     }
 
     // ─── Rule CRUD ────────────────────────────────────────────────────────────
@@ -298,6 +309,88 @@ public class CategorizationService {
             }
         }
         return assigned;
+    }
+
+    // ─── AI fallback (optional, opt-in) ────────────────────────────────────────
+
+    /** How many recent categorized transactions to feed the model as few-shot examples. */
+    private static final int FEW_SHOT_LIMIT = 8;
+
+    /** Counts from an AI run: how many transactions were auto-applied vs. left as suggestions. */
+    public record AiCategorizationResult(int applied, int suggested) {}
+
+    /**
+     * Optional AI fallback. For every transaction the deterministic pipeline left uncategorized,
+     * asks the configured {@link TransactionCategorizerPort} to pick one of the member's own
+     * categories. Per the member's {@link com.picsou.model.AiCategorizationMode} and confidence
+     * threshold, each answer is either auto-applied (sets {@code categoryRef}) or stored as a
+     * pending suggestion on the transaction for the inbox to surface. Returns zero counts (a no-op)
+     * when the member has not enabled AI categorization. Only ever reads the already-uncategorized
+     * set, so a manual/rule choice can never be overwritten.
+     */
+    @Transactional
+    public AiCategorizationResult aiCategorizeUncategorized(Long memberId) {
+        BudgetSettings settings = settingsRepository.findByMemberId(memberId).orElse(null);
+        if (settings == null || !settings.isAiCategorizationEnabled()) {
+            return new AiCategorizationResult(0, 0);
+        }
+        Map<String, Category> bySlug = categoriesBySlug(memberId);
+        if (bySlug.isEmpty()) {
+            return new AiCategorizationResult(0, 0);
+        }
+
+        List<TransactionCategorizerPort.CategoryOption> options = bySlug.entrySet().stream()
+            .map(e -> new TransactionCategorizerPort.CategoryOption(e.getKey(), e.getValue().getName()))
+            .toList();
+        List<TransactionCategorizerPort.Example> examples = transactionRepository
+            .findRecentCategorizedByMemberId(memberId, PageRequest.of(0, FEW_SHOT_LIMIT)).stream()
+            .filter(t -> t.getCategoryRef() != null && t.getCategoryRef().getSlug() != null)
+            .map(t -> new TransactionCategorizerPort.Example(t.getMerchantLabel(), t.getCategoryRef().getSlug()))
+            .toList();
+
+        int applied = 0;
+        int suggested = 0;
+        for (Transaction tx : transactionRepository.findUncategorizedByMemberId(memberId)) {
+            if (tx.getCategoryRef() != null) {
+                continue; // defensive: never touch an already-categorized transaction
+            }
+            var input = new TransactionCategorizerPort.CategorizationInput(
+                tx.getMerchantLabel() != null ? tx.getMerchantLabel() : tx.getDescription(),
+                tx.getDescription(),
+                tx.getAmount());
+            Optional<TransactionCategorizerPort.CategorySuggestion> answer =
+                categorizer.categorize(input, options, examples);
+            if (answer.isEmpty()) {
+                continue;
+            }
+            Category target = bySlug.get(answer.get().categorySlug());
+            if (target == null) {
+                continue; // model returned a slug the member does not have — ignore it
+            }
+            int confidencePct = (int) Math.round(clamp01(answer.get().confidence()) * 100);
+            boolean autoApply = switch (settings.getAiMode()) {
+                case AUTO_ALL -> true;
+                case AUTO_HIGH_CONFIDENCE -> confidencePct >= settings.getAiConfidenceThreshold();
+                case SUGGEST -> false;
+            };
+            if (autoApply) {
+                tx.setCategoryRef(target);
+                tx.setAiSuggestedCategoryId(null);
+                tx.setAiConfidence(null);
+                applied++;
+            } else {
+                tx.setAiSuggestedCategoryId(target.getId());
+                tx.setAiConfidence(confidencePct);
+                suggested++;
+            }
+        }
+        return new AiCategorizationResult(applied, suggested);
+    }
+
+    private static double clamp01(double v) {
+        if (v < 0) return 0;
+        if (v > 1) return 1;
+        return v;
     }
 
     // ─── Uncategorized inbox ──────────────────────────────────────────────────

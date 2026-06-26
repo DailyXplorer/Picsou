@@ -5,14 +5,17 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { MerchantAvatar } from '@/components/shared/MerchantAvatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
+  useBudgetSettings,
   useCategories,
   useCategorize,
+  useCategorizeAi,
   useMerchantLogoUrl,
   useRecategorize,
   useUncategorized,
@@ -27,8 +30,14 @@ function InboxRow({ tx, categories }: {
   const { t } = useTranslation()
   const categorize = useCategorize()
   const logoUrlFor = useMerchantLogoUrl()
-  const [categoryId, setCategoryId] = useState<number | ''>('')
+  // Preselect the AI suggestion (if any) so accepting it is a single click on "Assign".
+  const [categoryId, setCategoryId] = useState<number | ''>(tx.aiSuggestedCategoryId ?? '')
   const [createRule, setCreateRule] = useState(true)
+
+  const suggested =
+    tx.aiSuggestedCategoryId != null
+      ? categories.find((c) => c.id === tx.aiSuggestedCategoryId) ?? null
+      : null
 
   function assign() {
     if (categoryId === '') return
@@ -56,6 +65,17 @@ function InboxRow({ tx, categories }: {
             <CurrencyDisplay value={tx.amount} showSign />
           </span>
         </div>
+        {suggested && (
+          <div className="mt-2">
+            <Badge variant="outline" className="gap-1 border-primary/40 text-primary">
+              <Sparkles className="size-3" />
+              {t('budget.categorize.aiSuggested', {
+                name: suggested.name,
+                confidence: tx.aiConfidence ?? 0,
+              })}
+            </Badge>
+          </div>
+        )}
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
           <select
             value={categoryId}
@@ -87,16 +107,26 @@ export function CategorizeTab() {
   const { t } = useTranslation()
   const { data: txs, isLoading, isError, refetch } = useUncategorized()
   const { data: categories } = useCategories()
+  const { data: settings } = useBudgetSettings()
   const recategorize = useRecategorize()
+  const categorizeAi = useCategorizeAi()
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">{t('budget.categorize.subtitle')}</p>
-        <Button size="sm" variant="outline" onClick={() => recategorize.mutate()}
-          disabled={recategorize.isPending}>
-          <Sparkles className="size-4" /> {t('budget.categorize.recategorize')}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {settings?.aiCategorizationEnabled && (
+            <Button size="sm" onClick={() => categorizeAi.mutate()}
+              disabled={categorizeAi.isPending}>
+              <Sparkles className="size-4" /> {t('budget.categorize.categorizeAi')}
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={() => recategorize.mutate()}
+            disabled={recategorize.isPending}>
+            <Sparkles className="size-4" /> {t('budget.categorize.recategorize')}
+          </Button>
+        </div>
       </div>
 
       {isLoading && (

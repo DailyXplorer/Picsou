@@ -80,6 +80,7 @@ export const mockUncategorized: UncategorizedTransaction[] = [
     txType: 'WITHDRAWAL', ticker: null, quantity: null, pricePerUnit: null,
     categoryId: null, categoryName: null, counterparty: 'AMAZON EU SARL',
     merchantLabel: 'Amazon', merchantBrandId: null,
+    aiSuggestedCategoryId: null, aiConfidence: null,
   },
   {
     id: 9002, date: daysFromNow(-3), description: 'SNCF VOYAGEURS', amount: -68.0, type: null,
@@ -87,6 +88,7 @@ export const mockUncategorized: UncategorizedTransaction[] = [
     txType: 'WITHDRAWAL', ticker: null, quantity: null, pricePerUnit: null,
     categoryId: null, categoryName: null, counterparty: 'SNCF VOYAGEURS',
     merchantLabel: 'SNCF', merchantBrandId: null,
+    aiSuggestedCategoryId: 4, aiConfidence: 92,
   },
   {
     id: 9003, date: daysFromNow(-5), description: 'BOULANGERIE DU COIN', amount: -8.4, type: null,
@@ -94,6 +96,7 @@ export const mockUncategorized: UncategorizedTransaction[] = [
     txType: 'WITHDRAWAL', ticker: null, quantity: null, pricePerUnit: null,
     categoryId: null, categoryName: null, counterparty: 'BOULANGERIE DU COIN',
     merchantLabel: 'Boulangerie du Coin', merchantBrandId: null,
+    aiSuggestedCategoryId: 2, aiConfidence: 71,
   },
 ]
 
@@ -136,6 +139,9 @@ export const mockBudgets: Budget[] = [
 export const mockBudgetSettings: BudgetSettings = {
   cycleStartDay: 1,
   logoFetchEnabled: false,
+  aiCategorizationEnabled: true,
+  aiMode: 'AUTO_HIGH_CONFIDENCE',
+  aiConfidenceThreshold: 75,
   currentCycleStart: iso(CYCLE_START),
   currentCycleEnd: iso(CYCLE_END),
 }

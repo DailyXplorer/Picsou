@@ -37,4 +37,15 @@ public class TransactionCategorizationController {
     public void categorize(@PathVariable Long id, @Valid @RequestBody CategorizeRequest req) {
         categorizationService.categorize(id, req.categoryId(), req.createRule(), userContext.currentMemberId());
     }
+
+    /**
+     * Optional AI fallback over the inbox: runs the configured LLM categorizer on every still-
+     * uncategorized transaction and either auto-applies a category or stores a suggestion,
+     * per the member's AI settings. No-op when the member hasn't enabled AI categorization.
+     * Returns how many were auto-applied vs. left as suggestions.
+     */
+    @PostMapping("/categorize-ai")
+    public CategorizationService.AiCategorizationResult categorizeWithAi() {
+        return categorizationService.aiCategorizeUncategorized(userContext.currentMemberId());
+    }
 }

@@ -64,6 +64,41 @@ spring:
           prompt: false
           completion: false
 
+    # ── Optional AI transaction categorization (OFF by default) ──────────────────
+    # Pick the provider with AI_CATEGORIZATION_PROVIDER = ollama | openai | anthropic.
+    # "none" (the default) wires a no-op categorizer, so the deterministic pipeline
+    # (rules + brand KB) stays the only path until an operator opts in. Embedding /
+    # image / audio / moderation models are forced to "none" so merely having the
+    # provider starters on the classpath never spins up an unused, key-requiring
+    # client at boot — only the selected chat model is ever instantiated.
+    model:
+      chat: ${AI_CATEGORIZATION_PROVIDER:none}
+      embedding: none
+      image: none
+      moderation: none
+      audio:
+        transcription: none
+        speech: none
+    # Local Ollama (e.g. `ollama pull qwen3:0.6b`). base-url is the daemon root.
+    ollama:
+      base-url: ${AI_OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        options:
+          model: ${AI_OLLAMA_MODEL:qwen3:0.6b}
+    # Any OpenAI-compatible endpoint (base-url is the host root, no /v1 suffix).
+    openai:
+      base-url: ${AI_OPENAI_BASE_URL:https://api.openai.com}
+      api-key: ${AI_OPENAI_API_KEY:}
+      chat:
+        options:
+          model: ${AI_OPENAI_MODEL:gpt-4o-mini}
+    # Claude (Anthropic). Haiku is fast/cheap and well-suited to high-volume classification.
+    anthropic:
+      api-key: ${AI_ANTHROPIC_API_KEY:}
+      chat:
+        options:
+          model: ${AI_ANTHROPIC_MODEL:claude-haiku-4-5}
+
 server:
   port: 8080
   # Trust X-Forwarded-* from the local nginx so request scheme/host/port reflect the

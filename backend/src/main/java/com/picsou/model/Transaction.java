@@ -60,6 +60,19 @@ public class Transaction {
     @Column(name = "merchant_brand_id")
     private Long merchantBrandId;
 
+    /**
+     * AI-proposed category id, persisted when the optional LLM categorizer makes a suggestion
+     * that was not auto-applied (SUGGEST mode, or confidence below the member's threshold).
+     * Lets the inbox show "Suggested: X (NN%)" without re-running inference. Null when there
+     * is no pending suggestion; cleared once the member picks a category.
+     */
+    @Column(name = "ai_suggested_category_id")
+    private Long aiSuggestedCategoryId;
+
+    /** Self-reported confidence (0–100) attached to {@link #aiSuggestedCategoryId} (nullable). */
+    @Column(name = "ai_confidence")
+    private Integer aiConfidence;
+
     /** Provider entry reference; deduplicates synced transactions. Null for manual ones. */
     @Column(name = "external_id", length = 255)
     private String externalId;

@@ -487,6 +487,8 @@
     "categorize": {
       "subtitle": "Assign a category to unclassified transactions.",
       "recategorize": "Re-categorize",
+      "categorizeAi": "Categorize with AI",
+      "aiSuggested": "AI: {{name}} · {{confidence}}%",
       "selectCategory": "Pick a category",
       "learnRule": "Remember a rule",
       "assign": "Assign",
@@ -536,6 +538,22 @@
       "logoTitle": "Brand logos",
       "logoHint": "Fetch brand logos online to show instead of monograms. Off by default and purely cosmetic — it never influences categorization.",
       "logoFetchLabel": "Show online logos",
+      "aiTitle": "AI categorization",
+      "aiHint": "Let a model suggest categories for the merchants your rules and the brand list don't recognize. Off by default; it only runs on transactions left uncategorized.",
+      "aiEnableLabel": "Enable AI suggestions",
+      "aiModeLabel": "What the AI does with its answer",
+      "aiModeOption": {
+        "SUGGEST": "Only suggest",
+        "AUTO_HIGH_CONFIDENCE": "Auto-apply when confident",
+        "AUTO_ALL": "Always auto-apply"
+      },
+      "aiModeHint": {
+        "SUGGEST": "The AI only proposes a category in the inbox; nothing is applied until you confirm.",
+        "AUTO_HIGH_CONFIDENCE": "Apply the category automatically above the confidence threshold; otherwise leave a suggestion.",
+        "AUTO_ALL": "Always apply the AI's best guess. Fastest, but expect some mistakes to fix afterwards."
+      },
+      "aiThresholdLabel": "Confidence threshold",
+      "aiThresholdHint": "Below this, the AI leaves a suggestion instead of applying the category.",
       "error": "Couldn't load settings."
     }
   },
