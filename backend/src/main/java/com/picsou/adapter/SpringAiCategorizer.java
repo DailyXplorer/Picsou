@@ -48,10 +48,11 @@ public class SpringAiCategorizer implements TransactionCategorizerPort {
         if (categories.isEmpty()) {
             return CategorizationResult.empty("EMPTY");
         }
-        String userPrompt = buildUserPrompt(input, categories, examples);
-        String fullPrompt = SYSTEM + "\n\n" + userPrompt;
+        String fullPrompt = null;
         long t0 = System.nanoTime();
         try {
+            String userPrompt = buildUserPrompt(input, categories, examples);
+            fullPrompt = SYSTEM + "\n\n" + userPrompt;
             var re = chatClient.prompt()
                 .system(SYSTEM)
                 .user(userPrompt)
