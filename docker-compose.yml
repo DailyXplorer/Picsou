@@ -69,8 +69,18 @@ services:
     networks:
       - picsou-net
 
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    profiles: ["ollama"]
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - picsou-net
+
 volumes:
   pgdata:
+  ollama_models:
 
 networks:
   picsou-net:

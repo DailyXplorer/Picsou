@@ -54,7 +54,14 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    profiles: ["ollama"]
+    volumes:
+      - ollama_models:/root/.ollama
 
 volumes:
   pgdata:
   picsou_data:
+  ollama_models:
