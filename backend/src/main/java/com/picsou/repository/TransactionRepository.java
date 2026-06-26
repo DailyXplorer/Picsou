@@ -41,6 +41,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     /** Member-scoped single transaction lookup (categorize endpoint). */
     Optional<Transaction> findByIdAndAccountMemberId(Long id, Long memberId);
 
+    /** Member-scoped batch lookup by id set — used by the async AI job. */
+    List<Transaction> findAllByIdInAndAccountMemberId(Collection<Long> ids, Long memberId);
+
     /** Transactions belonging to a member that have no managed category yet. */
     @Query("""
         SELECT t FROM Transaction t

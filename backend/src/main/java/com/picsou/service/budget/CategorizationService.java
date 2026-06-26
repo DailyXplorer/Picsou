@@ -22,6 +22,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.picsou.model.AiCategorizationMode;
+
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -318,6 +322,134 @@ public class CategorizationService {
 
     /** Counts from an AI run: how many transactions were auto-applied vs. left as suggestions. */
     public record AiCategorizationResult(int applied, int suggested) {}
+
+    /**
+     * Preloaded AI context for one member: the category options to pass the model, the few-shot
+     * examples, a slug→id map for applying results, plus the member's mode and threshold.
+     * {@code enabled=false} when AI categorization is turned off — callers must check this first.
+     */
+    public record AiContext(
+        List<TransactionCategorizerPort.CategoryOption> options,
+        List<TransactionCategorizerPort.Example> examples,
+        Map<String, Long> categoryIdBySlug,
+        AiCategorizationMode mode,
+        int threshold,
+        boolean enabled
+    ) {}
+
+    /**
+     * IDs of every transaction the deterministic pipeline left uncategorized for this member.
+     * Read-only; callers pass the list to the async job which loads inputs and runs AI.
+     */
+    @Transactional(readOnly = true)
+    public List<Long> uncategorizedIds(Long memberId) {
+        return transactionRepository.findUncategorizedByMemberId(memberId).stream()
+            .map(Transaction::getId)
+            .toList();
+    }
+
+    /**
+     * Load the AI context once per job run: categories, few-shot examples, slug→id map, and
+     * the member's AI mode/threshold. Returns a disabled context when AI is off — the async
+     * job must check {@link AiContext#enabled()} before proceeding.
+     */
+    @Transactional
+    public AiContext loadAiContext(Long memberId) {
+        BudgetSettings settings = settingsRepository.findByMemberId(memberId).orElse(null);
+        if (settings == null || !settings.isAiCategorizationEnabled()) {
+            return new AiContext(List.of(), List.of(), Map.of(),
+                AiCategorizationMode.AUTO_HIGH_CONFIDENCE, 0, false);
+        }
+        Map<String, Category> bySlug = categoriesBySlug(memberId);
+        List<TransactionCategorizerPort.CategoryOption> options = bySlug.entrySet().stream()
+            .map(e -> new TransactionCategorizerPort.CategoryOption(e.getKey(), e.getValue().getName()))
+            .toList();
+        Map<String, Long> categoryIdBySlug = bySlug.entrySet().stream()
+            .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getId()));
+        List<TransactionCategorizerPort.Example> examples = transactionRepository
+            .findRecentCategorizedByMemberId(memberId, PageRequest.of(0, FEW_SHOT_LIMIT)).stream()
+            .filter(t -> t.getCategoryRef() != null && t.getCategoryRef().getSlug() != null)
+            .map(t -> new TransactionCategorizerPort.Example(t.getMerchantLabel(), t.getCategoryRef().getSlug()))
+            .toList();
+        return new AiContext(options, examples, categoryIdBySlug,
+            settings.getAiMode(), settings.getAiConfidenceThreshold(), true);
+    }
+
+    /**
+     * Build the {@link TransactionCategorizerPort.CategorizationInput} map for a batch of
+     * transaction ids, scoped to the member. Unknown or foreign ids are silently absent.
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, TransactionCategorizerPort.CategorizationInput> inputsFor(
+            Collection<Long> ids, Long memberId) {
+        return transactionRepository.findAllByIdInAndAccountMemberId(ids, memberId).stream()
+            .collect(Collectors.toMap(
+                Transaction::getId,
+                tx -> new TransactionCategorizerPort.CategorizationInput(
+                    tx.getMerchantLabel() != null ? tx.getMerchantLabel() : tx.getDescription(),
+                    tx.getDescription(),
+                    tx.getAmount())));
+    }
+
+    /**
+     * Apply the AI categorizer's answers to transactions, using the preloaded {@link AiContext}.
+     * For each (txId, suggestion):
+     * <ul>
+     *   <li>slug not in context → skip (absent from result map);</li>
+     *   <li>tx already has a managed category → skip (defensive);</li>
+     *   <li>auto (mode/threshold says apply) → set {@code categoryRef}, clear AI fields, map to {@code true};</li>
+     *   <li>suggest → set {@code aiSuggestedCategoryId}/{@code aiConfidence}, map to {@code false}.</li>
+     * </ul>
+     * Returns a map of txId→applied (true) or suggested (false). Behavior is identical to the
+     * inline logic in {@link #aiCategorizeUncategorized} — kept in sync intentionally.
+     */
+    @Transactional
+    public Map<Long, Boolean> applyAiResults(
+            Map<Long, TransactionCategorizerPort.CategorySuggestion> results,
+            AiContext ctx,
+            Long memberId) {
+        Map<Long, Boolean> out = new HashMap<>();
+        for (Map.Entry<Long, TransactionCategorizerPort.CategorySuggestion> entry : results.entrySet()) {
+            Long txId = entry.getKey();
+            TransactionCategorizerPort.CategorySuggestion suggestion = entry.getValue();
+            Long catId = ctx.categoryIdBySlug().get(suggestion.categorySlug());
+            if (catId == null) {
+                continue; // model returned a slug the member does not have — ignore
+            }
+            int pct = (int) Math.round(clamp01(suggestion.confidence()) * 100);
+            boolean auto = switch (ctx.mode()) {
+                case AUTO_ALL -> true;
+                case AUTO_HIGH_CONFIDENCE -> pct >= ctx.threshold();
+                case SUGGEST -> false;
+            };
+            Transaction tx = transactionRepository.findByIdAndAccountMemberId(txId, memberId)
+                .orElse(null);
+            if (tx == null) {
+                continue;
+            }
+            if (tx.getCategoryRef() != null) {
+                continue; // defensive: never touch an already-categorized transaction
+            }
+            if (auto) {
+                Category target = categoryRepository.findByIdAndMemberId(catId, memberId)
+                    .orElse(null);
+                if (target == null) {
+                    continue;
+                }
+                tx.setCategoryRef(target);
+                tx.setAiSuggestedCategoryId(null);
+                tx.setAiConfidence(null);
+                transactionRepository.save(tx);
+                out.put(txId, true);
+            } else {
+                tx.setAiSuggestedCategoryId(catId);
+                tx.setAiConfidence(pct);
+                transactionRepository.save(tx);
+                out.put(txId, false);
+            }
+        }
+        return out;
+    }
 
     /**
      * Optional AI fallback. For every transaction the deterministic pipeline left uncategorized,

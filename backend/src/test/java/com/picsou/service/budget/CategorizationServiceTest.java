@@ -390,4 +390,127 @@ class CategorizationServiceTest {
         assertThat(result.suggested()).isZero();
         assertThat(unc.getAiSuggestedCategoryId()).isNull();
     }
+
+    // ─── loadAiContext ─────────────────────────────────────────────────────────
+
+    @Test
+    void loadAiContext_disabledWhenSettingsOff() {
+        when(settingsRepository.findByMemberId(MEMBER_ID))
+            .thenReturn(Optional.of(aiSettings(false, AiCategorizationMode.AUTO_ALL, 75)));
+
+        CategorizationService.AiContext ctx = service.loadAiContext(MEMBER_ID);
+
+        assertThat(ctx.enabled()).isFalse();
+        assertThat(ctx.options()).isEmpty();
+        assertThat(ctx.examples()).isEmpty();
+        assertThat(ctx.categoryIdBySlug()).isEmpty();
+    }
+
+    // ─── applyAiResults ────────────────────────────────────────────────────────
+
+    private CategorizationService.AiContext aiCtx(AiCategorizationMode mode, int threshold,
+                                                    Map<String, Long> slugToId) {
+        return new CategorizationService.AiContext(List.of(), List.of(), slugToId, mode, threshold, true);
+    }
+
+    @Test
+    void applyAiResults_autoAll_allApplied() {
+        Category courses = categoryWithSlug(1L, "courses", "Courses");
+        Transaction unc = uncategorized("Carrefour", "CB CARREFOUR", "42.30");
+        when(transactionRepository.findByIdAndAccountMemberId(42L, MEMBER_ID))
+            .thenReturn(Optional.of(unc));
+        when(categoryRepository.findByIdAndMemberId(1L, MEMBER_ID)).thenReturn(Optional.of(courses));
+
+        var ctx = aiCtx(AiCategorizationMode.AUTO_ALL, 75, Map.of("courses", 1L));
+        Map<Long, Boolean> result = service.applyAiResults(
+            Map.of(42L, new TransactionCategorizerPort.CategorySuggestion("courses", 0.50)),
+            ctx, MEMBER_ID);
+
+        assertThat(result).containsEntry(42L, true);
+        assertThat(unc.getCategoryRef()).isEqualTo(courses);
+        assertThat(unc.getAiSuggestedCategoryId()).isNull();
+        assertThat(unc.getAiConfidence()).isNull();
+    }
+
+    @Test
+    void applyAiResults_autoHighConfidence_atThreshold_applied() {
+        Category courses = categoryWithSlug(1L, "courses", "Courses");
+        Transaction unc = uncategorized("Carrefour", "CB CARREFOUR", "42.30");
+        when(transactionRepository.findByIdAndAccountMemberId(42L, MEMBER_ID))
+            .thenReturn(Optional.of(unc));
+        when(categoryRepository.findByIdAndMemberId(1L, MEMBER_ID)).thenReturn(Optional.of(courses));
+
+        var ctx = aiCtx(AiCategorizationMode.AUTO_HIGH_CONFIDENCE, 75, Map.of("courses", 1L));
+        Map<Long, Boolean> result = service.applyAiResults(
+            Map.of(42L, new TransactionCategorizerPort.CategorySuggestion("courses", 0.75)),
+            ctx, MEMBER_ID);
+
+        assertThat(result).containsEntry(42L, true);
+        assertThat(unc.getCategoryRef()).isEqualTo(courses);
+    }
+
+    @Test
+    void applyAiResults_autoHighConfidence_belowThreshold_suggested() {
+        Transaction unc = uncategorized("Carrefour", "CB CARREFOUR", "42.30");
+        when(transactionRepository.findByIdAndAccountMemberId(42L, MEMBER_ID))
+            .thenReturn(Optional.of(unc));
+
+        var ctx = aiCtx(AiCategorizationMode.AUTO_HIGH_CONFIDENCE, 75, Map.of("courses", 1L));
+        Map<Long, Boolean> result = service.applyAiResults(
+            Map.of(42L, new TransactionCategorizerPort.CategorySuggestion("courses", 0.50)),
+            ctx, MEMBER_ID);
+
+        assertThat(result).containsEntry(42L, false);
+        assertThat(unc.getCategoryRef()).isNull();
+        assertThat(unc.getAiSuggestedCategoryId()).isEqualTo(1L);
+        assertThat(unc.getAiConfidence()).isEqualTo(50);
+    }
+
+    @Test
+    void applyAiResults_suggestMode_neverApplies() {
+        Transaction unc = uncategorized("Carrefour", "CB CARREFOUR", "42.30");
+        when(transactionRepository.findByIdAndAccountMemberId(42L, MEMBER_ID))
+            .thenReturn(Optional.of(unc));
+
+        var ctx = aiCtx(AiCategorizationMode.SUGGEST, 75, Map.of("courses", 1L));
+        Map<Long, Boolean> result = service.applyAiResults(
+            Map.of(42L, new TransactionCategorizerPort.CategorySuggestion("courses", 0.99)),
+            ctx, MEMBER_ID);
+
+        assertThat(result).containsEntry(42L, false);
+        assertThat(unc.getCategoryRef()).isNull();
+        assertThat(unc.getAiSuggestedCategoryId()).isEqualTo(1L);
+        assertThat(unc.getAiConfidence()).isEqualTo(99);
+    }
+
+    @Test
+    void applyAiResults_unknownSlug_absentFromResult() {
+        Transaction unc = uncategorized("Mystery", "CB MYSTERY", "9.99");
+
+        // "restaurants" not in map — should skip without touching the repo
+        var ctx = aiCtx(AiCategorizationMode.AUTO_ALL, 0, Map.of("courses", 1L));
+        Map<Long, Boolean> result = service.applyAiResults(
+            Map.of(42L, new TransactionCategorizerPort.CategorySuggestion("restaurants", 0.95)),
+            ctx, MEMBER_ID);
+
+        assertThat(result).doesNotContainKey(42L);
+        assertThat(unc.getCategoryRef()).isNull();
+    }
+
+    @Test
+    void applyAiResults_alreadyCategorized_absentFromResult() {
+        Category existing = category(5L, CategoryKind.EXPENSE, "Manual");
+        Transaction unc = uncategorized("Carrefour", "CB CARREFOUR", "42.30");
+        unc.setCategoryRef(existing);
+        when(transactionRepository.findByIdAndAccountMemberId(42L, MEMBER_ID))
+            .thenReturn(Optional.of(unc));
+
+        var ctx = aiCtx(AiCategorizationMode.AUTO_ALL, 0, Map.of("courses", 1L));
+        Map<Long, Boolean> result = service.applyAiResults(
+            Map.of(42L, new TransactionCategorizerPort.CategorySuggestion("courses", 0.95)),
+            ctx, MEMBER_ID);
+
+        assertThat(result).doesNotContainKey(42L);
+        assertThat(unc.getCategoryRef()).isEqualTo(existing);
+    }
 }
