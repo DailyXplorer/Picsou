@@ -851,6 +851,23 @@
   },
   "admin": {
     "title": "Administration",
+    "ai": {
+      "title": "AI categorization",
+      "description": "Optional AI provider used to categorize transactions the deterministic rules leave uncategorized.",
+      "provider": "Provider",
+      "providerNone": "Disabled",
+      "providerOpenAi": "OpenAI / compatible",
+      "model": "Model",
+      "baseUrl": "Base URL",
+      "apiKey": "API key",
+      "apiKeyHintPresent": "A key is already saved — leave blank to keep it.",
+      "disabledHint": "AI categorization is off. Choose a provider to enable it.",
+      "test": "Test connection",
+      "testing": "Testing…",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Saved"
+    },
     "security": {
       "title": "Security",
       "description": "Allowed CORS origins and cookie security",

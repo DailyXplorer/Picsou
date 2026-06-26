@@ -851,6 +851,23 @@
   },
   "admin": {
     "title": "Administration",
+    "ai": {
+      "title": "Catégorisation IA",
+      "description": "Fournisseur d'IA optionnel utilisé pour catégoriser les transactions que les règles déterministes laissent non catégorisées.",
+      "provider": "Fournisseur",
+      "providerNone": "Désactivé",
+      "providerOpenAi": "OpenAI / compatible",
+      "model": "Modèle",
+      "baseUrl": "URL de base",
+      "apiKey": "Clé API",
+      "apiKeyHintPresent": "Une clé est déjà enregistrée — laissez vide pour la conserver.",
+      "disabledHint": "La catégorisation IA est désactivée. Choisissez un fournisseur pour l'activer.",
+      "test": "Tester la connexion",
+      "testing": "Test en cours…",
+      "save": "Enregistrer",
+      "saving": "Enregistrement…",
+      "saved": "Enregistré"
+    },
     "security": {
       "title": "Sécurité",
       "description": "Origines CORS autorisées et sécurité des cookies",
