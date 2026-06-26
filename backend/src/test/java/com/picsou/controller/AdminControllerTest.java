@@ -1,8 +1,11 @@
 package com.picsou.controller;
 
+import com.picsou.config.AiConfigProvider;
 import com.picsou.config.EnableBankingConfigProvider;
+import com.picsou.dto.AdminAiRequest;
 import com.picsou.dto.AdminEnableBankingRequest;
 import com.picsou.dto.AdminSecurityRequest;
+import com.picsou.dto.AiTestResponse;
 import com.picsou.dto.EnableBankingImportRequest;
 import com.picsou.dto.EnableBankingKeypairResponse;
 import com.picsou.service.EnableBankingKeyPairService;
@@ -30,6 +33,7 @@ class AdminControllerTest {
     @Mock IntegrationsService integrationsService;
     @Mock EnableBankingConfigProvider ebConfigProvider;
     @Mock EnableBankingKeyPairService keyPairService;
+    @Mock AiConfigProvider aiConfigProvider;
 
     @InjectMocks AdminController controller;
 
@@ -143,5 +147,51 @@ class AdminControllerTest {
         var response = controller.toggleIntegration("enablebanking", false);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         verify(integrationsService).disable("enablebanking");
+    }
+
+    // ─── AI provider endpoints ───────────────────────────────────────────────
+
+    @Test
+    void updateAi_delegatesToSave() {
+        var request = new AdminAiRequest("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "sk-ant");
+        var response = controller.updateAi(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        verify(aiConfigProvider).save("anthropic", "claude-haiku-4-5", "https://api.anthropic.com", "sk-ant");
+    }
+
+    @Test
+    void testAi_returnsProviderResult() {
+        when(aiConfigProvider.test(any(), any(), any(), any()))
+            .thenReturn(new AiTestResponse(true, "Connected."));
+        var response = controller.testAi(new AdminAiRequest("anthropic", "m", "u", null));
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().ok()).isTrue();
+        assertThat(response.getBody().message()).isEqualTo("Connected.");
+    }
+
+    @Test
+    void getSettings_includesAiBlock() {
+        lenient().when(setupService.readSetting(KEY_CORS_ALLOWED_ORIGINS)).thenReturn(Optional.of(""));
+        lenient().when(setupService.readSetting(KEY_SECURE_COOKIES)).thenReturn(Optional.empty());
+        lenient().when(ebConfigProvider.applicationId()).thenReturn(Optional.empty());
+        lenient().when(ebConfigProvider.redirectUri()).thenReturn(Optional.empty());
+        lenient().when(ebConfigProvider.privateKeyPresent()).thenReturn(false);
+        for (String key : INTEGRATIONS) {
+            lenient().when(integrationsService.isEffectivelyEnabled(key)).thenReturn(false);
+        }
+        when(aiConfigProvider.storedProvider()).thenReturn("anthropic");
+        when(aiConfigProvider.storedModel()).thenReturn("m");
+        when(aiConfigProvider.storedBaseUrl()).thenReturn("u");
+        when(aiConfigProvider.apiKeyPresent()).thenReturn(true);
+
+        var body = controller.getSettings().getBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.ai()).isNotNull();
+        assertThat(body.ai().provider()).isEqualTo("anthropic");
+        assertThat(body.ai().model()).isEqualTo("m");
+        assertThat(body.ai().baseUrl()).isEqualTo("u");
+        assertThat(body.ai().apiKeyPresent()).isTrue();
     }
 }

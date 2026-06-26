@@ -1,9 +1,12 @@
 package com.picsou.controller;
 
+import com.picsou.config.AiConfigProvider;
 import com.picsou.config.EnableBankingConfigProvider;
+import com.picsou.dto.AdminAiRequest;
 import com.picsou.dto.AdminEnableBankingRequest;
 import com.picsou.dto.AdminSecurityRequest;
 import com.picsou.dto.AdminSettingsResponse;
+import com.picsou.dto.AiTestResponse;
 import com.picsou.dto.EnableBankingImportRequest;
 import com.picsou.dto.EnableBankingKeypairResponse;
 import com.picsou.service.EnableBankingKeyPairService;
@@ -31,17 +34,20 @@ public class AdminController {
     private final IntegrationsService integrationsService;
     private final EnableBankingConfigProvider ebConfigProvider;
     private final EnableBankingKeyPairService keyPairService;
+    private final AiConfigProvider aiConfigProvider;
     private final String envAllowedOrigins;
 
     public AdminController(SetupService setupService,
                            IntegrationsService integrationsService,
                            EnableBankingConfigProvider ebConfigProvider,
                            EnableBankingKeyPairService keyPairService,
+                           AiConfigProvider aiConfigProvider,
                            @Value("${app.cors.allowed-origins:}") String envAllowedOrigins) {
         this.setupService = setupService;
         this.integrationsService = integrationsService;
         this.ebConfigProvider = ebConfigProvider;
         this.keyPairService = keyPairService;
+        this.aiConfigProvider = aiConfigProvider;
         this.envAllowedOrigins = envAllowedOrigins;
     }
 
@@ -66,11 +72,19 @@ public class AdminController {
             integrations.put(name, integrationsService.isEffectivelyEnabled(name));
         }
 
+        AdminSettingsResponse.AiSettings ai = new AdminSettingsResponse.AiSettings(
+            aiConfigProvider.storedProvider(),
+            aiConfigProvider.storedModel(),
+            aiConfigProvider.storedBaseUrl(),
+            aiConfigProvider.apiKeyPresent()
+        );
+
         return ResponseEntity.ok(new AdminSettingsResponse(
             new AdminSettingsResponse.SecuritySettings(origins, secureCookies),
             new AdminSettingsResponse.EnableBankingSettings(
                 appId, redirectUri, ebConfigProvider.privateKeyPresent()),
-            integrations
+            integrations,
+            ai
         ));
     }
 
@@ -131,5 +145,16 @@ public class AdminController {
         if (enabled) integrationsService.enable(key);
         else integrationsService.disable(key);
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/settings/ai")
+    public ResponseEntity<Void> updateAi(@Valid @RequestBody AdminAiRequest request) {
+        aiConfigProvider.save(request.provider(), request.model(), request.baseUrl(), request.apiKey());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/settings/ai/test")
+    public ResponseEntity<AiTestResponse> testAi(@Valid @RequestBody AdminAiRequest request) {
+        return ResponseEntity.ok(aiConfigProvider.test(request.provider(), request.model(), request.baseUrl(), request.apiKey()));
     }
 }
