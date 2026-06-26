@@ -297,6 +297,18 @@ handlers.set(key('POST', '/crypto/wallet/1/sync'), () => [])
 // Crypto wallet - remove
 handlers.set(key('DELETE', '/crypto/wallet/1'), () => null)
 
+// Admin settings
+handlers.set(key('GET', '/admin/settings'), () => ({
+  security: { allowedOrigins: ['http://localhost:5173'], secureCookies: false },
+  enableBanking: { applicationId: '', redirectUri: '', privateKeyPresent: false },
+  integrations: {},
+  ai: { provider: 'none', model: '', baseUrl: '', apiKeyPresent: false },
+}))
+handlers.set(key('PUT', '/admin/settings/security'), () => ({}))
+handlers.set(key('PUT', '/admin/settings/enablebanking'), () => ({}))
+handlers.set(key('PUT', '/admin/settings/ai'), () => ({}))
+handlers.set(key('POST', '/admin/settings/ai/test'), () => ({ ok: true, message: 'Demo mode' }))
+
 // Finary - configured
 handlers.set(key('GET', '/finary/configured'), () => true)
 

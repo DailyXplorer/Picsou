@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from './api'
-import type { AdminSecuritySettings, AdminEnableBankingCredentials } from './api'
+import type { AdminSecuritySettings, AdminEnableBankingCredentials, AdminAiRequest } from './api'
 
 export const adminKeys = {
   all: ['admin'] as const,
@@ -62,4 +62,16 @@ export function useToggleIntegration() {
       adminApi.toggleIntegration(key, enabled),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.settings() }),
   })
+}
+
+export function useUpdateAi() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: AdminAiRequest) => adminApi.updateAi(body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminKeys.settings() }),
+  })
+}
+
+export function useTestAi() {
+  return useMutation({ mutationFn: (body: AdminAiRequest) => adminApi.testAi(body) })
 }
