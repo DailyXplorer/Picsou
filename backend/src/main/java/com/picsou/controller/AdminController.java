@@ -6,9 +6,11 @@ import com.picsou.dto.AdminAiRequest;
 import com.picsou.dto.AdminEnableBankingRequest;
 import com.picsou.dto.AdminSecurityRequest;
 import com.picsou.dto.AdminSettingsResponse;
+import com.picsou.dto.AiCallLogPage;
 import com.picsou.dto.AiTestResponse;
 import com.picsou.dto.EnableBankingImportRequest;
 import com.picsou.dto.EnableBankingKeypairResponse;
+import com.picsou.service.AiCallLogService;
 import com.picsou.service.EnableBankingKeyPairService;
 import com.picsou.service.IntegrationsService;
 import com.picsou.service.SetupService;
@@ -35,6 +37,7 @@ public class AdminController {
     private final EnableBankingConfigProvider ebConfigProvider;
     private final EnableBankingKeyPairService keyPairService;
     private final AiConfigProvider aiConfigProvider;
+    private final AiCallLogService aiCallLogService;
     private final String envAllowedOrigins;
 
     public AdminController(SetupService setupService,
@@ -42,12 +45,14 @@ public class AdminController {
                            EnableBankingConfigProvider ebConfigProvider,
                            EnableBankingKeyPairService keyPairService,
                            AiConfigProvider aiConfigProvider,
+                           AiCallLogService aiCallLogService,
                            @Value("${app.cors.allowed-origins:}") String envAllowedOrigins) {
         this.setupService = setupService;
         this.integrationsService = integrationsService;
         this.ebConfigProvider = ebConfigProvider;
         this.keyPairService = keyPairService;
         this.aiConfigProvider = aiConfigProvider;
+        this.aiCallLogService = aiCallLogService;
         this.envAllowedOrigins = envAllowedOrigins;
     }
 
@@ -157,5 +162,12 @@ public class AdminController {
     @PostMapping("/settings/ai/test")
     public ResponseEntity<AiTestResponse> testAi(@Valid @RequestBody AdminAiRequest request) {
         return ResponseEntity.ok(aiConfigProvider.test(request.provider(), request.model(), request.baseUrl(), request.apiKey()));
+    }
+
+    @GetMapping("/ai-calls")
+    public AiCallLogPage aiCalls(
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int offset) {
+        return aiCallLogService.list(limit, offset);
     }
 }

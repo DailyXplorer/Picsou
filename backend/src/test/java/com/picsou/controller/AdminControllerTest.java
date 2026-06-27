@@ -5,9 +5,11 @@ import com.picsou.config.EnableBankingConfigProvider;
 import com.picsou.dto.AdminAiRequest;
 import com.picsou.dto.AdminEnableBankingRequest;
 import com.picsou.dto.AdminSecurityRequest;
+import com.picsou.dto.AiCallLogPage;
 import com.picsou.dto.AiTestResponse;
 import com.picsou.dto.EnableBankingImportRequest;
 import com.picsou.dto.EnableBankingKeypairResponse;
+import com.picsou.service.AiCallLogService;
 import com.picsou.service.EnableBankingKeyPairService;
 import com.picsou.service.IntegrationsService;
 import com.picsou.service.SetupService;
@@ -34,6 +36,7 @@ class AdminControllerTest {
     @Mock EnableBankingConfigProvider ebConfigProvider;
     @Mock EnableBankingKeyPairService keyPairService;
     @Mock AiConfigProvider aiConfigProvider;
+    @Mock AiCallLogService aiCallLogService;
 
     @InjectMocks AdminController controller;
 
@@ -195,5 +198,16 @@ class AdminControllerTest {
         assertThat(body.ai().baseUrl()).isEqualTo("u");
         assertThat(body.ai().apiKeyPresent()).isTrue();
         assertThat(body.ai().maxConcurrency()).isEqualTo(6);
+    }
+
+    @Test
+    void aiCalls_delegatesToService() {
+        var samplePage = new AiCallLogPage(List.of(), 0, 0);
+        when(aiCallLogService.list(50, 0)).thenReturn(samplePage);
+
+        var result = controller.aiCalls(50, 0);
+
+        assertThat(result).isEqualTo(samplePage);
+        verify(aiCallLogService).list(50, 0);
     }
 }
