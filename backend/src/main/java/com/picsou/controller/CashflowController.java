@@ -6,6 +6,7 @@ import com.picsou.dto.CashflowResponse;
 import com.picsou.service.UserContext;
 import com.picsou.service.budget.CashflowFlowService;
 import com.picsou.service.budget.CashflowService;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -33,13 +34,21 @@ public class CashflowController {
     }
 
     @GetMapping
-    public CashflowResponse cashflow(@RequestParam(defaultValue = "CYCLE") CashflowPeriod period) {
-        return cashflowService.compute(userContext.currentMemberId(), period, LocalDate.now());
+    public CashflowResponse cashflow(
+        @RequestParam(defaultValue = "CYCLE") CashflowPeriod period,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate anchor
+    ) {
+        return cashflowService.compute(userContext.currentMemberId(), period,
+            anchor != null ? anchor : LocalDate.now());
     }
 
     /** Income → budget → expenses money-flow graph for the Sankey diagram. */
     @GetMapping("/flow")
-    public CashflowFlowResponse flow(@RequestParam(defaultValue = "CYCLE") CashflowPeriod period) {
-        return cashflowFlowService.flow(userContext.currentMemberId(), period, LocalDate.now());
+    public CashflowFlowResponse flow(
+        @RequestParam(defaultValue = "CYCLE") CashflowPeriod period,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate anchor
+    ) {
+        return cashflowFlowService.flow(userContext.currentMemberId(), period,
+            anchor != null ? anchor : LocalDate.now());
     }
 }

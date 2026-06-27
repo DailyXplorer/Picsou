@@ -5,6 +5,7 @@ import com.picsou.dto.SpendingByCategoryResponse;
 import com.picsou.dto.SpendingDetailResponse;
 import com.picsou.service.UserContext;
 import com.picsou.service.budget.CashflowFlowService;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -31,15 +32,21 @@ public class SpendingController {
     }
 
     @GetMapping("/by-category")
-    public SpendingByCategoryResponse byCategory(@RequestParam(defaultValue = "CYCLE") CashflowPeriod period) {
-        return cashflowFlowService.spendingByCategory(userContext.currentMemberId(), period, LocalDate.now());
+    public SpendingByCategoryResponse byCategory(
+        @RequestParam(defaultValue = "CYCLE") CashflowPeriod period,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate anchor
+    ) {
+        return cashflowFlowService.spendingByCategory(userContext.currentMemberId(), period,
+            anchor != null ? anchor : LocalDate.now());
     }
 
     @GetMapping("/category/{categoryId}")
     public SpendingDetailResponse categoryDetail(
         @PathVariable Long categoryId,
-        @RequestParam(defaultValue = "CYCLE") CashflowPeriod period
+        @RequestParam(defaultValue = "CYCLE") CashflowPeriod period,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate anchor
     ) {
-        return cashflowFlowService.categoryDetail(userContext.currentMemberId(), categoryId, period, LocalDate.now());
+        return cashflowFlowService.categoryDetail(userContext.currentMemberId(), categoryId, period,
+            anchor != null ? anchor : LocalDate.now());
     }
 }

@@ -83,6 +83,45 @@ class CashflowServiceTest {
     }
 
     @Test
+    void compute_cycle_withPastAnchor_returnsPastCycleRange() {
+        LocalDate anchor = LocalDate.of(2024, 3, 10);
+        when(budgetSettingsService.cycleStartDay(MEMBER_ID)).thenReturn(1);
+        when(transactionRepository.findByMemberIdAndDateBetween(eq(MEMBER_ID), any(), any()))
+            .thenReturn(List.of());
+
+        CashflowResponse r = service.compute(MEMBER_ID, CashflowPeriod.CYCLE, anchor);
+
+        assertThat(r.from()).isEqualTo(LocalDate.of(2024, 3, 1));
+        assertThat(r.to()).isEqualTo(LocalDate.of(2024, 3, 31));
+    }
+
+    @Test
+    void compute_ytd_withPastYearEnd_returnsFullPastYear() {
+        LocalDate anchor = LocalDate.of(2024, 12, 31);
+        when(budgetSettingsService.cycleStartDay(MEMBER_ID)).thenReturn(1);
+        when(transactionRepository.findByMemberIdAndDateBetween(eq(MEMBER_ID), any(), any()))
+            .thenReturn(List.of());
+
+        CashflowResponse r = service.compute(MEMBER_ID, CashflowPeriod.YTD, anchor);
+
+        assertThat(r.from()).isEqualTo(LocalDate.of(2024, 1, 1));
+        assertThat(r.to()).isEqualTo(LocalDate.of(2024, 12, 31));
+    }
+
+    @Test
+    void compute_ytd_withCurrentYearAnchor_returnsFromJan1ToAnchor() {
+        LocalDate anchor = LocalDate.of(2026, 6, 15);
+        when(budgetSettingsService.cycleStartDay(MEMBER_ID)).thenReturn(1);
+        when(transactionRepository.findByMemberIdAndDateBetween(eq(MEMBER_ID), any(), any()))
+            .thenReturn(List.of());
+
+        CashflowResponse r = service.compute(MEMBER_ID, CashflowPeriod.YTD, anchor);
+
+        assertThat(r.from()).isEqualTo(LocalDate.of(2026, 1, 1));
+        assertThat(r.to()).isEqualTo(LocalDate.of(2026, 6, 15));
+    }
+
+    @Test
     void compute_ytd_bucketsPerCycleAndTotalsMatchSum() {
         when(budgetSettingsService.cycleStartDay(MEMBER_ID)).thenReturn(1);
         when(transactionRepository.findByMemberIdAndDateBetween(eq(MEMBER_ID), any(), any()))

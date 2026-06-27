@@ -81,6 +81,48 @@ class AllocationServiceTest {
     }
 
     @Test
+    void compute_cycle_withPastAnchor_returnsPastCycleRange() {
+        LocalDate anchor = LocalDate.of(2024, 3, 10);
+        when(budgetSettingsService.cycleStartDay(MEMBER_ID)).thenReturn(1);
+        when(accountRepository.findAllByMemberIdOrderByCreatedAtAsc(MEMBER_ID)).thenReturn(List.of());
+        when(transactionRepository.findByMemberIdAndKindAndDateBetween(eq(MEMBER_ID), eq(CategoryKind.TRANSFER), any(), any()))
+            .thenReturn(List.of());
+
+        AllocationResponse r = service.compute(MEMBER_ID, CashflowPeriod.CYCLE, anchor);
+
+        assertThat(r.from()).isEqualTo(LocalDate.of(2024, 3, 1));
+        assertThat(r.to()).isEqualTo(LocalDate.of(2024, 3, 31));
+    }
+
+    @Test
+    void compute_ytd_withPastYearEnd_returnsFullPastYear() {
+        LocalDate anchor = LocalDate.of(2024, 12, 31);
+        when(budgetSettingsService.cycleStartDay(MEMBER_ID)).thenReturn(1);
+        when(accountRepository.findAllByMemberIdOrderByCreatedAtAsc(MEMBER_ID)).thenReturn(List.of());
+        when(transactionRepository.findByMemberIdAndKindAndDateBetween(eq(MEMBER_ID), eq(CategoryKind.TRANSFER), any(), any()))
+            .thenReturn(List.of());
+
+        AllocationResponse r = service.compute(MEMBER_ID, CashflowPeriod.YTD, anchor);
+
+        assertThat(r.from()).isEqualTo(LocalDate.of(2024, 1, 1));
+        assertThat(r.to()).isEqualTo(LocalDate.of(2024, 12, 31));
+    }
+
+    @Test
+    void compute_ytd_withCurrentYearAnchor_returnsFromJan1ToAnchor() {
+        LocalDate anchor = LocalDate.of(2026, 6, 15);
+        when(budgetSettingsService.cycleStartDay(MEMBER_ID)).thenReturn(1);
+        when(accountRepository.findAllByMemberIdOrderByCreatedAtAsc(MEMBER_ID)).thenReturn(List.of());
+        when(transactionRepository.findByMemberIdAndKindAndDateBetween(eq(MEMBER_ID), eq(CategoryKind.TRANSFER), any(), any()))
+            .thenReturn(List.of());
+
+        AllocationResponse r = service.compute(MEMBER_ID, CashflowPeriod.YTD, anchor);
+
+        assertThat(r.from()).isEqualTo(LocalDate.of(2026, 1, 1));
+        assertThat(r.to()).isEqualTo(LocalDate.of(2026, 6, 15));
+    }
+
+    @Test
     void compute_contributions_sumIncomingTransfersIntoSavingsAndInvestment() {
         Account livret = account(2L, "Livret A", AccountType.SAVINGS, "5000.00");
         Account pea = account(4L, "PEA", AccountType.PEA, "2000.00");
