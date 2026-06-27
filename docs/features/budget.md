@@ -1,6 +1,6 @@
 # Feature: Budget & Cashflow
 
-> Last updated: 2026-06-09
+> Last updated: 2026-06-27
 
 ## Context
 
@@ -133,6 +133,45 @@ It deliberately has no empty-rules early-out: the brand KB alone categorizes a r
 - **`MerchantAvatar`** (`components/shared/MerchantAvatar.tsx`) — initial-monogram with a
   **deterministic colour derived from the name**, fully offline; switches to a proxied `<img>` only
   when `logo_fetch_enabled` (M5). Used across every transaction list.
+
+### Period navigation
+
+All five period-aware budget views — Overview (cycle only), Cashflow/Spending flow, Allocation,
+Spending breakdown, and the per-category drill — expose a **`PeriodNavigator`** component. It sits
+next to the Cycle / Year toggle and lets the user step through past periods without leaving the page.
+
+**Backend: optional `anchor` query parameter**
+
+Every period endpoint accepts `?anchor=YYYY-MM-DD` (default: today):
+
+| Endpoint | Cycle window | Year (YTD) window |
+|---|---|---|
+| `GET /api/cashflow` | `cycleFor(anchor)` | Jan 1 → anchor |
+| `GET /api/cashflow/flow` | `cycleFor(anchor)` | Jan 1 → anchor |
+| `GET /api/allocation` | `cycleFor(anchor)` | Jan 1 → anchor |
+| `GET /api/spending/by-category` | `cycleFor(anchor)` | Jan 1 → anchor |
+| `GET /api/spending/category/{id}` | `cycleFor(anchor)` | Jan 1 → anchor |
+
+The computed `from`/`to` dates are echoed in every response; `PeriodNavigator` derives the display
+label and step size from them rather than recomputing on the client.
+
+**Year semantics**
+
+- **Current year**: `from` = Jan 1, `to` = today (partial).
+- **Past years**: `from` = Jan 1, `to` = Dec 31 (full year).
+
+**Frontend: `PeriodNavigator`**
+
+- **Label** — rendered from response `from`/`to` ("May 2026", "2024").
+- **Prev / Next arrows** — step to the immediately preceding or following cycle (month) or year.
+- **Jump dropdown** — lists a fixed set of recent months (cycle mode) or years (year mode) for
+  direct navigation without repeated clicking.
+- **No future periods** — the Next arrow is disabled when the current anchor is at or past the
+  current period; the user cannot navigate into the future.
+- **Cycle↔Year reset** — switching the Cycle / Year toggle resets the anchor to today so the
+  user always lands on the current period after a mode change.
+- **`keepPreviousData`** — the prior period's data remains visible while the next one loads,
+  eliminating blank-flash transitions during stepping.
 
 ### Sub-categories (the category tree)
 
