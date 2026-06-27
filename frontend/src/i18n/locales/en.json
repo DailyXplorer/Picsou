@@ -108,7 +108,10 @@
     "recentAccounts": "Recent accounts",
     "viewAll": "View all",
     "totalLiabilities": "Total liabilities",
-    "totalAssets": "Total assets"
+    "totalAssets": "Total assets",
+    "liabilities": "Liabilities",
+    "monthlyPayment": "Monthly payment",
+    "loanParamsUnconfigured": "Parameters not configured"
   },
   "accounts": {
     "title": "Accounts",

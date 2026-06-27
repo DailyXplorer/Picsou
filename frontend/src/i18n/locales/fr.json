@@ -108,7 +108,10 @@
     "recentAccounts": "Comptes récents",
     "viewAll": "Voir tout",
     "totalLiabilities": "Total des dettes",
-    "totalAssets": "Total des actifs"
+    "totalAssets": "Total des actifs",
+    "liabilities": "Dettes",
+    "monthlyPayment": "Mensualité totale",
+    "loanParamsUnconfigured": "Paramètres non renseignés"
   },
   "accounts": {
     "title": "Comptes",
