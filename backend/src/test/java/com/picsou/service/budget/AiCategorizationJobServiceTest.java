@@ -163,7 +163,28 @@ class AiCategorizationJobServiceTest {
         assertThat(rows).anyMatch(r -> r.getTransactionId().equals(1L) && r.isApplied());
         assertThat(rows).anyMatch(r -> r.getTransactionId().equals(2L) && !r.isApplied());
 
+        // EMPTY result for tx3 must also be logged (applied=false since not in decisions map)
+        assertThat(rows).anyMatch(r -> r.getTransactionId().equals(3L) && !r.isApplied());
+
         verify(aiCallLogService).prune();
+    }
+
+    @Test
+    void start_emptyIds_noWork() {
+        List<CategoryOption> options = List.of(new CategoryOption("food", "Food"));
+        org.mockito.Mockito.when(categorizationService.loadAiContext(1L)).thenReturn(ctx(true, options));
+        org.mockito.Mockito.when(categorizationService.uncategorizedIds(1L)).thenReturn(List.of());
+
+        AiJobStatus status = service.start(1L);
+
+        assertThat(status.running()).isFalse();
+        assertThat(status.done()).isTrue();
+        assertThat(status.total()).isEqualTo(0);
+        assertThat(status.error()).isNull();
+
+        verify(categorizationService, never()).inputsFor(any(), any());
+        verify(categorizer, never()).categorize(any(), any(), any());
+        verifyNoInteractions(aiCallLogService);
     }
 
     @Test

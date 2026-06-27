@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -89,20 +90,20 @@ public class AiCategorizationJobService {
      * categories are configured — there would be nothing for the model to choose from.
      */
     public AiJobStatus start(Long memberId) {
-        // Atomic guard: if a job is running, return its current snapshot
-        JobState running = jobs.compute(memberId, (k, cur) -> (cur != null && cur.running) ? cur : null);
-        if (running != null) {
-            return running.toStatus();
-        }
-
+        JobState existing = jobs.get(memberId);
+        if (existing != null && existing.running) return existing.toStatus();   // fast path (non-authoritative)
         CategorizationService.AiContext ctx = categorizationService.loadAiContext(memberId);
-        if (!ctx.enabled() || ctx.options().isEmpty()) {
-            return new AiJobStatus(false, 0, 0, 0, 0, true, null);
-        }
-
+        if (!ctx.enabled() || ctx.options().isEmpty()) return new AiJobStatus(false, 0, 0, 0, 0, true, null);
         List<Long> ids = categorizationService.uncategorizedIds(memberId);
+        if (ids.isEmpty()) return new AiJobStatus(false, 0, 0, 0, 0, true, null);   // no-op guard
         JobState fresh = new JobState(ids.size());
-        jobs.put(memberId, fresh);
+        JobState[] winner = { null };
+        jobs.compute(memberId, (k, cur) -> {
+            if (cur != null && cur.running) { winner[0] = cur; return cur; }
+            winner[0] = fresh;
+            return fresh;
+        });
+        if (winner[0] != fresh) return winner[0].toStatus();                    // lost the race — another job is running
         jobExecutor.execute(() -> runJob(memberId, ids, ctx, fresh));
         return fresh.toStatus();
     }
@@ -122,12 +123,9 @@ public class AiCategorizationJobService {
         try {
             int c = aiConfigProvider.maxConcurrency();
             UUID batch = UUID.randomUUID();
-            String provider = aiConfigProvider.current()
-                .map(cfg -> cfg.provider().name().toLowerCase())
-                .orElse("none");
-            String model = aiConfigProvider.current()
-                .map(AiProviderConfig::effectiveModel)
-                .orElse(null);
+            Optional<AiProviderConfig> cfg = aiConfigProvider.current();
+            String provider = cfg.map(p -> p.provider().name().toLowerCase()).orElse("none");
+            String model = cfg.map(AiProviderConfig::effectiveModel).orElse(null);
 
             for (int i = 0; i < ids.size(); i += c) {
                 List<Long> chunk = ids.subList(i, Math.min(i + c, ids.size()));
