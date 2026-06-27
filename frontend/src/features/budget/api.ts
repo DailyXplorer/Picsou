@@ -76,19 +76,19 @@ export const budgetApi = {
     api.put<BudgetSettings>('/budget/settings', data).then(r => r.data),
 
   // ─── Cashflow & allocation (read-only aggregations) ───────────────────────
-  getCashflow: (period: CashflowPeriod) =>
-    api.get<CashflowResponse>('/cashflow', { params: { period } }).then(r => r.data),
-  getCashflowFlow: (period: CashflowPeriod) =>
-    api.get<CashflowFlowResponse>('/cashflow/flow', { params: { period } }).then(r => r.data),
-  getAllocation: (period: CashflowPeriod) =>
-    api.get<AllocationResponse>('/allocation', { params: { period } }).then(r => r.data),
+  getCashflow: (period: CashflowPeriod, anchor?: string) =>
+    api.get<CashflowResponse>('/cashflow', { params: { period, ...(anchor ? { anchor } : {}) } }).then(r => r.data),
+  getCashflowFlow: (period: CashflowPeriod, anchor?: string) =>
+    api.get<CashflowFlowResponse>('/cashflow/flow', { params: { period, ...(anchor ? { anchor } : {}) } }).then(r => r.data),
+  getAllocation: (period: CashflowPeriod, anchor?: string) =>
+    api.get<AllocationResponse>('/allocation', { params: { period, ...(anchor ? { anchor } : {}) } }).then(r => r.data),
 
   // ─── Spending breakdown & drill ───────────────────────────────────────────
-  getSpendingByCategory: (period: CashflowPeriod) =>
-    api.get<SpendingByCategoryResponse>('/spending/by-category', { params: { period } })
+  getSpendingByCategory: (period: CashflowPeriod, anchor?: string) =>
+    api.get<SpendingByCategoryResponse>('/spending/by-category', { params: { period, ...(anchor ? { anchor } : {}) } })
       .then(r => r.data),
-  getCategoryDetail: (categoryId: number, period: CashflowPeriod) =>
-    api.get<SpendingDetailResponse>(`/spending/category/${categoryId}`, { params: { period } })
+  getCategoryDetail: (categoryId: number, period: CashflowPeriod, anchor?: string) =>
+    api.get<SpendingDetailResponse>(`/spending/category/${categoryId}`, { params: { period, ...(anchor ? { anchor } : {}) } })
       .then(r => r.data),
 
   // ─── Recurring series ─────────────────────────────────────────────────────

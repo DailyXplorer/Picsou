@@ -221,44 +221,44 @@ export function useMerchantLogoUrl(): (brandId: number | null | undefined) => st
 
 // ─── Cashflow & allocation ───────────────────────────────────────────────────
 
-export function useCashflow(period: CashflowPeriod) {
+export function useCashflow(period: CashflowPeriod, anchor?: string) {
   return useQuery({
-    queryKey: ['budget', 'cashflow', period],
-    queryFn: () => budgetApi.getCashflow(period),
+    queryKey: ['budget', 'cashflow', period, anchor ?? 'now'],
+    queryFn: () => budgetApi.getCashflow(period, anchor),
     staleTime: QUERY_STALE_TIMES.budget,
   })
 }
 
-export function useAllocation(period: CashflowPeriod) {
+export function useAllocation(period: CashflowPeriod, anchor?: string) {
   return useQuery({
-    queryKey: ['budget', 'allocation', period],
-    queryFn: () => budgetApi.getAllocation(period),
+    queryKey: ['budget', 'allocation', period, anchor ?? 'now'],
+    queryFn: () => budgetApi.getAllocation(period, anchor),
     staleTime: QUERY_STALE_TIMES.budget,
   })
 }
 
-export function useCashflowFlow(period: CashflowPeriod) {
+export function useCashflowFlow(period: CashflowPeriod, anchor?: string) {
   return useQuery({
-    queryKey: ['budget', 'flow', period],
-    queryFn: () => budgetApi.getCashflowFlow(period),
+    queryKey: ['budget', 'flow', period, anchor ?? 'now'],
+    queryFn: () => budgetApi.getCashflowFlow(period, anchor),
     staleTime: QUERY_STALE_TIMES.budget,
   })
 }
 
 // ─── Spending breakdown & drill ──────────────────────────────────────────────
 
-export function useSpendingByCategory(period: CashflowPeriod) {
+export function useSpendingByCategory(period: CashflowPeriod, anchor?: string) {
   return useQuery({
-    queryKey: ['budget', 'spending', period],
-    queryFn: () => budgetApi.getSpendingByCategory(period),
+    queryKey: ['budget', 'spending', period, anchor ?? 'now'],
+    queryFn: () => budgetApi.getSpendingByCategory(period, anchor),
     staleTime: QUERY_STALE_TIMES.budget,
   })
 }
 
-export function useCategoryDetail(categoryId: number, period: CashflowPeriod) {
+export function useCategoryDetail(categoryId: number, period: CashflowPeriod, anchor?: string) {
   return useQuery({
-    queryKey: ['budget', 'spending', 'category', categoryId, period],
-    queryFn: () => budgetApi.getCategoryDetail(categoryId, period),
+    queryKey: ['budget', 'spending', 'category', categoryId, period, anchor ?? 'now'],
+    queryFn: () => budgetApi.getCategoryDetail(categoryId, period, anchor),
     staleTime: QUERY_STALE_TIMES.budget,
   })
 }
