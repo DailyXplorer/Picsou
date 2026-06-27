@@ -79,7 +79,7 @@
     "financialWorth": "Financial assets",
     "syncAccounts": "Sync accounts",
     "invested": "Capital invested",
-    "netWorthChange": "gain / loss",
+    "portfolioPerformance": "portfolio performance",
     "marketsClosed": "Markets are closed — no intraday data available",
     "distribution": "Distribution",
     "ranges": {

@@ -26,6 +26,7 @@ function generateNetWorthHistory(): { date: string; total: number; invested: num
 export const mockDashboard: DashboardData = {
   totalNetWorth: 41862.35,
   totalLiabilities: 0,
+  totalMonthlyPayment: null,
   netWorthHistory: generateNetWorthHistory(),
   distribution: mockAccounts.map(a => ({
     accountId: a.id,

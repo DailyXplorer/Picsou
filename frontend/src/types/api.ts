@@ -154,6 +154,7 @@ export interface GoalMonthEntry {
 export interface DashboardData {
   totalNetWorth: number
   totalLiabilities: number
+  totalMonthlyPayment: number | null
   netWorthHistory: { date: string; total: number; invested: number; pnl: number }[]
   distribution: {
     accountId: number
@@ -172,6 +173,8 @@ export interface DashboardData {
     percentage: number
     accountType: string
     hasHoldings: boolean
+    monthlyPayment: number | null
+    percentPaid: number | null
   }[]
   goalSummaries: GoalProgress[]
 }
