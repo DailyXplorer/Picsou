@@ -69,8 +69,8 @@ function InboxRow({ tx, categories }: {
         </div>
         {suggested && (
           <div className="mt-2">
-            <Badge variant="outline" className="gap-1 border-primary/40 text-primary">
-              <Sparkles className="size-3" />
+            <Badge variant="outline" className="gap-1 border-primary/30 bg-primary/10 px-2 py-0.5 text-[0.8rem] font-medium text-primary">
+              <Sparkles className="size-3.5 shrink-0" />
               {t('budget.categorize.aiSuggested', {
                 name: suggested.name,
                 confidence: tx.aiConfidence ?? 0,
