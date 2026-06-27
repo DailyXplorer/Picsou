@@ -1,6 +1,5 @@
 import { api } from '@/lib/api-client'
 import type {
-  AiCategorizeResult,
   AiJobStatus,
   AllocationResponse,
   Budget,
@@ -57,9 +56,6 @@ export const budgetApi = {
     api.get<UncategorizedTransaction[]>('/transactions/uncategorized').then(r => r.data),
   categorize: (id: number, data: CategorizeRequest) =>
     api.put(`/transactions/${id}/category`, data),
-  /** Optional AI fallback over the inbox; no-op server-side unless AI categorization is enabled. */
-  categorizeAi: () =>
-    api.post<AiCategorizeResult>('/transactions/categorize-ai').then(r => r.data),
   /** Start an async AI categorization job (202 + AiJobStatus). */
   startCategorizeAi: () =>
     api.post<AiJobStatus>('/transactions/categorize-ai').then(r => r.data),

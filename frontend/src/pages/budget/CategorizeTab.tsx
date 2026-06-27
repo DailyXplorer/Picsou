@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useQueryClient } from '@tanstack/react-query'
 import { Inbox, Sparkles } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,9 +16,10 @@ import {
   useBudgetSettings,
   useCategories,
   useCategorize,
-  useCategorizeAi,
+  useCategorizeAiStatus,
   useMerchantLogoUrl,
   useRecategorize,
+  useStartCategorizeAi,
   useUncategorized,
 } from '@/features/budget/hooks'
 import { formatDate, getLocale } from '@/lib/utils'
@@ -109,18 +111,56 @@ export function CategorizeTab() {
   const { data: categories } = useCategories()
   const { data: settings } = useBudgetSettings()
   const recategorize = useRecategorize()
-  const categorizeAi = useCategorizeAi()
+  const aiEnabled = !!settings?.aiCategorizationEnabled
+  const aiStatus = useCategorizeAiStatus(aiEnabled)
+  const startAi = useStartCategorizeAi()
+  const qc = useQueryClient()
+
+  // Track the previous running value so we can detect the running → done transition.
+  const prevRunningRef = useRef<boolean | undefined>(undefined)
+  const [doneInfo, setDoneInfo] = useState<{ applied: number; suggested: number } | null>(null)
+
+  useEffect(() => {
+    const running = aiStatus.data?.running
+    if (prevRunningRef.current === true && running === false) {
+      void qc.invalidateQueries({ queryKey: ['budget'] })
+      void qc.invalidateQueries({ queryKey: ['dashboard'] })
+      if (aiStatus.data) {
+        setDoneInfo({ applied: aiStatus.data.applied, suggested: aiStatus.data.suggested })
+      }
+    }
+    prevRunningRef.current = running
+  // qc is stable (QueryClient never changes); aiStatus.data is captured via the running dep.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiStatus.data?.running])
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">{t('budget.categorize.subtitle')}</p>
         <div className="flex flex-wrap items-center gap-2">
-          {settings?.aiCategorizationEnabled && (
-            <Button size="sm" onClick={() => categorizeAi.mutate()}
-              disabled={categorizeAi.isPending}>
-              <Sparkles className="size-4" /> {t('budget.categorize.categorizeAi')}
+          {aiEnabled && (
+            <Button
+              size="sm"
+              onClick={() => { setDoneInfo(null); startAi.mutate() }}
+              disabled={aiStatus.data?.running || startAi.isPending}
+            >
+              <Sparkles className="size-4" />
+              {aiStatus.data?.running
+                ? t('budget.categorize.aiProgress', {
+                    processed: aiStatus.data.processed,
+                    total: aiStatus.data.total,
+                  })
+                : t('budget.categorize.categorizeAi')}
             </Button>
+          )}
+          {doneInfo && (
+            <span className="text-xs text-muted-foreground">
+              {t('budget.categorize.aiDone', {
+                applied: doneInfo.applied,
+                suggested: doneInfo.suggested,
+              })}
+            </span>
           )}
           <Button size="sm" variant="outline" onClick={() => recategorize.mutate()}
             disabled={recategorize.isPending}>

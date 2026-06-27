@@ -131,22 +131,6 @@ export function useCategorize() {
   })
 }
 
-/**
- * Run the optional AI categorizer over the whole inbox. Auto-applies high-confidence answers and
- * leaves the rest as suggestions, per the member's AI settings. A no-op server-side when AI
- * categorization is disabled, so the button is always safe to press.
- */
-export function useCategorizeAi() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: () => budgetApi.categorizeAi(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ROOT })
-      qc.invalidateQueries({ queryKey: ['dashboard'] })
-    },
-  })
-}
-
 /** Poll the async AI categorization job; auto-refetches every 2 s while running. */
 export function useCategorizeAiStatus(enabled: boolean) {
   return useQuery({

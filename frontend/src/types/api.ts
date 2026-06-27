@@ -495,12 +495,6 @@ export interface BudgetSettingsRequest {
   aiConfidenceThreshold: number
 }
 
-/** Result of running the AI categorizer over the inbox. */
-export interface AiCategorizeResult {
-  applied: number
-  suggested: number
-}
-
 /** Live status of an async AI categorization job. */
 export interface AiJobStatus {
   running: boolean
