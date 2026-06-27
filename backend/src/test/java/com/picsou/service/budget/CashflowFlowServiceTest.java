@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -310,13 +311,77 @@ class CashflowFlowServiceTest {
         when(transactionRepository.findByMemberIdAndDateBetween(eq(MEMBER), any(), any()))
             .thenReturn(List.of());
 
-        // An empty flow is expected; we just verify the date range derived from the anchor.
         CashflowFlowResponse flow = service.flow(MEMBER, CashflowPeriod.CYCLE, anchor);
 
-        // The window should be the March-2024 cycle (cycleStartDay=1 → 2024-03-01..2024-03-31)
-        // verified indirectly: repository was queried with the right range
         assertThat(flow.nodes()).isEmpty();
         assertThat(flow.links()).isEmpty();
+        // cycleStartDay=1, anchor=2024-03-10 → March-2024 cycle: 2024-03-01..2024-03-31
+        verify(transactionRepository).findByMemberIdAndDateBetween(
+            eq(MEMBER), eq(LocalDate.of(2024, 3, 1)), eq(LocalDate.of(2024, 3, 31)));
+    }
+
+    @Test
+    void spendingByCategory_withPastCycleAnchor_windowsOnPastCycle() {
+        LocalDate anchor = LocalDate.of(2024, 3, 10);
+        when(budgetSettingsService.cycleStartDay(MEMBER)).thenReturn(1);
+        when(transactionRepository.findByMemberIdAndDateBetween(eq(MEMBER), any(), any()))
+            .thenReturn(List.of());
+
+        service.spendingByCategory(MEMBER, CashflowPeriod.CYCLE, anchor);
+
+        // cycleStartDay=1, anchor=2024-03-10 → 2024-03-01..2024-03-31 (not current cycle)
+        verify(transactionRepository).findByMemberIdAndDateBetween(
+            eq(MEMBER), eq(LocalDate.of(2024, 3, 1)), eq(LocalDate.of(2024, 3, 31)));
+    }
+
+    @Test
+    void spendingByCategory_withYtdAnchor_windowsOnCalendarYear() {
+        LocalDate anchor = LocalDate.of(2024, 12, 31);
+        when(budgetSettingsService.cycleStartDay(MEMBER)).thenReturn(1);
+        when(transactionRepository.findByMemberIdAndDateBetween(eq(MEMBER), any(), any()))
+            .thenReturn(List.of());
+
+        service.spendingByCategory(MEMBER, CashflowPeriod.YTD, anchor);
+
+        // YTD with anchor 2024-12-31 → full calendar year 2024-01-01..2024-12-31
+        verify(transactionRepository).findByMemberIdAndDateBetween(
+            eq(MEMBER), eq(LocalDate.of(2024, 1, 1)), eq(LocalDate.of(2024, 12, 31)));
+    }
+
+    @Test
+    void categoryDetail_withPastCycleAnchor_windowsOnPastCycle() {
+        LocalDate anchor = LocalDate.of(2024, 3, 10);
+        Category courses = cat(2, "Courses", CategoryKind.EXPENSE);
+        when(categoryRepository.findByIdAndMemberId(2L, MEMBER)).thenReturn(Optional.of(courses));
+        when(budgetSettingsService.cycleStartDay(MEMBER)).thenReturn(1);
+        when(categoryRepository.findAllByMemberIdAndParentIdOrderBySortOrderAscIdAsc(MEMBER, 2L))
+            .thenReturn(List.of());
+        when(transactionRepository.findByMemberIdAndCategoryIdInAndDateBetween(eq(MEMBER), any(), any(), any()))
+            .thenReturn(List.of());
+
+        service.categoryDetail(MEMBER, 2L, CashflowPeriod.CYCLE, anchor);
+
+        // cycleStartDay=1, anchor=2024-03-10 → 2024-03-01..2024-03-31 (not current cycle)
+        verify(transactionRepository).findByMemberIdAndCategoryIdInAndDateBetween(
+            eq(MEMBER), any(), eq(LocalDate.of(2024, 3, 1)), eq(LocalDate.of(2024, 3, 31)));
+    }
+
+    @Test
+    void categoryDetail_withYtdAnchor_windowsOnCalendarYear() {
+        LocalDate anchor = LocalDate.of(2024, 12, 31);
+        Category courses = cat(2, "Courses", CategoryKind.EXPENSE);
+        when(categoryRepository.findByIdAndMemberId(2L, MEMBER)).thenReturn(Optional.of(courses));
+        when(budgetSettingsService.cycleStartDay(MEMBER)).thenReturn(1);
+        when(categoryRepository.findAllByMemberIdAndParentIdOrderBySortOrderAscIdAsc(MEMBER, 2L))
+            .thenReturn(List.of());
+        when(transactionRepository.findByMemberIdAndCategoryIdInAndDateBetween(eq(MEMBER), any(), any(), any()))
+            .thenReturn(List.of());
+
+        service.categoryDetail(MEMBER, 2L, CashflowPeriod.YTD, anchor);
+
+        // YTD with anchor 2024-12-31 → full calendar year 2024-01-01..2024-12-31
+        verify(transactionRepository).findByMemberIdAndCategoryIdInAndDateBetween(
+            eq(MEMBER), any(), eq(LocalDate.of(2024, 1, 1)), eq(LocalDate.of(2024, 12, 31)));
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
