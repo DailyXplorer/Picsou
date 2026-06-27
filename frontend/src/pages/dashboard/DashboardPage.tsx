@@ -9,6 +9,7 @@ import { NetWorthChart } from '@/components/shared/NetWorthChart'
 import { DistributionPie } from '@/components/shared/DistributionPie'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { HoldingsCard } from '@/components/shared/HoldingsCard'
+import { LiabilitiesCard } from '@/components/shared/LiabilitiesCard'
 import { SyncAllModal } from '@/components/sync/SyncAllModal'
 import { type TimeRange } from '@/components/shared/TimeRangeSelector'
 import {
@@ -303,6 +304,14 @@ export function DashboardPage() {
           </CardFooter>
         )}
       </Card>
+
+      {/* Liabilities overview */}
+      {data.liabilities.length > 0 && (
+        <LiabilitiesCard
+          liabilities={data.liabilities}
+          totalMonthlyPayment={data.totalMonthlyPayment ?? null}
+        />
+      )}
 
       {/* Holdings overview */}
       <HoldingsCard />
