@@ -1,4 +1,5 @@
 import { api } from '@/lib/api-client'
+import type { AiCallLogPage } from '@/types/api'
 
 export interface AdminSecuritySettings {
   allowedOrigins: string[]
@@ -82,4 +83,7 @@ export const adminApi = {
 
   testAi: (body: AdminAiRequest) =>
     api.post<AiTestResult>('/admin/settings/ai/test', body).then(r => r.data),
+
+  listAiCalls: (limit: number, offset: number) =>
+    api.get<AiCallLogPage>('/admin/ai-calls', { params: { limit, offset } }).then(r => r.data),
 }

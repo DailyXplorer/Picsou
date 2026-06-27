@@ -309,6 +309,56 @@ handlers.set(key('PUT', '/admin/settings/enablebanking'), () => ({}))
 handlers.set(key('PUT', '/admin/settings/ai'), () => ({}))
 handlers.set(key('POST', '/admin/settings/ai/test'), () => ({ ok: true, message: 'Demo mode' }))
 
+// Admin AI call log
+handlers.set(key('GET', '/admin/ai-calls'), () => ({
+  items: [
+    {
+      id: 1,
+      createdAt: new Date(Date.now() - 60_000).toISOString(),
+      memberId: 1,
+      transactionId: 42,
+      merchantLabel: 'LIDL',
+      batchId: 'batch-001',
+      provider: 'anthropic',
+      model: 'claude-haiku-4-5',
+      prompt: 'Categorize the following transaction:\nMerchant: LIDL\nAmount: -45.20\nDate: 2026-06-26',
+      response: '{"slug":"groceries","confidence":0.97}',
+      promptTokens: 38,
+      completionTokens: 12,
+      totalTokens: 50,
+      latencyMs: 320,
+      status: 'OK',
+      error: null,
+      chosenSlug: 'groceries',
+      confidence: 0.97,
+      applied: true,
+    },
+    {
+      id: 2,
+      createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+      memberId: 1,
+      transactionId: 37,
+      merchantLabel: 'UNKNOWN TRANSFER',
+      batchId: 'batch-001',
+      provider: 'anthropic',
+      model: 'claude-haiku-4-5',
+      prompt: 'Categorize the following transaction:\nMerchant: UNKNOWN TRANSFER\nAmount: -200.00\nDate: 2026-06-25',
+      response: null,
+      promptTokens: 42,
+      completionTokens: null,
+      totalTokens: null,
+      latencyMs: null,
+      status: 'ERROR',
+      error: 'Rate limit exceeded',
+      chosenSlug: null,
+      confidence: null,
+      applied: false,
+    },
+  ],
+  total: 2,
+  totalTokens: 50,
+}))
+
 // Finary - configured
 handlers.set(key('GET', '/finary/configured'), () => true)
 

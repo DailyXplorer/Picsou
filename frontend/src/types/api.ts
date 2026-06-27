@@ -703,3 +703,31 @@ export interface RecurringActivity {
   categoryColor: string | null
   categoryIcon: string | null
 }
+
+export interface AiCallLog {
+  id: number
+  createdAt: string
+  memberId: number | null
+  transactionId: number | null
+  merchantLabel: string | null
+  batchId: string | null
+  provider: string
+  model: string | null
+  prompt: string | null
+  response: string | null
+  promptTokens: number | null
+  completionTokens: number | null
+  totalTokens: number | null
+  latencyMs: number | null
+  status: string
+  error: string | null
+  chosenSlug: string | null
+  confidence: number | null
+  applied: boolean
+}
+
+export interface AiCallLogPage {
+  items: AiCallLog[]
+  total: number
+  totalTokens: number
+}

@@ -961,6 +961,22 @@
       "copied": "Copié !",
       "noMembers": "Aucun membre",
       "loading": "Chargement..."
+    },
+    "aiActivity": {
+      "title": "Activité IA",
+      "description": "Inspectez les appels de catégorisation IA récents — prompts et consommation de tokens.",
+      "view": "Voir les tâches IA",
+      "summary": "{{calls}} appels · {{tokens}} tokens au total",
+      "colTime": "Heure",
+      "colMerchant": "Marchand",
+      "colModel": "Modèle",
+      "colTokens": "Tokens",
+      "colStatus": "Statut",
+      "prompt": "Prompt",
+      "response": "Réponse",
+      "prev": "Précédent",
+      "next": "Suivant",
+      "empty": "Aucun appel IA enregistré pour l'instant."
     }
   },
   "error": {

@@ -961,6 +961,22 @@
       "copied": "Copied!",
       "noMembers": "No members",
       "loading": "Loading..."
+    },
+    "aiActivity": {
+      "title": "AI activity",
+      "description": "Inspect recent AI categorization calls — prompts and token usage.",
+      "view": "View AI tasks",
+      "summary": "{{calls}} calls · {{tokens}} tokens total",
+      "colTime": "Time",
+      "colMerchant": "Merchant",
+      "colModel": "Model",
+      "colTokens": "Tokens",
+      "colStatus": "Status",
+      "prompt": "Prompt",
+      "response": "Response",
+      "prev": "Prev",
+      "next": "Next",
+      "empty": "No AI calls recorded yet."
     }
   },
   "error": {

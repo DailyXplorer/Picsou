@@ -75,3 +75,11 @@ export function useUpdateAi() {
 export function useTestAi() {
   return useMutation({ mutationFn: (body: AdminAiRequest) => adminApi.testAi(body) })
 }
+
+export function useAiCalls(limit: number, offset: number) {
+  return useQuery({
+    queryKey: [...adminKeys.all, 'ai-calls', limit, offset],
+    queryFn: () => adminApi.listAiCalls(limit, offset),
+    staleTime: 10_000,
+  })
+}
