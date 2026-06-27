@@ -379,6 +379,7 @@
       "toCategorize": "{{count}} transaction à catégoriser",
       "toCategorize_other": "{{count}} transactions à catégoriser",
       "topEnvelopes": "Enveloppes les plus sollicitées",
+      "pastPeriodNote": "Les budgets d'enveloppes et les prochaines échéances reflètent toujours le cycle en cours.",
       "error": "Impossible de charger l'aperçu."
     },
     "cashflow": {

@@ -74,6 +74,12 @@ export function OverviewTab() {
   const allocation = allocationQ.data
   const uncategorized = uncategorizedQ.data
 
+  // Envelope-usage and upcoming-charges data are always server-computed for the *current*
+  // cycle, so they can't follow the period navigator's anchor. When the displayed cycle has
+  // already ended (its `to` is before today), hide those cards to avoid mixing past + present.
+  const todayIso = new Date().toLocaleDateString('en-CA')
+  const viewingPast = !!cashflowQ.data?.to && cashflowQ.data.to < todayIso
+
   // The four recap cards are the page's core; the to-categorize nudge is a non-blocking extra,
   // so its query is deliberately excluded from the loading/error gate below.
   const coreQueries = [cashflowQ, budgetsQ, upcomingQ, allocationQ]
@@ -97,6 +103,9 @@ export function OverviewTab() {
           onAnchorChange={setAnchor}
         />
       </div>
+      {viewingPast && (
+        <p className="text-xs text-muted-foreground">{t('budget.overview.pastPeriodNote')}</p>
+      )}
       {isError ? (
         <ErrorState message={t('budget.overview.error')} onRetry={refetchAll} />
       ) : isLoading ? (
@@ -119,6 +128,7 @@ export function OverviewTab() {
           </p>
         </RecapCard>
 
+        {!viewingPast && (
         <RecapCard icon={Wallet} label={t('budget.overview.envelopes')} index={1}
           onClick={() => navigate('envelopes')}>
           <p className="text-2xl font-bold">
@@ -130,7 +140,9 @@ export function OverviewTab() {
               : t('budget.overview.onTrack')}
           </p>
         </RecapCard>
+        )}
 
+        {!viewingPast && (
         <RecapCard icon={CalendarClock} label={t('budget.overview.upcoming30')} index={2}
           onClick={() => navigate('subscriptions')}>
           <p className="text-2xl font-bold">
@@ -140,6 +152,7 @@ export function OverviewTab() {
             {t('budget.overview.upcomingCount', { count: upcoming?.length ?? 0 })}
           </p>
         </RecapCard>
+        )}
 
         <RecapCard icon={PiggyBank} label={t('budget.overview.investable')} index={3}
           onClick={() => navigate('envelopes')}>
@@ -169,8 +182,8 @@ export function OverviewTab() {
         </button>
       )}
 
-      {/* Top envelopes preview */}
-      {topEnvelopes.length > 0 && (
+      {/* Top envelopes preview — envelope-budget data, current cycle only (see viewingPast). */}
+      {!viewingPast && topEnvelopes.length > 0 && (
         <Card>
           <CardContent className="pt-6">
             <p className="mb-3 text-sm font-medium">{t('budget.overview.topEnvelopes')}</p>

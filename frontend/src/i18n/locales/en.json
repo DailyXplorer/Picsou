@@ -379,6 +379,7 @@
       "toCategorize": "{{count}} transaction to categorize",
       "toCategorize_other": "{{count}} transactions to categorize",
       "topEnvelopes": "Most-used envelopes",
+      "pastPeriodNote": "Envelope budgets and upcoming charges always reflect the current cycle.",
       "error": "Couldn't load the overview."
     },
     "cashflow": {
