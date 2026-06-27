@@ -494,7 +494,9 @@
       "assign": "Assign",
       "empty": "Everything is categorized",
       "emptyHint": "New transactions to classify will appear here.",
-      "error": "Couldn't load transactions to categorize."
+      "error": "Couldn't load transactions to categorize.",
+      "aiProgress": "AI categorizing… {{processed}}/{{total}}",
+      "aiDone": "AI done: {{applied}} applied, {{suggested}} suggested"
     },
     "category": {
       "title": "Categories",
@@ -867,7 +869,9 @@
       "testing": "Testing…",
       "save": "Save",
       "saving": "Saving…",
-      "saved": "Saved"
+      "saved": "Saved",
+      "maxConcurrency": "Parallel requests",
+      "maxConcurrencyHint": "How many AI calls to run at once (1–16). Lower for local Ollama."
     },
     "security": {
       "title": "Security",

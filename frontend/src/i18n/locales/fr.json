@@ -494,7 +494,9 @@
       "assign": "Affecter",
       "empty": "Tout est catégorisé",
       "emptyHint": "Les nouvelles transactions à classer apparaîtront ici.",
-      "error": "Impossible de charger les transactions à catégoriser."
+      "error": "Impossible de charger les transactions à catégoriser.",
+      "aiProgress": "Catégorisation IA… {{processed}}/{{total}}",
+      "aiDone": "IA terminée : {{applied}} appliquées, {{suggested}} suggérées"
     },
     "category": {
       "title": "Catégories",
@@ -867,7 +869,9 @@
       "testing": "Test en cours…",
       "save": "Enregistrer",
       "saving": "Enregistrement…",
-      "saved": "Enregistré"
+      "saved": "Enregistré",
+      "maxConcurrency": "Requêtes en parallèle",
+      "maxConcurrencyHint": "Nombre d'appels IA simultanés (1–16). Plus bas pour Ollama local."
     },
     "security": {
       "title": "Sécurité",

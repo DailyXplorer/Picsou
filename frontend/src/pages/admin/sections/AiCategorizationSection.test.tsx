@@ -40,6 +40,7 @@ const DEFAULT_SETTINGS = {
   model: '',
   baseUrl: '',
   apiKeyPresent: false,
+  maxConcurrency: 4,
 }
 
 describe('AiCategorizationSection', () => {
@@ -119,7 +120,7 @@ describe('AiCategorizationSection', () => {
   it('blocks save and shows apiKeyRequired error when provider changed and api key is blank', async () => {
     render(
       <AiCategorizationSection
-        settings={{ provider: 'anthropic', model: '', baseUrl: '', apiKeyPresent: true }}
+        settings={{ provider: 'anthropic', model: '', baseUrl: '', apiKeyPresent: true, maxConcurrency: 4 }}
       />,
     )
     // Switch to a different provider

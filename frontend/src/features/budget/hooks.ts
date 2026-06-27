@@ -147,6 +147,25 @@ export function useCategorizeAi() {
   })
 }
 
+/** Poll the async AI categorization job; auto-refetches every 2 s while running. */
+export function useCategorizeAiStatus(enabled: boolean) {
+  return useQuery({
+    queryKey: ['budget', 'ai-job'],
+    queryFn: budgetApi.getCategorizeAiStatus,
+    enabled,
+    refetchInterval: (q) => (q.state.data?.running ? 2000 : false),
+  })
+}
+
+/** Start an async AI categorization job and seed the query cache with the initial status. */
+export function useStartCategorizeAi() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => budgetApi.startCategorizeAi(),
+    onSuccess: (s) => { qc.setQueryData(['budget', 'ai-job'], s) },
+  })
+}
+
 // ─── Envelopes ───────────────────────────────────────────────────────────────
 
 export function useBudgets() {

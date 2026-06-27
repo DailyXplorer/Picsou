@@ -501,6 +501,17 @@ export interface AiCategorizeResult {
   suggested: number
 }
 
+/** Live status of an async AI categorization job. */
+export interface AiJobStatus {
+  running: boolean
+  total: number
+  processed: number
+  applied: number
+  suggested: number
+  done: boolean
+  error: string | null
+}
+
 export interface CashflowBucket {
   start: string
   end: string

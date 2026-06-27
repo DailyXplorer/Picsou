@@ -1,6 +1,7 @@
 import { api } from '@/lib/api-client'
 import type {
   AiCategorizeResult,
+  AiJobStatus,
   AllocationResponse,
   Budget,
   BudgetRequest,
@@ -59,6 +60,12 @@ export const budgetApi = {
   /** Optional AI fallback over the inbox; no-op server-side unless AI categorization is enabled. */
   categorizeAi: () =>
     api.post<AiCategorizeResult>('/transactions/categorize-ai').then(r => r.data),
+  /** Start an async AI categorization job (202 + AiJobStatus). */
+  startCategorizeAi: () =>
+    api.post<AiJobStatus>('/transactions/categorize-ai').then(r => r.data),
+  /** Poll the async AI categorization job status. */
+  getCategorizeAiStatus: () =>
+    api.get<AiJobStatus>('/transactions/categorize-ai/status').then(r => r.data),
 
   // ─── Envelopes ────────────────────────────────────────────────────────────
   listBudgets: () => api.get<Budget[]>('/budgets').then(r => r.data),

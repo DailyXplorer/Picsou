@@ -302,7 +302,7 @@ handlers.set(key('GET', '/admin/settings'), () => ({
   security: { allowedOrigins: ['http://localhost:5173'], secureCookies: false },
   enableBanking: { applicationId: '', redirectUri: '', privateKeyPresent: false },
   integrations: {},
-  ai: { provider: 'none', model: '', baseUrl: '', apiKeyPresent: false },
+  ai: { provider: 'none', model: '', baseUrl: '', apiKeyPresent: false, maxConcurrency: 4 },
 }))
 handlers.set(key('PUT', '/admin/settings/security'), () => ({}))
 handlers.set(key('PUT', '/admin/settings/enablebanking'), () => ({}))
@@ -401,8 +401,14 @@ handlers.set(key('GET', '/transactions/uncategorized'), () => mockUncategorized)
 for (const tx of mockUncategorized) {
   handlers.set(key('PUT', `/transactions/${tx.id}/category`), () => ({}))
 }
-// Optional AI categorizer over the inbox (demo: plausible counts; fixtures already carry suggestions).
-handlers.set(key('POST', '/transactions/categorize-ai'), () => ({ applied: 1, suggested: 2 }))
+// Optional AI categorizer over the inbox (legacy sync shape).
+handlers.set(key('POST', '/transactions/categorize-ai'), () => ({
+  running: false, total: 0, processed: 0, applied: 0, suggested: 0, done: true, error: null,
+}))
+// Async AI job status (demo: idle / not running).
+handlers.set(key('GET', '/transactions/categorize-ai/status'), () => ({
+  running: false, total: 0, processed: 0, applied: 0, suggested: 0, done: false, error: null,
+}))
 
 // Envelopes
 handlers.set(key('GET', '/budgets'), () => mockBudgets)

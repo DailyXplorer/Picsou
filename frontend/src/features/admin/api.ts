@@ -27,6 +27,7 @@ export interface AdminAiSettings {
   model: string
   baseUrl: string
   apiKeyPresent: boolean
+  maxConcurrency: number
 }
 
 /** Write body. apiKey omitted/empty = keep the existing stored key. */
@@ -35,6 +36,7 @@ export interface AdminAiRequest {
   model: string
   baseUrl: string
   apiKey?: string
+  maxConcurrency?: number
 }
 
 export interface AiTestResult {

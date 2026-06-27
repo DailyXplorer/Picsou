@@ -16,13 +16,14 @@ import {
 } from '@/components/ui/card'
 import { extractErrorMessage } from '@/lib/errors'
 import { useUpdateAi, useTestAi } from '@/features/admin/hooks'
-import type { AdminAiSettings, AdminAiRequest } from '@/features/admin/api'
+import type { AdminAiSettings } from '@/features/admin/api'
 
 const schema = z.object({
   provider: z.string().min(1),
   model: z.string(),
   baseUrl: z.string(),
   apiKey: z.string(),
+  maxConcurrency: z.number().int().min(1).max(16).optional(),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -54,6 +55,7 @@ export function AiCategorizationSection({ settings }: { settings: AdminAiSetting
       model: settings.model,
       baseUrl: settings.baseUrl,
       apiKey: '',
+      maxConcurrency: settings.maxConcurrency ?? 4,
     },
   })
 
@@ -63,6 +65,7 @@ export function AiCategorizationSection({ settings }: { settings: AdminAiSetting
       model: settings.model,
       baseUrl: settings.baseUrl,
       apiKey: '',
+      maxConcurrency: settings.maxConcurrency ?? 4,
     })
   }, [settings, reset])
 
@@ -76,7 +79,13 @@ export function AiCategorizationSection({ settings }: { settings: AdminAiSetting
       setError('apiKey', { type: 'manual', message: t('admin.ai.apiKeyRequired') })
       return
     }
-    await update.mutateAsync(values as unknown as AdminAiRequest)
+    await update.mutateAsync({
+      provider: values.provider,
+      model: values.model,
+      baseUrl: values.baseUrl,
+      apiKey: values.apiKey,
+      maxConcurrency: values.maxConcurrency,
+    })
   })
 
   const handleTest = () => {
@@ -133,6 +142,19 @@ export function AiCategorizationSection({ settings }: { settings: AdminAiSetting
                   placeholder={defaults?.model}
                   {...register('model')}
                 />
+              </div>
+
+              {/* Max concurrency */}
+              <div className="space-y-1.5">
+                <Label htmlFor="admin-ai-maxConcurrency">{t('admin.ai.maxConcurrency')}</Label>
+                <Input
+                  id="admin-ai-maxConcurrency"
+                  type="number"
+                  min={1}
+                  max={16}
+                  {...register('maxConcurrency', { valueAsNumber: true })}
+                />
+                <p className="text-xs text-muted-foreground">{t('admin.ai.maxConcurrencyHint')}</p>
               </div>
 
               {/* API Key — hidden for Ollama */}
