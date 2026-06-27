@@ -7,8 +7,10 @@ import com.picsou.dto.GoalProgressResponse;
 import com.picsou.model.Account;
 import com.picsou.model.AccountHolding;
 import com.picsou.model.AccountType;
+import com.picsou.model.Debt;
 import com.picsou.repository.AccountHoldingRepository;
 import com.picsou.repository.AccountRepository;
+import com.picsou.repository.DebtRepository;
 import com.picsou.repository.GoalRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +21,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -32,6 +35,8 @@ public class DashboardService {
     private final PriceService priceService;
     private final AccountHoldingRepository holdingRepository;
     private final HistoryService historyService;
+    private final DebtRepository debtRepository;
+    private final LoanAmortizationService loanAmortizationService;
 
     public DashboardService(
         AccountRepository accountRepository,
@@ -39,7 +44,9 @@ public class DashboardService {
         GoalRepository goalRepository,
         PriceService priceService,
         AccountHoldingRepository holdingRepository,
-        HistoryService historyService
+        HistoryService historyService,
+        DebtRepository debtRepository,
+        LoanAmortizationService loanAmortizationService
     ) {
         this.accountRepository = accountRepository;
         this.goalService = goalService;
@@ -47,6 +54,8 @@ public class DashboardService {
         this.priceService = priceService;
         this.holdingRepository = holdingRepository;
         this.historyService = historyService;
+        this.debtRepository = debtRepository;
+        this.loanAmortizationService = loanAmortizationService;
     }
 
     public DashboardResponse getDashboard(Long memberId, String range) {
@@ -118,13 +127,45 @@ public class DashboardService {
         List<NetWorthPoint> updatedHistory = historyService.buildHistory(allAccountIds, months, memberId);
 
         List<DistributionItem> distribution = buildDistribution(accounts, totalNetWorth, holdingsByAccount, false);
-        List<DistributionItem> liabilities = buildDistribution(accounts, totalNetWorth, holdingsByAccount, true);
+        List<DistributionItem> rawLiabilities = buildDistribution(accounts, totalNetWorth, holdingsByAccount, true);
+
+        // Enrich liabilities with loan parameters in one query
+        List<Long> liabilityIds = rawLiabilities.stream().map(DistributionItem::accountId).toList();
+        Map<Long, Debt> debtByAccountId = debtRepository.findByAccountIdIn(liabilityIds).stream()
+            .collect(Collectors.toMap(d -> d.getAccount().getId(), d -> d));
+
+        BigDecimal totalMonthlyPayment = null;
+        List<DashboardResponse.LiabilityEntry> liabilities = new ArrayList<>();
+        for (DistributionItem item : rawLiabilities) {
+            Debt debt = debtByAccountId.get(item.accountId());
+            BigDecimal monthlyPayment = null;
+            Double percentPaid = null;
+            if (debt != null) {
+                monthlyPayment = loanAmortizationService.resolveMonthlyPayment(debt);
+                BigDecimal borrowed = debt.getBorrowedAmount();
+                if (borrowed != null && borrowed.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal remaining = item.balanceEur().abs();
+                    BigDecimal repaid = borrowed.subtract(remaining);
+                    percentPaid = repaid.divide(borrowed, 6, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100)).doubleValue();
+                    percentPaid = Math.max(0.0, Math.min(100.0, percentPaid));
+                }
+                totalMonthlyPayment = (totalMonthlyPayment == null ? BigDecimal.ZERO : totalMonthlyPayment)
+                    .add(monthlyPayment);
+            }
+            liabilities.add(new DashboardResponse.LiabilityEntry(
+                item.accountId(), item.name(), item.color(), item.balanceEur(),
+                item.percentage(), item.accountType(), item.hasHoldings(),
+                monthlyPayment, percentPaid
+            ));
+        }
 
         List<GoalProgressResponse> goals = goalRepository.findAllByMemberIdOrderByCreatedAtAsc(memberId).stream()
             .map(goalService::toProgressResponse)
             .toList();
 
-        return new DashboardResponse(totalNetWorth, totalLiabilities, updatedHistory, distribution, liabilities, goals);
+        return new DashboardResponse(totalNetWorth, totalLiabilities, totalMonthlyPayment,
+            updatedHistory, distribution, liabilities, goals);
     }
 
     private List<DistributionItem> buildDistribution(List<Account> accounts, BigDecimal totalNetWorth,
