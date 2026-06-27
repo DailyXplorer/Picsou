@@ -7,6 +7,7 @@ import com.picsou.exception.SyncException;
 import com.picsou.exception.TotpRequiredException;
 import com.picsou.finary.client.FinaryApiClient;
 import com.picsou.finary.dto.FinaryAccountDto;
+import com.picsou.finary.dto.FinaryLoanDto;
 import com.picsou.finary.dto.FinaryTransactionDto;
 import com.picsou.model.Account;
 import com.picsou.model.FamilyMember;
@@ -43,6 +44,11 @@ public class FinaryApiSyncService {
         "checkings", "savings", "investments", "real_estates", "cryptos",
         "fonds_euro", "commodities", "credits", "other_assets", "startups"
     );
+    /**
+     * Synthetic category for loan/mortgage accounts. Loans are not part of the portfolio
+     * categories above; they come from the dedicated {@code /loans} endpoint (issue #11).
+     */
+    private static final String LOANS_CATEGORY = "loans";
     private static final List<String> TRANSACTION_CATEGORIES = List.of(
         "checkings", "savings", "investments", "credits"
     );
@@ -146,21 +152,31 @@ public class FinaryApiSyncService {
 
             // Fetch all accounts across categories
             log.info("Fetching accounts from all categories");
-            List<FinaryAccountDto> allAccounts = new ArrayList<>();
-            Map<String, String> externalIdToCategory = new HashMap<>();
+            List<CategorizedFinaryAccount> allAccounts = new ArrayList<>();
 
             for (String category : ACCOUNT_CATEGORIES) {
                 try {
                     List<FinaryAccountDto> accounts = finaryApiClient.fetchCategoryAccounts(jwt, ctx, category);
                     log.info("Fetched {} accounts from category: {}", accounts.size(), category);
                     for (FinaryAccountDto acc : accounts) {
-                        allAccounts.add(acc);
-                        externalIdToCategory.put("finary_" + category + "_" + acc.id(), category);
+                        allAccounts.add(new CategorizedFinaryAccount(category, acc));
                     }
                 } catch (Exception e) {
                     log.error("Failed to fetch accounts from category {}: {}", category, e.getMessage());
                     throw new SyncException("Failed to fetch accounts from " + category, e);
                 }
+            }
+
+            // Loans live on a dedicated endpoint, not in the portfolio categories above.
+            try {
+                List<FinaryLoanDto> loans = finaryApiClient.fetchLoans(jwt);
+                log.info("Fetched {} entries from loans endpoint", loans.size());
+                for (FinaryLoanDto loan : loans) {
+                    allAccounts.add(new CategorizedFinaryAccount(LOANS_CATEGORY, toLoanAccountDto(loan)));
+                }
+            } catch (Exception e) {
+                log.error("Failed to fetch loans: {}", e.getMessage());
+                throw new SyncException("Failed to fetch loans", e);
             }
 
             // Fetch all transactions across categories
@@ -183,7 +199,7 @@ public class FinaryApiSyncService {
             // Cache everything with a sync token
             String syncToken = UUID.randomUUID().toString();
             SyncSessionData sessionData = new SyncSessionData(
-                allAccounts, transactionsByCategory, externalIdToCategory, Instant.now()
+                allAccounts, transactionsByCategory, Instant.now()
             );
             cache.put(syncToken, sessionData);
 
@@ -196,13 +212,15 @@ public class FinaryApiSyncService {
             }
 
             List<FinaryAccountPreview> previews = allAccounts.stream()
-                .map(acc -> {
-                    String category = externalIdToCategory.get("finary_" + findCategoryForAccount(acc, allAccounts, externalIdToCategory) + "_" + acc.id());
+                .map(categorizedAcc -> {
+                    FinaryAccountDto acc = categorizedAcc.account();
+                    String category = categorizedAcc.category();
                     return new FinaryAccountPreview(
+                        acc.id(),
                         acc.name(),
                         acc.institution() != null ? acc.institution().name() : "Finary",
-                        findCategoryForAccount(acc, allAccounts, externalIdToCategory),
-                        FinaryPersistenceHelper.suggestTypeFromApiCategory(findCategoryForAccount(acc, allAccounts, externalIdToCategory)),
+                        category,
+                        FinaryPersistenceHelper.suggestTypeFromApiCategory(category),
                         acc.balance() != null ? acc.balance() : 0,
                         acc.currency() != null ? acc.currency().code() : "EUR",
                         txCountByAccountId.getOrDefault(acc.id(), 0)
@@ -219,14 +237,15 @@ public class FinaryApiSyncService {
             boolean allAutoMapped = true;
             List<FinaryAccountMapping> suggestedMappings = new ArrayList<>();
 
-            for (FinaryAccountDto acc : allAccounts) {
-                String category = findCategoryForAccount(acc, allAccounts, externalIdToCategory);
+            for (CategorizedFinaryAccount categorizedAcc : allAccounts) {
+                FinaryAccountDto acc = categorizedAcc.account();
+                String category = categorizedAcc.category();
                 String externalId = "finary_" + category + "_" + acc.id();
 
                 Optional<Account> existingAccount = accountRepository.findByExternalAccountIdAndMemberId(externalId, memberId);
                 if (existingAccount.isPresent()) {
                     suggestedMappings.add(new FinaryAccountMapping(
-                        acc.name(), category, FinaryMappingAction.MAP_EXISTING,
+                        acc.id(), acc.name(), category, FinaryMappingAction.MAP_EXISTING,
                         existingAccount.get().getId(), null
                     ));
                 } else {
@@ -276,16 +295,18 @@ public class FinaryApiSyncService {
         int transactionsImported = 0;
         List<ImportedAccountSummary> imported = new ArrayList<>();
 
-        // Map finaryName -> FinaryAccountDto (we need to find by name since that's what mappings use)
-        Map<String, FinaryAccountDto> finaryByName = session.allAccounts().stream()
-            .collect(Collectors.toMap(FinaryAccountDto::name, a -> a, (a, b) -> a));
+        Map<String, FinaryAccountDto> finaryByKey = session.allAccounts().stream()
+            .collect(Collectors.toMap(
+                categorizedAcc -> buildAccountKey(categorizedAcc.category(), categorizedAcc.account().id()),
+                CategorizedFinaryAccount::account,
+                (a, b) -> a
+            ));
 
         for (FinaryAccountMapping mapping : mappings) {
-            FinaryAccountDto finaryAcc = finaryByName.get(mapping.finaryName());
+            FinaryAccountDto finaryAcc = finaryByKey.get(buildAccountKey(mapping.finaryCategory(), mapping.finaryId()));
             if (finaryAcc == null) continue;
 
-            String cat = session.externalIdToCategory().get("finary_" + mapping.finaryCategory() + "_" + finaryAcc.id());
-            String category = cat != null ? cat : mapping.finaryCategory();
+            String category = mapping.finaryCategory();
             String externalId = "finary_" + category + "_" + finaryAcc.id();
 
             Account account = null;
@@ -447,17 +468,33 @@ public class FinaryApiSyncService {
         return allTx;
     }
 
+    private String buildAccountKey(String category, String finaryId) {
+        return category + "::" + finaryId;
+    }
+
     /**
-     * Find the category for a given account by looking up its external ID in the map
+     * Adapt a Finary loan entry to the common {@link FinaryAccountDto} so loans flow through
+     * the existing preview/execute pipeline (mapping, auto-mapping, account creation).
+     *
+     * <p>A loan is a liability, so the outstanding amount is stored as a NEGATIVE balance,
+     * mirroring how LOAN accounts are persisted elsewhere ({@code liveBalanceEur} returns a
+     * negative remaining capital). Only the outstanding balance is carried over; the original
+     * principal, interest rate and amortization details are not exposed by the loans payload,
+     * so no {@code Debt} is created here — the user can add those later for the amortization view.
      */
-    private String findCategoryForAccount(FinaryAccountDto acc, List<FinaryAccountDto> allAccounts,
-                                           Map<String, String> externalIdToCategory) {
-        for (Map.Entry<String, String> entry : externalIdToCategory.entrySet()) {
-            if (entry.getKey().endsWith("_" + acc.id())) {
-                return entry.getValue();
-            }
-        }
-        return "other_assets";
+    private FinaryAccountDto toLoanAccountDto(FinaryLoanDto loan) {
+        Double outstanding = loan.outstandingAmount();
+        Double balance = outstanding != null ? -outstanding : null;
+        return new FinaryAccountDto(
+            loan.id(),
+            loan.name(),
+            null,
+            balance,
+            balance,
+            loan.institution(),
+            loan.currency(),
+            false
+        );
     }
 
     /**

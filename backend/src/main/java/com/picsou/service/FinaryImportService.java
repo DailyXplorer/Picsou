@@ -67,6 +67,7 @@ public class FinaryImportService {
 
             List<FinaryAccountPreview> previews = parsed.accounts.stream()
                 .map(acc -> new FinaryAccountPreview(
+                    slugify(acc.category() + "_" + acc.name()),
                     acc.name(),
                     acc.institution(),
                     acc.category(),
@@ -112,12 +113,19 @@ public class FinaryImportService {
         int transactionsImported = 0;
         List<ImportedAccountSummary> imported = new ArrayList<>();
 
-        // Map finaryName -> parsed account
-        Map<String, FinaryPersistenceHelper.ParsedFinaryAccount> finaryByName = parsed.accounts.stream()
-            .collect(Collectors.toMap(FinaryPersistenceHelper.ParsedFinaryAccount::name, a -> a));
+        Map<String, FinaryPersistenceHelper.ParsedFinaryAccount> finaryByKey = parsed.accounts.stream()
+            .collect(Collectors.toMap(
+                acc -> buildParsedAccountKey(acc.category(), acc.name()),
+                a -> a,
+                (a, b) -> a
+            ));
 
         for (FinaryAccountMapping mapping : req.mappings()) {
-            FinaryPersistenceHelper.ParsedFinaryAccount finaryAcc = finaryByName.get(mapping.finaryName());
+            FinaryPersistenceHelper.ParsedFinaryAccount finaryAcc = finaryByKey.get(
+                mapping.finaryId() != null
+                    ? mapping.finaryId()
+                    : buildParsedAccountKey(mapping.finaryCategory(), mapping.finaryName())
+            );
             if (finaryAcc == null) continue;
 
             Account account = null;
@@ -264,6 +272,10 @@ public class FinaryImportService {
             case NUMERIC -> String.valueOf((long) cell.getNumericCellValue());
             default -> null;
         };
+    }
+
+    private String buildParsedAccountKey(String category, String name) {
+        return slugify(category + "_" + name);
     }
 
     private BigDecimal cellNumeric(Row row, int col) {

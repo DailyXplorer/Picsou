@@ -1,8 +1,10 @@
 package com.picsou.service;
 
 import com.picsou.dto.GoalProgressResponse;
+import com.picsou.dto.GoalRequest;
 import com.picsou.model.Account;
 import com.picsou.model.AccountType;
+import com.picsou.model.FamilyMember;
 import com.picsou.model.Goal;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.BalanceSnapshotRepository;
@@ -22,7 +24,11 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -86,6 +92,54 @@ class GoalServiceTest {
         assertThat(progress.monthlyNeeded()).isEqualByComparingTo(
             new BigDecimal("15000").divide(BigDecimal.valueOf(monthsLeft), 2, RoundingMode.HALF_UP));
         assertThat(progress.percentComplete()).isEqualByComparingTo("25.0000");
+    }
+
+    // ─── IDOR regression (GHSA security audit 2026-06-27) ──────────────────────
+    // A member must not attach (and thereby read the live balance of) another
+    // member's account. The account lookup must be member-scoped, never the
+    // inherited, unscoped findAllById.
+
+    @Test
+    void create_isMemberScoped_andRejectsForeignAccounts() {
+        FamilyMember member = FamilyMember.builder().id(42L).build();
+        GoalRequest req = new GoalRequest(
+            "Trip", new BigDecimal("1000"), LocalDate.now().plusMonths(3), List.of(1L, 2L));
+        // Account 2 belongs to someone else → the member-scoped finder returns only the owned one.
+        Account owned = Account.builder()
+            .id(1L).name("LEP").type(AccountType.LEP).currency("EUR")
+            .currentBalance(BigDecimal.ZERO).build();
+        when(accountRepository.findByIdInAndMemberId(List.of(1L, 2L), 42L))
+            .thenReturn(List.of(owned));
+
+        assertThatThrownBy(() -> goalService.create(req, member))
+            .isInstanceOf(IllegalArgumentException.class);
+
+        verify(accountRepository).findByIdInAndMemberId(List.of(1L, 2L), 42L);
+        verify(accountRepository, never()).findAllById(any());
+        verify(goalRepository, never()).save(any());
+    }
+
+    @Test
+    void update_isMemberScoped_andRejectsForeignAccounts() {
+        Goal goal = Goal.builder()
+            .id(5L).name("Trip").targetAmount(new BigDecimal("1000"))
+            .deadline(LocalDate.now().plusMonths(3))
+            .accounts(new java.util.ArrayList<>()).build();
+        when(goalRepository.findByIdAndMemberId(5L, 42L)).thenReturn(java.util.Optional.of(goal));
+        GoalRequest req = new GoalRequest(
+            "Trip", new BigDecimal("1000"), LocalDate.now().plusMonths(3), List.of(1L, 2L));
+        Account owned = Account.builder()
+            .id(1L).name("LEP").type(AccountType.LEP).currency("EUR")
+            .currentBalance(BigDecimal.ZERO).build();
+        when(accountRepository.findByIdInAndMemberId(List.of(1L, 2L), 42L))
+            .thenReturn(List.of(owned));
+
+        assertThatThrownBy(() -> goalService.update(5L, req, 42L))
+            .isInstanceOf(IllegalArgumentException.class);
+
+        verify(accountRepository).findByIdInAndMemberId(List.of(1L, 2L), 42L);
+        verify(accountRepository, never()).findAllById(any());
+        verify(goalRepository, never()).save(any());
     }
 
     @Test

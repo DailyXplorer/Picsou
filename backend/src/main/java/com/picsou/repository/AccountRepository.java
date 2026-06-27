@@ -11,6 +11,13 @@ import java.util.Optional;
 public interface AccountRepository extends JpaRepository<Account, Long> {
     List<Account> findAllByMemberIdOrderByCreatedAtAsc(Long memberId);
     Optional<Account> findByIdAndMemberId(Long id, Long memberId);
+
+    /**
+     * Member-scoped batch lookup by id. Used when resolving a caller-supplied list of
+     * account ids (e.g. goal membership) so accounts belonging to another member are
+     * never returned — closing an IDOR where {@code findAllById} ignored ownership.
+     */
+    List<Account> findByIdInAndMemberId(List<Long> ids, Long memberId);
     Optional<Account> findByExternalAccountIdAndMemberId(String externalAccountId, Long memberId);
     List<Account> findByTickerIsNotNullAndMemberId(Long memberId);
 

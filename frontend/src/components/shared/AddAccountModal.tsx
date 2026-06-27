@@ -869,6 +869,7 @@ function FinaryWizard({ onDone, onBack }: { onDone: () => void; onBack: () => vo
 
   function initMappings(preview: FinaryPreviewResponse) {
     setMappings(preview.accounts.map((account, i) => ({
+      finaryId: account.finaryId,
       finaryName: account.finaryName,
       finaryCategory: account.finaryCategory,
       action: 'CREATE_NEW' as FinaryMappingAction,
@@ -1082,7 +1083,7 @@ function FinaryWizard({ onDone, onBack }: { onDone: () => void; onBack: () => vo
 
           <div className="space-y-3 max-h-80 overflow-y-auto">
             {previewData.accounts.map((account, index) => (
-              <div key={account.finaryName + account.finaryCategory} className="rounded-lg border p-3 space-y-2">
+              <div key={account.finaryCategory + account.finaryId} className="rounded-lg border p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{account.finaryName}</p>

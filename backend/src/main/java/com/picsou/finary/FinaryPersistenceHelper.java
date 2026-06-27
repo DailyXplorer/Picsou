@@ -238,6 +238,7 @@ public class FinaryPersistenceHelper {
             case "investments" -> AccountType.COMPTE_TITRES;
             case "cryptos" -> AccountType.CRYPTO;
             case "fonds_euro" -> AccountType.SAVINGS;
+            case "loans" -> AccountType.LOAN;
             case "credits" -> AccountType.OTHER;
             case "real_estates", "commodities", "other_assets", "startups" -> AccountType.OTHER;
             default -> AccountType.OTHER;

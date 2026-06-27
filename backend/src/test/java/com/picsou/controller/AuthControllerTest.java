@@ -2,6 +2,7 @@ package com.picsou.controller;
 
 import com.picsou.config.AuthCookieWriter;
 import com.picsou.config.JwtUtil;
+import com.picsou.dto.ActivationRequest;
 import com.picsou.dto.LoginRequest;
 import com.picsou.model.AppUser;
 import com.picsou.model.FamilyMember;
@@ -15,6 +16,7 @@ import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -22,17 +24,25 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import jakarta.servlet.http.Cookie;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -201,6 +211,127 @@ class AuthControllerTest {
 
         verify(cookieWriter).setAccessAndRefresh(httpRes, "acc", "ref");
         verify(cookieWriter, never()).clearPersistent(httpRes);
+    }
+
+    @Test
+    void login_unknownUserAndWrongPassword_payIdenticalBcryptCost_soLatencyRevealsNothing() {
+        // Drive the controller with a REAL bcrypt encoder (strength 12, same as prod —
+        // see SecurityConfig) so the dummy-hash comparison performs genuine work, which
+        // is the whole point of the timing fix. A spy lets us count the bcrypt calls and
+        // inspect the hashes they ran against.
+        PasswordEncoder realEncoder = spy(new BCryptPasswordEncoder(12));
+        AuthController timingController = new AuthController(
+            userRepository, realEncoder, jwtUtil,
+            loginBuckets, mfaVerifyBuckets, cookieWriter,
+            mfaService, persistentSessionService, auditService, false);
+
+        // Path A — the username does not exist: there is no stored hash to compare,
+        // yet the request must still cost a full bcrypt round against the dummy hash.
+        when(userRepository.findByUsernameWithMember("ghost")).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> timingController.login(
+                new LoginRequest("ghost", "pw", false), httpReq, httpRes))
+            .isInstanceOf(BadCredentialsException.class)
+            .hasMessage("Invalid credentials");
+
+        // Path B — the username exists but the password is wrong. The stored hash is a
+        // real bcrypt hash of a DIFFERENT secret, so "pw" does not match.
+        AppUser known = AppUser.builder()
+            .id(7L).username("alice")
+            .role(UserRole.ADMIN)
+            .passwordHash(realEncoder.encode("the-real-password"))
+            .activated(true)
+            .tokenVersion(3L)
+            .member(FamilyMember.builder().id(42L).displayName("Alice").build())
+            .build();
+        when(userRepository.findByUsernameWithMember("alice")).thenReturn(Optional.of(known));
+        assertThatThrownBy(() -> timingController.login(
+                new LoginRequest("alice", "pw", false), httpReq, httpRes))
+            .isInstanceOf(BadCredentialsException.class)
+            .hasMessage("Invalid credentials");
+
+        // The two failing paths are indistinguishable by wall-clock time: each ran
+        // EXACTLY one bcrypt comparison, each against a real $2a$12$ hash of the SAME
+        // cost factor, each fed the submitted password. Path A used the constructor's
+        // dummy hash, Path B the user's stored hash — same work, no enumeration oracle.
+        ArgumentCaptor<String> hashUsed = ArgumentCaptor.forClass(String.class);
+        verify(realEncoder, times(2)).matches(eq("pw"), hashUsed.capture());
+        assertThat(hashUsed.getAllValues())
+            .hasSize(2)
+            .allSatisfy(h -> assertThat(h).startsWith("$2a$12$"));
+
+        // ...and neither failing path leaks a session.
+        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any());
+    }
+
+    @Test
+    void login_pendingActivationMember_blankHash_paysOneRealBcryptRound_andReturns401() {
+        // Same real-encoder spy pattern as the timing test above. A managed member
+        // that has only been issued an activation link still has a BLANK password
+        // hash; matches(pw, "") would return false instantly without bcrypt, leaking
+        // "this profile exists, pending activation" by latency (CWE-208). The fix
+        // runs the dummy-hash bcrypt round and fails like a wrong password instead.
+        PasswordEncoder realEncoder = spy(new BCryptPasswordEncoder(12));
+        AuthController timingController = new AuthController(
+            userRepository, realEncoder, jwtUtil,
+            loginBuckets, mfaVerifyBuckets, cookieWriter,
+            mfaService, persistentSessionService, auditService, false);
+
+        AppUser pending = AppUser.builder()
+            .id(11L).username("bob")
+            .role(UserRole.MEMBER)
+            .passwordHash("")          // invited but not yet activated
+            .activated(false)
+            .tokenVersion(0L)
+            .member(FamilyMember.builder().id(50L).displayName("Bob").build())
+            .build();
+        when(userRepository.findByUsernameWithMember("bob")).thenReturn(Optional.of(pending));
+
+        assertThatThrownBy(() -> timingController.login(
+                new LoginRequest("bob", "pw", false), httpReq, httpRes))
+            .isInstanceOf(BadCredentialsException.class)
+            .hasMessage("Invalid credentials");
+
+        // Exactly ONE real bcrypt comparison, run against the constructor's $2a$12$
+        // dummy hash — same cost as the unknown-user and wrong-password paths, so a
+        // pending-activation profile is indistinguishable from "no such user".
+        ArgumentCaptor<String> hashUsed = ArgumentCaptor.forClass(String.class);
+        verify(realEncoder, times(1)).matches(eq("pw"), hashUsed.capture());
+        assertThat(hashUsed.getValue()).startsWith("$2a$12$");
+
+        // No session is established, and a credential-less profile never reaches MFA.
+        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any());
+        verify(mfaService, never()).isEnabled(any());
+    }
+
+    // ─── activate ────────────────────────────────────────────────────────
+
+    @Test
+    void activate_bumpsTokenVersion_andRevokesPersistentSessions() {
+        // M2: activate() is the shared sink for new-member activation, admin-initiated
+        // password reset, and admin-recovery completion. Like change-password, it must
+        // invalidate every pre-existing session so a compromised member's old JWTs and
+        // Remember-Me cookies don't survive the reset (CWE-613/640).
+        AppUser member = AppUser.builder()
+            .id(11L).username("bob")
+            .role(UserRole.MEMBER)
+            .passwordHash("")
+            .activated(false)
+            .tokenVersion(5L)
+            .activationToken("tok")
+            .activationTokenExpires(Instant.now().plus(1, ChronoUnit.HOURS))
+            .member(FamilyMember.builder().id(50L).displayName("Bob").build())
+            .build();
+        when(userRepository.findByActivationToken("tok")).thenReturn(Optional.of(member));
+
+        ResponseEntity<?> res = controller.activate(
+            "tok", new ActivationRequest("new-password-123", true), httpReq);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(member.isActivated()).isTrue();
+        // tokenVersion bumped 5 -> 6 invalidates every outstanding access/refresh JWT.
+        assertThat(member.getTokenVersion()).isEqualTo(6L);
+        // ...and every Remember-Me persistent session for this user is wiped.
+        verify(persistentSessionService).revokeAllForUser(11L);
     }
 
     // ─── mfa/verify ──────────────────────────────────────────────────────

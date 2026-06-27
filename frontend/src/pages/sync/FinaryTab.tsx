@@ -263,6 +263,7 @@ export function FinaryTab() {
 
   function initMappings(preview: FinaryPreviewResponse) {
     const initialMappings: FinaryAccountMapping[] = preview.accounts.map((account) => ({
+      finaryId: account.finaryId,
       finaryName: account.finaryName,
       finaryCategory: account.finaryCategory,
       action: 'CREATE_NEW' as FinaryMappingAction,
@@ -544,7 +545,7 @@ export function FinaryTab() {
           <div className="space-y-3">
             {previewData.accounts.map((account, index) => (
               <MappingCard
-                key={account.finaryName + account.finaryCategory}
+                key={account.finaryCategory + account.finaryId}
                 account={account}
                 mapping={mappings[index]}
                 existingAccounts={previewData.existingPicsouAccounts}

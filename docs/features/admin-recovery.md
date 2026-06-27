@@ -46,6 +46,8 @@ operator: opens URL in browser
 POST /api/auth/activate/{token}
   ├─ user.passwordHash = bcrypt(newPassword)
   ├─ user.activated = true
+  ├─ user.tokenVersion++  (revokes any access/refresh JWT minted before the reset)
+  ├─ persistentSessionService.revokeAllForUser(user.id)  (wipes Remember-Me cookies)
   └─ audit "admin.recovery.completed"  (only if user.role == ADMIN)
    ↓
 operator: set ADMIN_RECOVERY_ENABLED=false, restart
@@ -73,7 +75,7 @@ operator: set ADMIN_RECOVERY_ENABLED=false, restart
 
 ## Tests
 
-- Automated: `AuthControllerTest` (Mockito) — login with a deactivated account ⇒ `403` and no cookies set; login while the recovery flag is on ⇒ `403` whose detail points to the console link and the disable-the-flag reminder, before any password check; refresh with a deactivated account (matching `tv`) ⇒ `401` + cookies cleared; the activated happy paths still issue/rotate tokens.
+- Automated: `AuthControllerTest` (Mockito) — login with a deactivated account ⇒ `403` and no cookies set; login while the recovery flag is on ⇒ `403` whose detail points to the console link and the disable-the-flag reminder, before any password check; refresh with a deactivated account (matching `tv`) ⇒ `401` + cookies cleared; the activated happy paths still issue/rotate tokens; `activate()` bumps `tokenVersion` and calls `PersistentSessionService.revokeAllForUser` so completing a reset/recovery invalidates every pre-existing session (CWE-613/640).
 - Manual:
   1. Set `ADMIN_RECOVERY_ENABLED=true`, boot → expect WARN banner with valid URL.
   2. Before activating, try to log in with the old password **or a wrong one** → expect `403` pointing to the console reset link and the "set `ADMIN_RECOVERY_ENABLED=false`" reminder; no infinite loop.

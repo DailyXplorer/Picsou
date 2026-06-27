@@ -78,7 +78,10 @@ public class GoalService {
 
     @Transactional
     public GoalProgressResponse create(GoalRequest req, FamilyMember member) {
-        List<Account> accounts = accountRepository.findAllById(req.accountIds());
+        // Scope the lookup to the caller's member: a goal must never attach (and then
+        // expose the live balance of) another member's account. findByIdInAndMemberId
+        // returns only owned ids, so a foreign/nonexistent id fails the size check below.
+        List<Account> accounts = accountRepository.findByIdInAndMemberId(req.accountIds(), member.getId());
         if (accounts.size() != req.accountIds().size()) {
             throw new IllegalArgumentException("One or more account IDs not found");
         }
@@ -98,7 +101,8 @@ public class GoalService {
     public GoalProgressResponse update(Long id, GoalRequest req, Long memberId) {
         Goal goal = getOrThrow(id, memberId);
 
-        List<Account> accounts = accountRepository.findAllById(req.accountIds());
+        // Member-scoped (see create): never attach another member's account to this goal.
+        List<Account> accounts = accountRepository.findByIdInAndMemberId(req.accountIds(), memberId);
         if (accounts.size() != req.accountIds().size()) {
             throw new IllegalArgumentException("One or more account IDs not found");
         }

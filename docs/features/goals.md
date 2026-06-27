@@ -121,6 +121,7 @@ GoalService.setMonthOverride(goalId, yearMonth, amount)
 - **Override does not recalculate monthlyNeeded**: Setting a month override changes the display value for that month but does not affect the computed `monthlyNeeded`. The auto-computed objective is always based on `(target - current) / monthsLeft`.
 - **Effective-start to deadline range**: `getMonthlyEntries()` iterates from the effective start month (`min(createdAt, historyStartMonth)`) to the deadline month. If the goal was created mid-month, the first month's actual may be partial. Backfilled months (before `createdAt`) never have snapshot data.
 - **`findAllWithAccounts()` uses a custom query**: Goals are fetched with their accounts eagerly loaded to avoid N+1 queries during progress calculation.
+- **Account membership is member-scoped (IDOR guard)**: `create`/`update` resolve `accountIds` via `accountRepository.findByIdInAndMemberId(...)`, never the inherited `findAllById`. A caller can only attach accounts they own; a foreign/nonexistent id fails the size check with a generic 400. Do **not** revert this to `findAllById` — that re-opens a cross-member balance-disclosure IDOR (security audit 2026-06-27, CWE-639).
 
 ## Tests
 

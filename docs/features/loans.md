@@ -103,6 +103,13 @@ BalanceSnapshot persisted  →  historical balance chart steps down monthly
   standard formula `M = P · r / (1 − (1 + r)^-n)`.
 - **Holdings, transactions, and the manual snapshot history dialog are hidden** for LOAN
   accounts in `AccountDetailPage` — the loan section is the canonical view.
+- **Finary-imported loans have no `Debt` row.** The Finary API sync imports loan/mortgage
+  accounts from the dedicated `/loans` endpoint (see [finary-import.md](finary-import.md), issue #11)
+  as `LOAN` accounts with the outstanding amount stored as a negative `currentBalance`. The
+  loans payload does not expose the original principal or interest rate, so no `Debt` is
+  created — `liveBalanceEur` gracefully falls back to the stored balance when no `Debt` exists,
+  and the rich amortization view only appears once the user fills in the loan parameters via
+  `PUT /api/accounts/{id}/debt`.
 
 ## Tests
 

@@ -338,6 +338,29 @@ public class FinaryApiClient {
     }
 
     /**
+     * Fetch loan / mortgage accounts from Finary's dedicated {@code /loans} endpoint.
+     *
+     * <p>Loans are not part of the portfolio {@code credits} category, so they have to be
+     * fetched separately (issue #11). The endpoint path is best-effort: it mirrors the
+     * other {@code /users/me/*} resources (e.g. {@code /users/me/organizations}).
+     */
+    public List<FinaryLoanDto> fetchLoans(String jwt) {
+        try {
+            String response = finaryGet(jwt, "/users/me/loans");
+
+            FinaryEnvelope<List<FinaryLoanDto>> envelope =
+                objectMapper.readValue(response, objectMapper.getTypeFactory()
+                    .constructParametricType(FinaryEnvelope.class,
+                        objectMapper.getTypeFactory().constructCollectionType(List.class, FinaryLoanDto.class)));
+
+            return envelope.result() != null ? envelope.result() : List.of();
+
+        } catch (IOException e) {
+            throw new SyncException("Failed to fetch loans: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Fetch transactions for a specific category (paginated)
      */
     public List<FinaryTransactionDto> fetchCategoryTransactions(String jwt, OrgContext ctx, String category, int page, int perPage) {

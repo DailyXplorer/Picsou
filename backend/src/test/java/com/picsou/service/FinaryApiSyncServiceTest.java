@@ -1,11 +1,22 @@
 package com.picsou.service;
 
 import com.picsou.config.CryptoEncryption;
+import com.picsou.dto.FinaryAccountMapping;
+import com.picsou.dto.FinaryAccountPreview;
 import com.picsou.dto.FinaryCheckTotpResponse;
+import com.picsou.dto.FinaryImportResultResponse;
+import com.picsou.dto.FinaryMappingAction;
+import com.picsou.dto.FinaryPreviewResponse;
+import com.picsou.dto.NewAccountDetails;
 import com.picsou.exception.ResourceNotFoundException;
 import com.picsou.finary.FinaryApiSyncService;
 import com.picsou.finary.FinaryPersistenceHelper;
 import com.picsou.finary.client.FinaryApiClient;
+import com.picsou.finary.dto.FinaryAccountCurrency;
+import com.picsou.finary.dto.FinaryAccountDto;
+import com.picsou.finary.dto.FinaryLoanDto;
+import com.picsou.model.Account;
+import com.picsou.model.AccountType;
 import com.picsou.model.FamilyMember;
 import com.picsou.model.FinarySession;
 import com.picsou.repository.AccountRepository;
@@ -13,14 +24,20 @@ import com.picsou.repository.FamilyMemberRepository;
 import com.picsou.repository.FinarySessionRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -77,5 +94,98 @@ class FinaryApiSyncServiceTest {
 
         assertThatThrownBy(() -> service.checkTotp(99L))
             .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Loans from the dedicated /loans endpoint (issue #11)
+    // ---------------------------------------------------------------------------
+
+    private FinarySession connectedSession() {
+        return FinarySession.builder()
+            .member(FamilyMember.builder().id(1L).build())
+            .email("enc-email")
+            .password("enc-pass")
+            .status("CONNECTED")
+            .build();
+    }
+
+    private void stubPreviewFlow(FinaryAccountDto checking, FinaryLoanDto loan) {
+        when(finarySessionRepository.findByMemberId(1L)).thenReturn(Optional.of(connectedSession()));
+        when(encryption.decrypt("enc-email")).thenReturn("user@example.com");
+        when(encryption.decrypt("enc-pass")).thenReturn("secret");
+        when(finaryApiClient.authenticate("user@example.com", "secret", null)).thenReturn("jwt");
+        when(finaryApiClient.fetchOrganizationContext("jwt"))
+            .thenReturn(new FinaryApiClient.OrgContext("org", "mem"));
+        when(finaryApiClient.fetchCategoryAccounts(eq("jwt"), any(), anyString()))
+            .thenAnswer(inv -> "checkings".equals(inv.getArgument(2)) ? List.of(checking) : List.of());
+        when(finaryApiClient.fetchLoans("jwt")).thenReturn(List.of(loan));
+        when(finaryApiClient.fetchCategoryTransactions(any(), any(), anyString(), anyInt(), anyInt()))
+            .thenReturn(List.of());
+        when(accountRepository.findAllByMemberIdOrderByCreatedAtAsc(1L)).thenReturn(List.of());
+        when(accountRepository.findByExternalAccountIdAndMemberId(anyString(), eq(1L)))
+            .thenReturn(Optional.empty());
+    }
+
+    @Test
+    void preview_includesLoanAccountsFromLoansEndpoint() {
+        FinaryAccountDto checking = new FinaryAccountDto(
+            "chk-1", "Checking", null, 1000.0, 1000.0, null,
+            new FinaryAccountCurrency("EUR", "€"), false);
+        FinaryLoanDto loan = new FinaryLoanDto(
+            "loan-1", "loan", "PRET CONSO Auto", 12345.67, 250.0,
+            "2023-01-01", "2028-01-01", new FinaryAccountCurrency("EUR", "€"), null);
+
+        stubPreviewFlow(checking, loan);
+
+        FinaryPreviewResponse response = service.preview(null, 1L);
+
+        // Both the non-loan account and the loan show up in the preview.
+        assertThat(response.accounts()).hasSize(2);
+
+        FinaryAccountPreview loanPreview = response.accounts().stream()
+            .filter(a -> "loans".equals(a.finaryCategory()))
+            .findFirst()
+            .orElseThrow();
+        assertThat(loanPreview.finaryId()).isEqualTo("loan-1");
+        assertThat(loanPreview.finaryName()).isEqualTo("PRET CONSO Auto");
+        assertThat(loanPreview.suggestedType()).isEqualTo(AccountType.LOAN);
+        // A loan is a liability: outstanding amount becomes a negative balance.
+        assertThat(loanPreview.currentBalance()).isEqualTo(-12345.67);
+
+        assertThat(response.accounts())
+            .anyMatch(a -> "checkings".equals(a.finaryCategory()));
+    }
+
+    @Test
+    void execute_createsLoanAccount_fromLoanMapping() {
+        FinaryAccountDto checking = new FinaryAccountDto(
+            "chk-1", "Checking", null, 1000.0, 1000.0, null,
+            new FinaryAccountCurrency("EUR", "€"), false);
+        FinaryLoanDto loan = new FinaryLoanDto(
+            "loan-1", "loan", "PRET CONSO Auto", 12345.67, 250.0,
+            "2023-01-01", "2028-01-01", new FinaryAccountCurrency("EUR", "€"), null);
+
+        stubPreviewFlow(checking, loan);
+        when(familyMemberRepository.findById(1L))
+            .thenReturn(Optional.of(FamilyMember.builder().id(1L).build()));
+        when(accountRepository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        FinaryPreviewResponse preview = service.preview(null, 1L);
+
+        FinaryAccountMapping loanMapping = new FinaryAccountMapping(
+            "loan-1", "PRET CONSO Auto", "loans", FinaryMappingAction.CREATE_NEW, null,
+            new NewAccountDetails("PRET CONSO Auto", AccountType.LOAN, "Finary", "EUR", "#6366f1"));
+
+        FinaryImportResultResponse result =
+            service.execute(preview.fileToken(), List.of(loanMapping), 1L);
+
+        assertThat(result.accountsCreated()).isEqualTo(1);
+
+        ArgumentCaptor<Account> captor = ArgumentCaptor.forClass(Account.class);
+        org.mockito.Mockito.verify(accountRepository).save(captor.capture());
+        Account saved = captor.getValue();
+        assertThat(saved.getType()).isEqualTo(AccountType.LOAN);
+        assertThat(saved.getExternalAccountId()).isEqualTo("finary_loans_loan-1");
+        assertThat(saved.getCurrentBalance()).isEqualByComparingTo("-12345.67");
     }
 }

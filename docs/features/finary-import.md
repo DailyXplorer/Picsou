@@ -23,7 +23,7 @@ Authenticates directly with Finary via Clerk (their auth provider) and fetches a
 
 - **Authentication**: `FinaryApiClient.authenticate()` performs a 6-step Clerk OAuth flow: GET environment, GET client, POST sign_ins, (optionally POST TOTP), POST session touch, POST tokens. Returns a JWT for API calls.
 - **TOTP/2FA handling**: When Clerk returns `needs_second_factor`, the backend throws `TotpRequiredException` → HTTP 403. The frontend detects 403 on the preview mutation, shows a TOTP input field, then retries with `?totp={code}` as query parameter.
-- **Preview**: `preview(totp)` authenticates, fetches accounts from all 10 categories, fetches transactions (paginated, 200 per page), caches everything with a `syncToken`, returns previews.
+- **Preview**: `preview(totp)` authenticates, fetches accounts from all 10 portfolio categories **plus the dedicated `/loans` endpoint** (loans are not exposed as a portfolio category), fetches transactions (paginated, 200 per page), caches everything with a `syncToken`, returns previews.
 - **Execute**: `execute(syncToken, mappings)` retrieves cached data, applies user mappings, creates/updates accounts, imports transactions.
 
 ### Account mapping
@@ -63,12 +63,13 @@ Possible status values: `OK`, `NEEDS_MAPPING`, `TOTP_REQUIRED`, `NOT_CONNECTED`.
 
 - `service/FinaryImportService.java` -- XLSX file import (Apache POI parsing, two-phase flow)
 - `finary/FinaryApiSyncService.java` -- Direct API sync (Clerk auth, two-phase flow, cache, `autoSync()`)
-- `finary/client/FinaryApiClient.java` -- Finary/Clerk HTTP client (6-step auth, TOTP, pagination)
+- `finary/client/FinaryApiClient.java` -- Finary/Clerk HTTP client (6-step auth, TOTP, pagination, `fetchLoans()`)
+- `finary/dto/FinaryLoanDto.java` -- a loan/mortgage entry from the dedicated `/loans` endpoint
 - `exception/TotpRequiredException.java` -- Thrown when 2FA is required but no TOTP provided (returns 403)
 - `finary/FinaryPersistenceHelper.java` -- Shared helper: account creation, snapshot reconstruction, transaction import (preserves manual transactions), type suggestion
 - `controller/FinaryImportController.java` -- REST endpoints for xlsx upload
 - `controller/FinaryApiSyncController.java` -- REST endpoints for API sync (`/preview`, `/execute`, `/auto`)
-- `finary/dto/` -- 13 DTOs for Finary API responses
+- `finary/dto/` -- 14 DTOs for Finary API responses (incl. `FinaryLoanDto`)
 - `finary/SyncSessionData.java` -- Cache record for API sync session
 - `dto/FinaryAutoSyncResponse.java` -- Response DTO for `/api/finary/api-sync/auto`
 
@@ -124,6 +125,7 @@ POST /api/finary/api-sync/preview?totp={code}
         |
         +-- Clerk completes second factor with TOTP
         +-- Fetch accounts from all 10 categories
+        +-- Fetch loans from the dedicated /loans endpoint  -> LOAN accounts
         +-- Fetch transactions (paginated, 200/page)
         +-- Cache with syncToken (10-min TTL)
         +-- Return: account previews + existing Picsou accounts
@@ -179,11 +181,13 @@ POST /api/finary/api-sync/auto
 - **Account name matching is case-insensitive but exact**: Auto-mapping matches Finary account name to Picsou account name. If the user renamed an account in Picsou, it won't match.
 - **Transactions are per-category**: API sync fetches transactions only from checkings, savings, investments, and credits categories. Other categories (real estate, cryptos) do not have a transactions endpoint.
 - **External IDs use Finary category + ID**: Format is `finary_{category}_{finaryId}`. This means the same Finary account always maps to the same external ID, preventing duplicates across imports.
+- **Loans come from a separate endpoint (issue #11)**: loan/mortgage accounts are *not* returned by the portfolio `credits`/`credit_accounts` categories — they live on the dedicated `/loans` endpoint. The API sync fetches them via `FinaryApiClient.fetchLoans()` and adapts each entry to the common `FinaryAccountDto` under a synthetic `loans` category (external ID `finary_loans_{id}`), so they flow through the normal preview/mapping/execute pipeline and map to `AccountType.LOAN`. The outstanding amount is stored as a **negative** balance (a loan is a liability). Only the balance is imported — the loans payload does not expose the original principal or interest rate, so **no `Debt` row is created**; the imported LOAN account shows a static balance until the user fills in the loan parameters for the amortization view (see [loans.md](loans.md)). The exact `/loans` JSON shape and path are best-effort from the issue's sample (`type`, `name`, `outstanding_amount`, `monthly_repayment`, `start_date`, `end_date`); `FinaryLoanDto` maps the snake_case keys explicitly and accepts camelCase aliases as a fallback.
 
 ## Tests
 
 - `FinaryImportServiceTest` -- unit tests for xlsx parsing, type suggestion, mapping
-- `FinaryApiSyncServiceTest` -- unit tests for API sync flow
+- `FinaryApiSyncServiceTest` -- unit tests for API sync flow, incl. loans appearing in the preview and being created as LOAN accounts on execute
+- `FinaryLoanDtoTest` -- unit tests for parsing the `/loans` payload (snake_case + camelCase aliases)
 - Manual integration testing with real Finary accounts
 
 ## Links

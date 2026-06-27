@@ -256,6 +256,7 @@ export interface BoursoAuthInitResponse {
 }
 
 export interface FinaryAccountPreview {
+  finaryId: string
   finaryName: string
   finaryInstitution: string
   finaryCategory: string
@@ -291,6 +292,7 @@ export interface NewAccountDetails {
 }
 
 export interface FinaryAccountMapping {
+  finaryId: string
   finaryName: string
   finaryCategory: string
   action: FinaryMappingAction
