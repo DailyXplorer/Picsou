@@ -104,3 +104,68 @@ value and zero additional dependencies.
 - Prior ADR: [2026-06-26-ai-transaction-categorization.md](./2026-06-26-ai-transaction-categorization.md)
 - Feature note: [ai-categorization.md](../features/ai-categorization.md)
 - Encryption infrastructure: [2026-03-01-aes-gcm-crypto-secrets.md](./2026-03-01-aes-gcm-crypto-secrets.md)
+
+---
+
+## Async categorization job + AI-call audit log (2026-06-27)
+
+### Context
+
+The original `POST /transactions/categorize-ai` ran all LLM calls **synchronously** inside one HTTP
+request. On inboxes with many uncategorized transactions this could exceed nginx's 60-second proxy
+timeout (504 Gateway Timeout), forcing users to re-trigger a partial run — and losing all progress
+if they closed the tab.
+
+A second gap was **observability**: there was no record of what prompts were sent, what the model
+responded, or how many tokens were consumed.
+
+### Decision
+
+**Background job with bounded concurrency and incremental commits.**
+`POST /api/transactions/categorize-ai` now returns **202 Accepted** immediately and starts an
+in-memory job (`AiCategorizationJobService`). The job:
+
+1. Takes a snapshot of uncategorized transaction IDs at submission time.
+2. Processes them in **chunks of size C** (`ai.max-concurrency`, default 4, clamp 1..16).
+3. Runs C `categorizer.categorize()` calls **concurrently** via a dedicated `inferenceExecutor`
+   thread pool (`AiExecutorConfig`).
+4. Commits each chunk's results in its own transaction (incremental — progress is durable after
+   each chunk even if the JVM restarts later, though the job state itself is lost — see trade-offs).
+5. Exposes progress via `GET /api/transactions/categorize-ai/status` → `AiJobStatus { status,
+   processed, total }`, which the frontend polls. The Categorize tab resumes the progress display
+   on reload because the job keeps running server-side.
+
+An **atomic one-per-member guard** prevents parallel jobs for the same member; re-submitting while
+a job is running returns the existing `AiJobStatus`.
+
+**Per-call audit log.**
+`TransactionCategorizerPort.categorize()` now returns a rich `CategorizationResult` (slug +
+confidence + prompt text + token usage). Every call — success, suggestion, or failure — is recorded
+in `ai_call_log` (Flyway **V42**) by `AiCallLogService.record()`. The table is pruned to the
+**newest 2000 rows** after each write. Admins can browse the log via **Admin → AI activity** (`GET
+/api/admin/ai-calls`): a paginated modal with expandable prompt/response and total token aggregates.
+
+### Alternatives considered
+
+- **Async via Spring `@Async` on `CategorizationService`**: simpler, but gives no per-chunk commit
+  and no progress API. Rejected.
+- **Persistent job table (DB-backed job queue)**: survives restarts, supports multi-instance.
+  Overkill for a single-instance self-hosted app; adds schema + polling complexity. Rejected.
+- **Server-Sent Events instead of polling**: cleaner UX, but harder to resume on reload (SSE is a
+  live stream, not a snapshot). Polling `GET /status` is trivially resumable. Rejected.
+- **Unlimited retention on `ai_call_log`**: prompts contain merchant labels + amounts (financial
+  data). Unbounded growth is both a storage risk and a privacy risk. 2000-row cap accepted.
+
+### Trade-offs accepted
+
+- **In-memory job state is lost on JVM restart.** The per-chunk commits mean already-processed
+  transactions are permanently categorized, but the `AiJobStatus` (RUNNING / progress counter)
+  disappears. The client sees `NOT_STARTED` on the next poll and the user must re-trigger to
+  process the remaining uncategorized transactions. Acceptable for a single-instance deployment
+  where restarts are rare and deliberate.
+- **`ai_call_log` holds financial data.** Prompts include merchant labels and amounts. Mitigated by:
+  admin-only endpoint, AES-256-GCM encryption at the DB transport layer, and the 2000-row retention
+  cap.
+- **`CategorizationResult` couples the port to token metadata.** The port now carries
+  `promptTokens` / `completionTokens` fields that `NoopCategorizer` returns as zero. This is a
+  minor leakage of infrastructure concerns into the domain port, accepted for observability value.
