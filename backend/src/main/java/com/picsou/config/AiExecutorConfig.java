@@ -21,23 +21,32 @@ public class AiExecutorConfig {
 
     @Bean
     public Executor aiJobExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(1);
-        executor.setMaxPoolSize(3);
-        executor.setQueueCapacity(50);
-        executor.setThreadNamePrefix("ai-job-");
-        executor.initialize();
-        return executor;
+        ThreadPoolTaskExecutor e = new ThreadPoolTaskExecutor();
+        e.setCorePoolSize(3);
+        e.setMaxPoolSize(3);
+        e.setQueueCapacity(50);
+        e.setAllowCoreThreadTimeOut(true);
+        e.setKeepAliveSeconds(60);
+        e.setThreadNamePrefix("ai-job-");
+        e.initialize();
+        return e;
     }
 
     @Bean
     public Executor aiInferenceExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(4);
-        executor.setMaxPoolSize(16);
-        executor.setQueueCapacity(256);
-        executor.setThreadNamePrefix("ai-infer-");
-        executor.initialize();
-        return executor;
+        ThreadPoolTaskExecutor e = new ThreadPoolTaskExecutor();
+        // core=16 so the pool creates up to 16 threads on demand without waiting for the
+        // queue to fill first (ThreadPoolExecutor only spawns beyond corePoolSize when the
+        // queue is full, which never happens here because each chunk joins immediately).
+        // allowCoreThreadTimeOut lets idle threads die after keepAlive so we don't hold
+        // 16 threads permanently between jobs.
+        e.setCorePoolSize(16);
+        e.setMaxPoolSize(16);
+        e.setQueueCapacity(256);
+        e.setAllowCoreThreadTimeOut(true);
+        e.setKeepAliveSeconds(60);
+        e.setThreadNamePrefix("ai-infer-");
+        e.initialize();
+        return e;
     }
 }

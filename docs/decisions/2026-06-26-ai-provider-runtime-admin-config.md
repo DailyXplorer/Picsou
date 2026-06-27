@@ -131,19 +131,20 @@ in-memory job (`AiCategorizationJobService`). The job:
    thread pool (`AiExecutorConfig`).
 4. Commits each chunk's results in its own transaction (incremental — progress is durable after
    each chunk even if the JVM restarts later, though the job state itself is lost — see trade-offs).
-5. Exposes progress via `GET /api/transactions/categorize-ai/status` → `AiJobStatus { status,
-   processed, total }`, which the frontend polls. The Categorize tab resumes the progress display
-   on reload because the job keeps running server-side.
+5. Exposes progress via `GET /api/transactions/categorize-ai/status` → `AiJobStatus { running,
+   total, processed, applied, suggested, done, error }`, which the frontend polls. The Categorize
+   tab resumes the progress display on reload because the job keeps running server-side.
 
-An **atomic one-per-member guard** prevents parallel jobs for the same member; re-submitting while
-a job is running returns the existing `AiJobStatus`.
+An **atomic one-per-member guard** (`ConcurrentHashMap.compute`) prevents parallel jobs for the
+same member; re-submitting while a job is running returns the existing `AiJobStatus`.
 
 **Per-call audit log.**
 `TransactionCategorizerPort.categorize()` now returns a rich `CategorizationResult` (slug +
 confidence + prompt text + token usage). Every call — success, suggestion, or failure — is recorded
-in `ai_call_log` (Flyway **V42**) by `AiCallLogService.record()`. The table is pruned to the
-**newest 2000 rows** after each write. Admins can browse the log via **Admin → AI activity** (`GET
-/api/admin/ai-calls`): a paginated modal with expandable prompt/response and total token aggregates.
+in `ai_call_log` (Flyway **V42**) by `AiCallLogService.saveAll(List)`. After each batch the table
+is pruned to the **newest 2000 rows** via `AiCallLogService.prune()`. Admins can browse the log
+via **Admin → AI activity** (`GET /api/admin/ai-calls`): a paginated modal with expandable
+prompt/response and total token aggregates.
 
 ### Alternatives considered
 
@@ -164,8 +165,9 @@ in `ai_call_log` (Flyway **V42**) by `AiCallLogService.record()`. The table is p
   process the remaining uncategorized transactions. Acceptable for a single-instance deployment
   where restarts are rare and deliberate.
 - **`ai_call_log` holds financial data.** Prompts include merchant labels and amounts. Mitigated by:
-  admin-only endpoint, AES-256-GCM encryption at the DB transport layer, and the 2000-row retention
-  cap.
+  admin-only endpoint and the 2000-row retention cap. Prompts and responses are stored as plaintext
+  `TEXT` columns (only the API key receives field-level AES-256-GCM encryption); operators who
+  require encryption-at-rest for the audit log must rely on disk- or DB-level encryption.
 - **`CategorizationResult` couples the port to token metadata.** The port now carries
   `promptTokens` / `completionTokens` fields that `NoopCategorizer` returns as zero. This is a
   minor leakage of infrastructure concerns into the domain port, accepted for observability value.

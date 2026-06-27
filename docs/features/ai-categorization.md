@@ -59,10 +59,10 @@ inbox can render "AI: Transport · 92%" and pre-select that category — accepti
 - `backend/.../model/AiProvider.java` — enum: `OPENAI`, `OPENROUTER`, `ANTHROPIC`, `OLLAMA`
 - `backend/.../model/AiCallLog.java` — JPA entity: per-call audit record (prompt, response, tokens, latency, status, provider/model, chosen category, applied flag)
 - `backend/.../repository/AiCallLogRepository.java` — JPA repository for `AiCallLog`
-- `backend/.../service/AiCallLogService.java` — `record()` saves a call, `pruneToNewest2000()` enforces retention
-- `backend/.../service/budget/AiCategorizationJobService.java` — background job: snapshot → chunked concurrent categorize → per-chunk commit → progress tracking; one-per-member guard
-- `backend/.../service/budget/CategorizationService.java` — `aiCategorizeUncategorized(memberId)` (now delegates to the job service)
-- `backend/.../dto/AiJobStatus.java` — poll response: `{ status, processed, total, error }`
+- `backend/.../service/AiCallLogService.java` — `saveAll(List)` persists a batch of call rows, `prune()` enforces the 2000-row retention cap
+- `backend/.../service/budget/AiCategorizationJobService.java` — background job: snapshot → chunked concurrent categorize → per-chunk commit → progress tracking; one-per-member guard (`ConcurrentHashMap.compute`)
+- `backend/.../service/budget/CategorizationService.java` — `loadAiContext`, `uncategorizedIds`, `inputsFor`, `applyAiResults` are the real entry points consumed by the job service (`aiCategorizeUncategorized` was removed)
+- `backend/.../dto/AiJobStatus.java` — poll response: `{ running, total, processed, applied, suggested, done, error }`
 - `backend/.../controller/TransactionCategorizationController.java` — `POST /api/transactions/categorize-ai` (202) + `GET /api/transactions/categorize-ai/status`
 - `backend/.../controller/AdminController.java` — `PUT /api/admin/settings/ai` + `POST /api/admin/settings/ai/test` + `GET /api/admin/ai-calls`
 - `backend/.../resources/db/migration/V41__ai_categorization.sql` — settings + suggestion columns
@@ -133,8 +133,8 @@ served by `GET /api/admin/ai-calls` (admin-only).
   `ConcurrentHashMap` keyed by member ID. A JVM restart loses in-flight jobs; the client will see
   the status endpoint return `NOT_STARTED` and the user must re-trigger. Acceptable for a
   single-instance self-hosted setup.
-- **One job per member.** The atomic guard (`AtomicBoolean`) prevents double-submission; re-clicking
-  "Categorize with AI" while a job is running returns the existing `AiJobStatus` (no stacking).
+- **One job per member.** The atomic guard (`ConcurrentHashMap.compute`) prevents double-submission;
+  re-clicking "Categorize with AI" while a job is running returns the existing `AiJobStatus` (no stacking).
 - **Provider config is runtime admin, not env.** Provider, API key, model, and base URL are stored
   in `app_setting` (DB-only, key encrypted via `CryptoEncryption`). There are no `AI_*` env vars.
   Saving the config triggers an immediate cache rebuild in `AiConfigProvider` — no restart needed.
@@ -151,9 +151,9 @@ served by `GET /api/admin/ai-calls` (admin-only).
 - `CategorizationServiceTest` — `aiCategorize_*` cases: each mode, the threshold boundary, unknown
   slug ignored, model abstain ignored, disabled = no-op (and never calls the model).
 - `AiCategorizationJobServiceTest` — job lifecycle: starts, processes chunks, increments progress,
-  finishes; one-per-member guard (second call returns existing status); error path sets `FAILED`.
-- `AiCallLogServiceTest` — `record()` persists a row; `pruneToNewest2000()` deletes oldest rows
-  when count exceeds 2000.
+  finishes; one-per-member guard (second call returns existing status); error path sets `done=true, error=<message>`.
+- `AiCallLogServiceTest` — `saveAll(List)` persists rows; `prune()` deletes oldest rows when count
+  exceeds 2000.
 - `BudgetSeedWriteOnReadPostgresTest` — boots the full context with the three provider starters
   present and runs `V41`+`V42` on real Postgres (verifies `none` keeps startup clean).
 - `CategorizeTab.test.tsx` — suggestion pre-selects the dropdown + renders the chip; the
