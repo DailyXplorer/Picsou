@@ -1,11 +1,14 @@
 package com.picsou.controller;
 
+import com.picsou.dto.AiJobStatus;
 import com.picsou.dto.CategorizeRequest;
 import com.picsou.dto.TransactionResponse;
 import com.picsou.service.UserContext;
+import com.picsou.service.budget.AiCategorizationJobService;
 import com.picsou.service.budget.CategorizationService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,10 +23,15 @@ import java.util.List;
 public class TransactionCategorizationController {
 
     private final CategorizationService categorizationService;
+    private final AiCategorizationJobService jobService;
     private final UserContext userContext;
 
-    public TransactionCategorizationController(CategorizationService categorizationService, UserContext userContext) {
+    public TransactionCategorizationController(
+            CategorizationService categorizationService,
+            AiCategorizationJobService jobService,
+            UserContext userContext) {
         this.categorizationService = categorizationService;
+        this.jobService = jobService;
         this.userContext = userContext;
     }
 
@@ -39,13 +47,22 @@ public class TransactionCategorizationController {
     }
 
     /**
-     * Optional AI fallback over the inbox: runs the configured LLM categorizer on every still-
-     * uncategorized transaction and either auto-applies a category or stores a suggestion,
-     * per the member's AI settings. No-op when the member hasn't enabled AI categorization.
-     * Returns how many were auto-applied vs. left as suggestions.
+     * Start an async AI categorization job for the member's uncategorized transactions.
+     * Returns 202 Accepted with the initial job status. If a job is already running for
+     * this member, returns the current status without starting a new one.
+     * No-op (returns done=true, total=0) when AI is disabled or no categories are configured.
      */
     @PostMapping("/categorize-ai")
-    public CategorizationService.AiCategorizationResult categorizeWithAi() {
-        return categorizationService.aiCategorizeUncategorized(userContext.currentMemberId());
+    public ResponseEntity<AiJobStatus> categorizeWithAi() {
+        return ResponseEntity.accepted().body(jobService.start(userContext.currentMemberId()));
+    }
+
+    /**
+     * Poll the current AI categorization job status for the member.
+     * Returns an idle status when no job has been submitted yet.
+     */
+    @GetMapping("/categorize-ai/status")
+    public AiJobStatus categorizeAiStatus() {
+        return jobService.status(userContext.currentMemberId());
     }
 }
