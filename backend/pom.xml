@@ -14,7 +14,7 @@
 
     <groupId>com.picsou</groupId>
     <artifactId>picsou-backend</artifactId>
-    <version>1.1.4</version>
+    <version>1.1.0</version>
     <name>picsou-backend</name>
     <description>Personal finance tracker backend</description>
 
