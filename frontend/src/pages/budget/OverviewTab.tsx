@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, CalendarClock, Inbox, PiggyBank, TrendingUp, Wallet } from 'lucide-react'
@@ -14,6 +15,7 @@ import {
   useUncategorized,
 } from '@/features/budget/hooks'
 import { ColorDot } from './budget-utils'
+import { PeriodNavigator } from './PeriodNavigator'
 
 function RecapCard({ icon: Icon, label, children, onClick, index = 0 }: {
   icon: LucideIcon
@@ -59,10 +61,11 @@ export function OverviewTab() {
   const { t } = useTranslation()
   // Recap cards deep-link into the nested budget routes (relative to `/budget`).
   const navigate = useNavigate()
-  const cashflowQ = useCashflow('CYCLE')
+  const [anchor, setAnchor] = useState<string | undefined>(undefined)
+  const cashflowQ = useCashflow('CYCLE', anchor)
   const budgetsQ = useBudgets()
   const upcomingQ = useRecurringCalendar(30)
-  const allocationQ = useAllocation('CYCLE')
+  const allocationQ = useAllocation('CYCLE', anchor)
   const uncategorizedQ = useUncategorized()
 
   const cashflow = cashflowQ.data
@@ -94,6 +97,14 @@ export function OverviewTab() {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <PeriodNavigator
+          period="CYCLE"
+          from={cashflowQ.data?.from}
+          to={cashflowQ.data?.to}
+          onAnchorChange={setAnchor}
+        />
+      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <RecapCard icon={TrendingUp} label={t('budget.overview.netThisCycle')} index={0}
           onClick={() => navigate('spending')}>

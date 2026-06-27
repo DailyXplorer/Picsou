@@ -11,6 +11,7 @@ import { useCategoryDetail, useMerchantLogoUrl } from '@/features/budget/hooks'
 import type { CashflowPeriod, ChildSpend } from '@/types/api'
 import { FALLBACK_COLOR } from './budget-meta'
 import { PeriodToggle } from './budget-utils'
+import { PeriodNavigator } from './PeriodNavigator'
 
 /**
  * `/budget/spending/:categoryId` — one category's transactions over the period. Keyed by
@@ -48,8 +49,9 @@ export function CategoryDetailPage() {
   const { t } = useTranslation()
   const { categoryId } = useParams()
   const [period, setPeriod] = useState<CashflowPeriod>('CYCLE')
+  const [anchor, setAnchor] = useState<string | undefined>(undefined)
   const id = Number(categoryId)
-  const { data, isLoading, isError, refetch } = useCategoryDetail(id, period)
+  const { data, isLoading, isError, refetch } = useCategoryDetail(id, period, anchor)
   const logoUrlFor = useMerchantLogoUrl()
 
   const backLink = (
@@ -73,9 +75,17 @@ export function CategoryDetailPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         {backLink}
-        <PeriodToggle value={period} onChange={setPeriod} />
+        <div className="flex flex-wrap items-center gap-2">
+          <PeriodNavigator
+            period={period}
+            from={data?.from}
+            to={data?.to}
+            onAnchorChange={setAnchor}
+          />
+          <PeriodToggle value={period} onChange={(p) => { setPeriod(p); setAnchor(undefined) }} />
+        </div>
       </div>
 
       {isError && (

@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useCashflow } from '@/features/budget/hooks'
 import type { CashflowPeriod } from '@/types/api'
 import { PeriodToggle } from './budget-utils'
+import { PeriodNavigator } from './PeriodNavigator'
 
 const chartConfig = {
   income: { label: 'Income', color: 'var(--chart-2)' },
@@ -39,13 +40,22 @@ function StatCard({ labelKey, value, tone }: { labelKey: string; value: number; 
 export function CashflowTab() {
   const { t } = useTranslation()
   const [period, setPeriod] = useState<CashflowPeriod>('CYCLE')
-  const { data, isLoading, isError, refetch } = useCashflow(period)
+  const [anchor, setAnchor] = useState<string | undefined>(undefined)
+  const { data, isLoading, isError, refetch } = useCashflow(period, anchor)
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">{t('budget.cashflow.subtitle')}</p>
-        <PeriodToggle value={period} onChange={setPeriod} />
+        <div className="flex flex-wrap items-center gap-2">
+          <PeriodNavigator
+            period={period}
+            from={data?.from}
+            to={data?.to}
+            onAnchorChange={setAnchor}
+          />
+          <PeriodToggle value={period} onChange={(p) => { setPeriod(p); setAnchor(undefined) }} />
+        </div>
       </div>
 
       {isError && <ErrorState message={t('budget.cashflow.error')} onRetry={() => refetch()} />}

@@ -353,7 +353,10 @@
     },
     "period": {
       "cycle": "Cycle",
-      "ytd": "Année"
+      "ytd": "Année",
+      "prev": "Période précédente",
+      "next": "Période suivante",
+      "jump": "Aller à…"
     },
     "asset": {
       "current": "Comptes courants",

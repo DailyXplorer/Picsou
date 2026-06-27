@@ -353,7 +353,10 @@
     },
     "period": {
       "cycle": "Cycle",
-      "ytd": "Year"
+      "ytd": "Year",
+      "prev": "Previous period",
+      "next": "Next period",
+      "jump": "Jump to…"
     },
     "asset": {
       "current": "Checking",

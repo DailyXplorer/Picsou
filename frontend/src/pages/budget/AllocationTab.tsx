@@ -16,6 +16,7 @@ import { PiggyBank } from 'lucide-react'
 import { useAllocation } from '@/features/budget/hooks'
 import type { CashflowPeriod } from '@/types/api'
 import { ColorDot, PeriodToggle } from './budget-utils'
+import { PeriodNavigator } from './PeriodNavigator'
 import { ASSET_CLASS_COLOR, ASSET_CLASS_LABEL_KEY } from './budget-meta'
 
 const chartConfig = { amount: { label: 'Amount' } } satisfies ChartConfig
@@ -23,7 +24,8 @@ const chartConfig = { amount: { label: 'Amount' } } satisfies ChartConfig
 export function AllocationTab() {
   const { t } = useTranslation()
   const [period, setPeriod] = useState<CashflowPeriod>('CYCLE')
-  const { data, isLoading, isError, refetch } = useAllocation(period)
+  const [anchor, setAnchor] = useState<string | undefined>(undefined)
+  const { data, isLoading, isError, refetch } = useAllocation(period, anchor)
 
   const stockData = (data?.stock ?? []).map((s) => ({
     ...s,
@@ -33,9 +35,17 @@ export function AllocationTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">{t('budget.allocation.subtitle')}</p>
-        <PeriodToggle value={period} onChange={setPeriod} />
+        <div className="flex flex-wrap items-center gap-2">
+          <PeriodNavigator
+            period={period}
+            from={data?.from}
+            to={data?.to}
+            onAnchorChange={setAnchor}
+          />
+          <PeriodToggle value={period} onChange={(p) => { setPeriod(p); setAnchor(undefined) }} />
+        </div>
       </div>
 
       {isError && <ErrorState message={t('budget.allocation.error')} onRetry={() => refetch()} />}

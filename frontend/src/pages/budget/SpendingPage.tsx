@@ -13,6 +13,7 @@ import { useCashflowFlow, useSpendingByCategory } from '@/features/budget/hooks'
 import type { CashflowPeriod, CategorySpend } from '@/types/api'
 import { FALLBACK_COLOR } from './budget-meta'
 import { PeriodToggle } from './budget-utils'
+import { PeriodNavigator } from './PeriodNavigator'
 
 /**
  * `/budget/spending` — where the money goes. A flow diagram (Sankey on ≥md, proportion
@@ -169,9 +170,10 @@ function ParentGroupRows({ group, total }: { group: ParentGroup; total: number }
 export function SpendingPage() {
   const { t } = useTranslation()
   const [period, setPeriod] = useState<CashflowPeriod>('CYCLE')
+  const [anchor, setAnchor] = useState<string | undefined>(undefined)
   const isMobile = useIsMobile()
-  const flow = useCashflowFlow(period)
-  const breakdown = useSpendingByCategory(period)
+  const flow = useCashflowFlow(period, anchor)
+  const breakdown = useSpendingByCategory(period, anchor)
 
   const hasFlow = (flow.data?.nodes.length ?? 0) > 0
   const isError = flow.isError || breakdown.isError
@@ -179,9 +181,17 @@ export function SpendingPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">{t('budget.flow.subtitle')}</p>
-        <PeriodToggle value={period} onChange={setPeriod} />
+        <div className="flex flex-wrap items-center gap-2">
+          <PeriodNavigator
+            period={period}
+            from={flow.data?.from}
+            to={flow.data?.to}
+            onAnchorChange={setAnchor}
+          />
+          <PeriodToggle value={period} onChange={(p) => { setPeriod(p); setAnchor(undefined) }} />
+        </div>
       </div>
 
       {isError && (
