@@ -122,6 +122,7 @@ export function PeriodNavigator({
           }).format(new Date(Date.UTC(y, m - 1, 1)))
           return { key: `${y}-${pad2(m)}`, label: itemLabel, anchor: cycleAnchor(y, m, cycleStartDay) }
         })
+        .filter(({ anchor }) => anchor <= todayIso)
       : Array.from({ length: 6 }, (_, i) => {
           const y = currentYear - i
           return { key: String(y), label: String(y), anchor: yearAnchor(y, currentYear, todayIso) }

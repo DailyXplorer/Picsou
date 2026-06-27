@@ -1,13 +1,17 @@
 import '@testing-library/jest-dom'
 import React from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { PeriodNavigator } from './PeriodNavigator'
+
+// ─── Hoisted mock config (accessible inside vi.mock factory) ─────────────────
+
+const mockSettings = vi.hoisted(() => ({ cycleStartDay: 1 }))
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
 vi.mock('@/features/budget/hooks', () => ({
-  useBudgetSettings: () => ({ data: { cycleStartDay: 1 } }),
+  useBudgetSettings: () => ({ data: { cycleStartDay: mockSettings.cycleStartDay } }),
 }))
 
 vi.mock('react-i18next', () => ({
@@ -244,6 +248,38 @@ describe('PeriodNavigator', () => {
       fireEvent.click(items[0])
       const emitted = spy.mock.calls[0]?.[0] as string
       expect(emitted).toBe(getTodayIso())
+    })
+  })
+
+  // ── 6. No future cycle in jump dropdown (cycleStartDay=25) ──────────────────
+  describe('Jump dropdown — CYCLE no-future-cycle guard (cycleStartDay=25)', () => {
+    beforeEach(() => {
+      mockSettings.cycleStartDay = 25
+    })
+
+    afterEach(() => {
+      mockSettings.cycleStartDay = 1
+    })
+
+    it('every rendered cycle item emits an anchor <= todayIso (calendar-safe)', () => {
+      const spy = vi.fn()
+      render(
+        <PeriodNavigator
+          period="CYCLE"
+          from="2024-03-25"
+          to="2024-04-24"
+          onAnchorChange={cb(spy)}
+        />,
+      )
+      const todayIso = getTodayIso()
+      const items = screen.getAllByRole('menuitem')
+
+      // Every item must emit an anchor that is not in the future.
+      items.forEach((item, idx) => {
+        fireEvent.click(item)
+        const emitted = spy.mock.calls[idx]?.[0] as string
+        expect(emitted <= todayIso).toBe(true)
+      })
     })
   })
 })
