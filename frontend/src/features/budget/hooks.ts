@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { budgetApi } from './api'
 import type {
@@ -226,6 +226,7 @@ export function useCashflow(period: CashflowPeriod, anchor?: string) {
     queryKey: ['budget', 'cashflow', period, anchor ?? 'now'],
     queryFn: () => budgetApi.getCashflow(period, anchor),
     staleTime: QUERY_STALE_TIMES.budget,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -234,6 +235,7 @@ export function useAllocation(period: CashflowPeriod, anchor?: string) {
     queryKey: ['budget', 'allocation', period, anchor ?? 'now'],
     queryFn: () => budgetApi.getAllocation(period, anchor),
     staleTime: QUERY_STALE_TIMES.budget,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -242,6 +244,7 @@ export function useCashflowFlow(period: CashflowPeriod, anchor?: string) {
     queryKey: ['budget', 'flow', period, anchor ?? 'now'],
     queryFn: () => budgetApi.getCashflowFlow(period, anchor),
     staleTime: QUERY_STALE_TIMES.budget,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -252,6 +255,7 @@ export function useSpendingByCategory(period: CashflowPeriod, anchor?: string) {
     queryKey: ['budget', 'spending', period, anchor ?? 'now'],
     queryFn: () => budgetApi.getSpendingByCategory(period, anchor),
     staleTime: QUERY_STALE_TIMES.budget,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -260,6 +264,7 @@ export function useCategoryDetail(categoryId: number, period: CashflowPeriod, an
     queryKey: ['budget', 'spending', 'category', categoryId, period, anchor ?? 'now'],
     queryFn: () => budgetApi.getCategoryDetail(categoryId, period, anchor),
     staleTime: QUERY_STALE_TIMES.budget,
+    placeholderData: keepPreviousData,
   })
 }
 

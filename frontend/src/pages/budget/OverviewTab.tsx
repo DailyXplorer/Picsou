@@ -87,14 +87,6 @@ export function OverviewTab() {
   const upcomingTotal = (upcoming ?? []).reduce((s, o) => s + o.expectedAmount, 0)
   const topEnvelopes = [...(budgets ?? [])].sort((a, b) => b.percent - a.percent).slice(0, 4)
 
-  if (isError) {
-    return <ErrorState message={t('budget.overview.error')} onRetry={refetchAll} />
-  }
-
-  if (isLoading) {
-    return <OverviewSkeleton />
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
@@ -105,6 +97,12 @@ export function OverviewTab() {
           onAnchorChange={setAnchor}
         />
       </div>
+      {isError ? (
+        <ErrorState message={t('budget.overview.error')} onRetry={refetchAll} />
+      ) : isLoading ? (
+        <OverviewSkeleton />
+      ) : (
+      <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <RecapCard icon={TrendingUp} label={t('budget.overview.netThisCycle')} index={0}
           onClick={() => navigate('spending')}>
@@ -197,6 +195,8 @@ export function OverviewTab() {
             </div>
           </CardContent>
         </Card>
+      )}
+      </>
       )}
     </div>
   )
