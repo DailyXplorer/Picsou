@@ -976,7 +976,8 @@
       "response": "Response",
       "prev": "Prev",
       "next": "Next",
-      "empty": "No AI calls recorded yet."
+      "empty": "No AI calls recorded yet.",
+      "loading": "Loading…"
     }
   },
   "error": {

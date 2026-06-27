@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScrollText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -70,7 +70,7 @@ function AiCallsDialog() {
       {/* Loading */}
       {isLoading && (
         <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-          <span className="animate-pulse">{t('admin.members.loading')}</span>
+          <span className="animate-pulse">{t('admin.aiActivity.loading')}</span>
         </div>
       )}
 
@@ -104,9 +104,8 @@ function AiCallsDialog() {
               </thead>
               <tbody>
                 {data.items.map((call) => (
-                  <>
+                  <Fragment key={call.id}>
                     <tr
-                      key={call.id}
                       className="cursor-pointer border-b last:border-0 hover:bg-muted/30"
                       onClick={() =>
                         setExpandedId((prev) => (prev === call.id ? null : call.id))
@@ -163,7 +162,7 @@ function AiCallsDialog() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { AiActivitySection } from './AiActivitySection'
 import type { AiCallLogPage } from '@/types/api'
 
@@ -20,7 +20,7 @@ vi.mock('react-i18next', () => ({
 }))
 
 // ── mock data ──────────────────────────────────────────────────────────────
-const MOCK_PAGE: AiCallLogPage = {
+const MOCK_PAGE_SMALL: AiCallLogPage = {
   items: [
     {
       id: 1,
@@ -69,15 +69,91 @@ const MOCK_PAGE: AiCallLogPage = {
   totalTokens: 50,
 }
 
+const MOCK_PAGE_PAGINATED_0: AiCallLogPage = {
+  items: [
+    {
+      id: 1,
+      createdAt: '2026-06-26T10:00:00Z',
+      memberId: 1,
+      transactionId: 42,
+      merchantLabel: 'LIDL',
+      batchId: 'batch-001',
+      provider: 'anthropic',
+      model: 'claude-haiku',
+      prompt: 'Categorize LIDL transaction',
+      response: '{"slug":"groceries","confidence":0.97}',
+      promptTokens: 38,
+      completionTokens: 12,
+      totalTokens: 50,
+      latencyMs: 320,
+      status: 'OK',
+      error: null,
+      chosenSlug: 'groceries',
+      confidence: 0.97,
+      applied: true,
+    },
+  ],
+  total: 120,
+  totalTokens: 500,
+}
+
+const MOCK_PAGE_PAGINATED_50: AiCallLogPage = {
+  items: [
+    {
+      id: 51,
+      createdAt: '2026-06-24T10:00:00Z',
+      memberId: 1,
+      transactionId: 43,
+      merchantLabel: 'Carrefour',
+      batchId: 'batch-002',
+      provider: 'anthropic',
+      model: 'claude-haiku',
+      prompt: 'Categorize Carrefour transaction',
+      response: '{"slug":"groceries","confidence":0.95}',
+      promptTokens: 40,
+      completionTokens: 10,
+      totalTokens: 50,
+      latencyMs: 300,
+      status: 'OK',
+      error: null,
+      chosenSlug: 'groceries',
+      confidence: 0.95,
+      applied: true,
+    },
+  ],
+  total: 120,
+  totalTokens: 500,
+}
+
 // ── hook capture state ─────────────────────────────────────────────────────
 const hookArgs = vi.hoisted(() => ({ limit: 0, offset: 0 }))
+const testState = vi.hoisted(() => ({ testPagination: false }))
 
 vi.mock('@/features/admin/hooks', () => ({
   useAiCalls: (limit: number, offset: number) => {
     hookArgs.limit = limit
     hookArgs.offset = offset
+
+    // Return appropriate mock data based on test context and offset
+    if (testState.testPagination) {
+      if (offset === 0) {
+        return {
+          data: MOCK_PAGE_PAGINATED_0,
+          isLoading: false,
+          isError: false,
+        }
+      } else if (offset === 50) {
+        return {
+          data: MOCK_PAGE_PAGINATED_50,
+          isLoading: false,
+          isError: false,
+        }
+      }
+    }
+
+    // Default: small dataset for non-pagination tests
     return {
-      data: MOCK_PAGE,
+      data: MOCK_PAGE_SMALL,
       isLoading: false,
       isError: false,
     }
@@ -145,5 +221,31 @@ describe('AiActivitySection', () => {
 
     const prevBtn = screen.getByText('admin.aiActivity.prev')
     expect(prevBtn).toBeDisabled()
+  })
+
+  it('Next button advances offset and updates pagination range', async () => {
+    testState.testPagination = true
+    try {
+      render(<AiActivitySection />)
+      openDialog()
+
+      // Initial state: offset 0, showing "1–50 of 120"
+      // Use a regex matcher to handle the en-dash character
+      expect(screen.getByText(/1–50 \/ 120/)).toBeInTheDocument()
+      expect(hookArgs.offset).toBe(0)
+
+      // Click Next button
+      const nextBtn = screen.getByText('admin.aiActivity.next')
+      expect(nextBtn).not.toBeDisabled()
+      fireEvent.click(nextBtn)
+
+      // After click: offset should advance to 50, showing "51–100 of 120"
+      await waitFor(() => {
+        expect(screen.getByText(/51–100 \/ 120/)).toBeInTheDocument()
+      })
+      expect(hookArgs.offset).toBe(50)
+    } finally {
+      testState.testPagination = false
+    }
   })
 })

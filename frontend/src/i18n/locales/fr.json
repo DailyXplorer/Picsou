@@ -976,7 +976,8 @@
       "response": "Réponse",
       "prev": "Précédent",
       "next": "Suivant",
-      "empty": "Aucun appel IA enregistré pour l'instant."
+      "empty": "Aucun appel IA enregistré pour l'instant.",
+      "loading": "Chargement…"
     }
   },
   "error": {
