@@ -150,8 +150,10 @@ public class DashboardService {
                         .multiply(BigDecimal.valueOf(100)).doubleValue();
                     percentPaid = Math.max(0.0, Math.min(100.0, percentPaid));
                 }
-                totalMonthlyPayment = (totalMonthlyPayment == null ? BigDecimal.ZERO : totalMonthlyPayment)
-                    .add(monthlyPayment);
+                if (monthlyPayment != null) {
+                    totalMonthlyPayment = (totalMonthlyPayment == null ? BigDecimal.ZERO : totalMonthlyPayment)
+                        .add(monthlyPayment);
+                }
             }
             liabilities.add(new DashboardResponse.LiabilityEntry(
                 item.accountId(), item.name(), item.color(), item.balanceEur(),

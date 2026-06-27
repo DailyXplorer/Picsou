@@ -179,6 +179,11 @@ public class LoanAmortizationService {
         if (debt.getMonthlyPayment() != null) {
             return debt.getMonthlyPayment().setScale(2, RoundingMode.HALF_UP);
         }
+        // Cannot compute without valid dates — treat as unconfigured
+        if (debt.getStartDate() == null || debt.getEndDate() == null
+                || !debt.getEndDate().isAfter(debt.getStartDate())) {
+            return null;
+        }
         BigDecimal principal = nz(debt.getBorrowedAmount());
         BigDecimal monthlyRate = nz(debt.getInterestRate()).divide(TWELVE, MC);
         int n = computeTotalInstallments(debt.getStartDate(), debt.getEndDate());

@@ -108,4 +108,34 @@ class DashboardServiceLiabilityTest {
         assertThat(entry.percentPaid()).isNull();
         assertThat(result.totalMonthlyPayment()).isNull();
     }
+
+    @Test
+    void liability_with_debt_missing_dates_returns_null_monthlyPayment() {
+        Account loan = new Account();
+        loan.setId(12L);
+        loan.setName("Incomplete loan");
+        loan.setType(AccountType.LOAN);
+        loan.setCurrentBalance(new BigDecimal("-5000"));
+        loan.setCurrency("EUR");
+        loan.setColor("#aabbcc");
+
+        Debt debt = new Debt();
+        debt.setAccount(loan);
+        debt.setBorrowedAmount(new BigDecimal("5000"));
+        // intentionally no startDate / endDate / monthlyPayment
+
+        when(accountRepository.findAllByMemberIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(loan));
+        when(holdingRepository.findByAccount_Id(12L)).thenReturn(List.of());
+        when(priceService.toEur(any(), any(), any())).thenAnswer(inv -> inv.getArgument(0));
+        when(debtRepository.findByAccountIdIn(List.of(12L))).thenReturn(List.of(debt));
+        when(loanAmortizationService.resolveMonthlyPayment(debt)).thenReturn(null);
+        when(historyService.buildHistory(any(), any(Integer.class), any())).thenReturn(List.of());
+        when(goalRepository.findAllByMemberIdOrderByCreatedAtAsc(1L)).thenReturn(List.of());
+
+        DashboardResponse result = dashboardService.getDashboard(1L, null);
+
+        assertThat(result.liabilities()).hasSize(1);
+        assertThat(result.liabilities().get(0).monthlyPayment()).isNull();
+        assertThat(result.totalMonthlyPayment()).isNull();
+    }
 }
