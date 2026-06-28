@@ -28,7 +28,8 @@
     "no": "No",
     "today": "Today",
     "currency": "EUR",
-    "locale": "en-US"
+    "locale": "en-US",
+    "category": "Category"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -113,6 +114,17 @@
     "liabilities": "Liabilities",
     "monthlyPayment": "Monthly payment",
     "loanParamsUnconfigured": "Parameters not configured"
+  },
+  "transactions": {
+    "detail": "Transaction detail",
+    "account": "Account",
+    "filterFrom": "From",
+    "filterTo": "To",
+    "allAccounts": "All accounts",
+    "allCategories": "All categories",
+    "empty": "No transactions for this period.",
+    "error": "Could not load transactions.",
+    "viewAll": "View all transactions"
   },
   "accounts": {
     "title": "Accounts",
@@ -355,6 +367,7 @@
       "allocation": "Allocation",
       "recurring": "Recurring",
       "categorize": "To categorize",
+      "transactions": "Transactions",
       "manage": "Manage"
     },
     "a11y": {

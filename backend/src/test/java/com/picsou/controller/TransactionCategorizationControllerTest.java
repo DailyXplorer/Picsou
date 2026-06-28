@@ -1,6 +1,7 @@
 package com.picsou.controller;
 
 import com.picsou.dto.AiJobStatus;
+import com.picsou.repository.TransactionRepository;
 import com.picsou.service.UserContext;
 import com.picsou.service.budget.AiCategorizationJobService;
 import com.picsou.service.budget.CategorizationService;
@@ -21,6 +22,7 @@ class TransactionCategorizationControllerTest {
     @Mock CategorizationService categorizationService;
     @Mock AiCategorizationJobService jobService;
     @Mock UserContext userContext;
+    @Mock TransactionRepository transactionRepository;
 
     TransactionCategorizationController controller;
 
@@ -28,7 +30,7 @@ class TransactionCategorizationControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new TransactionCategorizationController(categorizationService, jobService, userContext);
+        controller = new TransactionCategorizationController(categorizationService, jobService, userContext, transactionRepository);
         when(userContext.currentMemberId()).thenReturn(MEMBER_ID);
     }
 

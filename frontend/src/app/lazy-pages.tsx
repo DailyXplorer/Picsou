@@ -57,6 +57,9 @@ export const ReviewPage = lazy(() =>
 export const BudgetSettingsPage = lazy(() =>
   import('@/pages/budget/BudgetSettingsPage').then((m) => ({ default: m.BudgetSettingsPage }))
 )
+export const BudgetTransactionsPage = lazy(() =>
+  import('@/pages/budget/BudgetTransactionsPage').then((m) => ({ default: m.BudgetTransactionsPage }))
+)
 export const SyncPage = lazy(() =>
   import('@/pages/sync/SyncPage').then((m) => ({ default: m.SyncPage }))
 )

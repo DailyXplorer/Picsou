@@ -28,7 +28,8 @@
     "no": "Non",
     "today": "Aujourd'hui",
     "currency": "EUR",
-    "locale": "fr-FR"
+    "locale": "fr-FR",
+    "category": "Catégorie"
   },
   "nav": {
     "dashboard": "Tableau de bord",
@@ -113,6 +114,17 @@
     "liabilities": "Dettes",
     "monthlyPayment": "Mensualité totale",
     "loanParamsUnconfigured": "Paramètres non renseignés"
+  },
+  "transactions": {
+    "detail": "Détail de la transaction",
+    "account": "Compte",
+    "filterFrom": "Du",
+    "filterTo": "Au",
+    "allAccounts": "Tous les comptes",
+    "allCategories": "Toutes les catégories",
+    "empty": "Aucune transaction sur cette période.",
+    "error": "Impossible de charger les transactions.",
+    "viewAll": "Voir toutes les transactions"
   },
   "accounts": {
     "title": "Comptes",
@@ -355,6 +367,7 @@
       "allocation": "Allocation",
       "recurring": "Récurrents",
       "categorize": "À catégoriser",
+      "transactions": "Transactions",
       "manage": "Gérer"
     },
     "a11y": {

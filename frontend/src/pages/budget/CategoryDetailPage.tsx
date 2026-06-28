@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { TransactionsList } from '@/components/shared/TransactionsList'
-import { useCategoryDetail, useMerchantLogoUrl } from '@/features/budget/hooks'
+import { useCategoryDetail, useCategories, useCategorize, useMerchantLogoUrl } from '@/features/budget/hooks'
 import type { CashflowPeriod, ChildSpend } from '@/types/api'
 import { FALLBACK_COLOR } from './budget-meta'
 import { PeriodToggle } from './budget-utils'
@@ -54,6 +55,16 @@ export function CategoryDetailPage() {
   const id = Number(categoryId)
   const { data, isLoading, isError, refetch } = useCategoryDetail(id, period, anchor)
   const logoUrlFor = useMerchantLogoUrl()
+  const { data: categories } = useCategories()
+  const categorizeMutation = useCategorize()
+  const qc = useQueryClient()
+
+  function handleCategorize(txId: number, categoryId: number) {
+    categorizeMutation.mutate(
+      { id: txId, data: { categoryId, createRule: false } },
+      { onSuccess: () => qc.invalidateQueries({ queryKey: ['budget'] }) },
+    )
+  }
 
   const backLink = (
     <Link
@@ -144,7 +155,12 @@ export function CategoryDetailPage() {
               {t('budget.detail.empty')}
             </p>
           ) : (
-            <TransactionsList transactions={data.transactions} logoUrlFor={logoUrlFor} />
+            <TransactionsList
+              transactions={data.transactions}
+              logoUrlFor={logoUrlFor}
+              categories={categories}
+              onCategorize={handleCategorize}
+            />
           )}
         </>
       )}

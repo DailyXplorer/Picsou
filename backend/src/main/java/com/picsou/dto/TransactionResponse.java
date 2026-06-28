@@ -28,7 +28,9 @@ public record TransactionResponse(
     String merchantLabel,
     Long merchantBrandId,
     Long aiSuggestedCategoryId,
-    Integer aiConfidence
+    Integer aiConfidence,
+    Long accountId,
+    String accountName
 ) {
     public static TransactionResponse from(Transaction t) {
         return new TransactionResponse(
@@ -52,7 +54,9 @@ public record TransactionResponse(
             t.getMerchantLabel(),
             t.getMerchantBrandId(),
             t.getAiSuggestedCategoryId(),
-            t.getAiConfidence()
+            t.getAiConfidence(),
+            t.getAccount().getId(),
+            t.getAccount().getName()
         );
     }
 }

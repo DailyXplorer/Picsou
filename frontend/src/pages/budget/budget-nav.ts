@@ -3,6 +3,7 @@ import {
   CalendarClock,
   Inbox,
   LayoutGrid,
+  Receipt,
   Settings2,
   TrendingUp,
   Wallet,
@@ -22,6 +23,7 @@ export type BudgetSection =
   | 'subscriptions'
   | 'envelopes'
   | 'review'
+  | 'transactions'
   | 'settings'
 
 export interface BudgetNavItem {
@@ -42,5 +44,6 @@ export const BUDGET_NAV: BudgetNavItem[] = [
   { section: 'subscriptions', to: 'subscriptions', labelKey: 'budget.tab.recurring', icon: CalendarClock },
   { section: 'envelopes', to: 'envelopes', labelKey: 'budget.tab.envelopes', icon: Wallet },
   { section: 'review', to: 'review', labelKey: 'budget.tab.categorize', icon: Inbox, badge: true },
+  { section: 'transactions', to: 'transactions', labelKey: 'budget.tab.transactions', icon: Receipt },
   { section: 'settings', to: 'settings', labelKey: 'budget.tab.manage', icon: Settings2 },
 ]

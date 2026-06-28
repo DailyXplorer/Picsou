@@ -394,6 +394,9 @@ export interface Transaction {
   merchantLabel?: string | null
   /** Matched brand id from the offline knowledge base, or null. */
   merchantBrandId?: number | null
+  /** Account the transaction belongs to (populated by cross-account endpoints). */
+  accountId?: number | null
+  accountName?: string | null
 }
 
 export interface TransactionRequest {

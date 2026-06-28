@@ -359,3 +359,16 @@ export function useUndoRecurring() {
     },
   })
 }
+
+export function useTransactions(params: {
+  from: string
+  to: string
+  accountId?: number
+  categoryId?: number
+}) {
+  return useQuery({
+    queryKey: ['budget', 'transactions', params],
+    queryFn: () => budgetApi.searchTransactions(params.from, params.to, params.accountId, params.categoryId),
+    staleTime: QUERY_STALE_TIMES.budget,
+  })
+}

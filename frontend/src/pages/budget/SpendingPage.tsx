@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Receipt } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CashflowSankey } from '@/components/shared/CashflowSankey'
@@ -183,7 +183,16 @@ export function SpendingPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">{t('budget.flow.subtitle')}</p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">{t('budget.flow.subtitle')}</p>
+          <Link
+            to="/budget/transactions"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Receipt size={12} />
+            {t('transactions.viewAll')}
+          </Link>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <PeriodNavigator
             period={period}

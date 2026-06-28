@@ -23,6 +23,7 @@ import type {
   RulePreviewResponse,
   SpendingByCategoryResponse,
   SpendingDetailResponse,
+  Transaction,
   UncategorizedTransaction,
 } from '@/types/api'
 
@@ -54,6 +55,14 @@ export const budgetApi = {
     api.post<{ categorized: number }>('/categorization-rules/recategorize').then(r => r.data),
   previewRule: (data: RulePreviewRequest) =>
     api.post<RulePreviewResponse>('/categorization-rules/preview', data).then(r => r.data),
+
+  // ─── Cross-account transaction search ────────────────────────────────────
+  searchTransactions: (from: string, to: string, accountId?: number, categoryId?: number) => {
+    const params: Record<string, string | number> = { from, to }
+    if (accountId != null) params.accountId = accountId
+    if (categoryId != null) params.categoryId = categoryId
+    return api.get<Transaction[]>('/transactions', { params }).then(r => r.data)
+  },
 
   // ─── To-categorize inbox ──────────────────────────────────────────────────
   listUncategorized: () =>

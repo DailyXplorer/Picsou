@@ -75,6 +75,21 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
                                                    @Param("from") LocalDate from,
                                                    @Param("to") LocalDate to);
 
+    /** Cross-account search with optional account and category filters, newest first. */
+    @Query("""
+        SELECT t FROM Transaction t
+        WHERE t.account.member.id = :memberId
+        AND t.date BETWEEN :from AND :to
+        AND (:accountId IS NULL OR t.account.id = :accountId)
+        AND (:categoryId IS NULL OR t.categoryRef.id = :categoryId)
+        ORDER BY t.date DESC, t.id DESC
+        """)
+    List<Transaction> searchByMember(@Param("memberId") Long memberId,
+                                     @Param("from") LocalDate from,
+                                     @Param("to") LocalDate to,
+                                     @Param("accountId") Long accountId,
+                                     @Param("categoryId") Long categoryId);
+
     /** One category's transactions for a member over a range, newest first (spending drill). */
     @Query("""
         SELECT t FROM Transaction t
