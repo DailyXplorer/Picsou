@@ -159,6 +159,15 @@ public class RevolutPocketService {
             transactionRepository.save(mirror);
             log.debug("Created mirror leg {} for pocket {}", mirrorExternalId, pocket.getId());
         }
+
+        // Recompute the pocket balance from its transactions (PSD2 never syncs pockets directly).
+        refreshPocketBalance(pocket);
+    }
+
+    private void refreshPocketBalance(Account pocket) {
+        java.math.BigDecimal sum = transactionRepository.sumAmountByAccountId(pocket.getId());
+        pocket.setCurrentBalance(sum);
+        accountRepository.save(pocket);
     }
 
     // ─── Backfill ─────────────────────────────────────────────────────────────
