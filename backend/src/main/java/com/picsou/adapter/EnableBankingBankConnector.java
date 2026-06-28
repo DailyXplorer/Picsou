@@ -4,13 +4,16 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.picsou.config.EnableBankingConfigProvider;
 import com.picsou.exception.SyncException;
 import com.picsou.port.BankConnectorPort;
+import com.picsou.service.EnableBankingCallLogger;
 import io.jsonwebtoken.Jwts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.security.PrivateKey;
@@ -43,6 +46,7 @@ public class EnableBankingBankConnector implements BankConnectorPort {
 
     public EnableBankingBankConnector(
         EnableBankingConfigProvider configProvider,
+        EnableBankingCallLogger callLogger,
         @Value("${app.enablebanking.base-url:https://api.enablebanking.com}") String baseUrl,
         @Value("${app.enablebanking.session-poll-attempts:8}") int sessionPollAttempts,
         @Value("${app.enablebanking.session-poll-delay-ms:2000}") int sessionPollDelayMs
@@ -54,7 +58,32 @@ public class EnableBankingBankConnector implements BankConnectorPort {
             .baseUrl(baseUrl)
             .defaultHeader("Accept", "application/json")
             .defaultHeader("Content-Type", "application/json")
+            .filter(buildLoggingFilter(callLogger))
             .build();
+    }
+
+    /**
+     * Captures every Enable Banking HTTP call (method, URL, response status + body) into the
+     * in-memory call logger for admin debugging.
+     * Uses {@code bodyToMono(String)} to consume the response body, logs it, then reconstructs
+     * the {@link org.springframework.web.reactive.function.client.ClientResponse} via
+     * {@code mutate().body(String)} so downstream deserialization is unaffected.
+     */
+    private static ExchangeFilterFunction buildLoggingFilter(EnableBankingCallLogger callLogger) {
+        return (request, next) -> {
+            String method = request.method().name();
+            String url = request.url().toString();
+            return next.exchange(request)
+                .flatMap(response -> {
+                    int status = response.statusCode().value();
+                    return response.bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        .map(body -> {
+                            callLogger.log(method, url, "", status, body);
+                            return response.mutate().body(body).build();
+                        });
+                });
+        };
     }
 
     private String applicationId() {

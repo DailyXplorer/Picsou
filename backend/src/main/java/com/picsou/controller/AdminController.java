@@ -11,6 +11,7 @@ import com.picsou.dto.AiTestResponse;
 import com.picsou.dto.EnableBankingImportRequest;
 import com.picsou.dto.EnableBankingKeypairResponse;
 import com.picsou.service.AiCallLogService;
+import com.picsou.service.EnableBankingCallLogger;
 import com.picsou.service.EnableBankingKeyPairService;
 import com.picsou.service.IntegrationsService;
 import com.picsou.service.SetupService;
@@ -38,6 +39,7 @@ public class AdminController {
     private final EnableBankingKeyPairService keyPairService;
     private final AiConfigProvider aiConfigProvider;
     private final AiCallLogService aiCallLogService;
+    private final EnableBankingCallLogger ebCallLogger;
     private final String envAllowedOrigins;
 
     public AdminController(SetupService setupService,
@@ -46,6 +48,7 @@ public class AdminController {
                            EnableBankingKeyPairService keyPairService,
                            AiConfigProvider aiConfigProvider,
                            AiCallLogService aiCallLogService,
+                           EnableBankingCallLogger ebCallLogger,
                            @Value("${app.cors.allowed-origins:}") String envAllowedOrigins) {
         this.setupService = setupService;
         this.integrationsService = integrationsService;
@@ -53,6 +56,7 @@ public class AdminController {
         this.keyPairService = keyPairService;
         this.aiConfigProvider = aiConfigProvider;
         this.aiCallLogService = aiCallLogService;
+        this.ebCallLogger = ebCallLogger;
         this.envAllowedOrigins = envAllowedOrigins;
     }
 
@@ -169,5 +173,16 @@ public class AdminController {
             @RequestParam(defaultValue = "50") int limit,
             @RequestParam(defaultValue = "0") int offset) {
         return aiCallLogService.list(limit, offset);
+    }
+
+    @GetMapping("/enablebanking/call-log")
+    public List<EnableBankingCallLogger.CallEntry> ebCallLog() {
+        return ebCallLogger.entries();
+    }
+
+    @DeleteMapping("/enablebanking/call-log")
+    public ResponseEntity<Void> clearEbCallLog() {
+        ebCallLogger.clear();
+        return ResponseEntity.noContent().build();
     }
 }

@@ -86,4 +86,19 @@ export const adminApi = {
 
   listAiCalls: (limit: number, offset: number) =>
     api.get<AiCallLogPage>('/admin/ai-calls', { params: { limit, offset } }).then(r => r.data),
+
+  getEbCallLog: () =>
+    api.get<EbCallEntry[]>('/admin/enablebanking/call-log').then(r => r.data),
+
+  clearEbCallLog: () =>
+    api.delete<void>('/admin/enablebanking/call-log').then(r => r.data),
+}
+
+export interface EbCallEntry {
+  timestamp: string
+  method: string
+  url: string
+  requestBody: string
+  responseStatus: number
+  responseBody: string
 }

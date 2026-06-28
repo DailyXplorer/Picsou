@@ -83,3 +83,20 @@ export function useAiCalls(limit: number, offset: number) {
     staleTime: 10_000,
   })
 }
+
+export function useEbCallLog(enabled: boolean) {
+  return useQuery({
+    queryKey: [...adminKeys.all, 'eb-call-log'],
+    queryFn: adminApi.getEbCallLog,
+    enabled,
+    staleTime: 0,
+  })
+}
+
+export function useClearEbCallLog() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: adminApi.clearEbCallLog,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...adminKeys.all, 'eb-call-log'] }),
+  })
+}
