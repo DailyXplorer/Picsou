@@ -135,6 +135,8 @@
     "currentBalance": "Solde actuel",
     "tabOverview": "Aperçu",
     "snapshots": "Relevés mensuels",
+    "changeCategory": "Changer la catégorie",
+    "uncategorized": "Non catégorisé",
     "addSnapshot": "Enregistrer",
     "monthlyHistory": "Solde en fin de mois",
     "evolution": "Évolution des soldes",

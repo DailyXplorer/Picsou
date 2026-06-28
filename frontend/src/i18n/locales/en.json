@@ -135,6 +135,8 @@
     "currentBalance": "Current balance",
     "tabOverview": "Overview",
     "snapshots": "Monthly snapshots",
+    "changeCategory": "Change category",
+    "uncategorized": "Uncategorized",
     "addSnapshot": "Save",
     "monthlyHistory": "Month-end balance",
     "evolution": "Balance evolution",

@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   useAccount, useAccountHistory, useHoldingsWithLivePrices,
   useAccountTransactions, useAddTransaction, useDeleteTransaction,
   useUpdateTransaction, useUpdateHolding, useDeleteHolding
 } from '@/features/accounts/hooks'
+import { useCategories, useCategorize } from '@/features/budget/hooks'
 import { useHistory } from '@/features/history/hooks'
 import { BalanceHistoryChart } from '@/components/shared/BalanceHistoryChart'
 import { NetWorthChart } from '@/components/shared/NetWorthChart'
@@ -49,12 +51,26 @@ export function AccountDetailPage() {
   const deleteHoldingMutation = useDeleteHolding(accountId)
   const { data: pnlData } = useHistory(accountId ? [accountId] : [], 12)
   const { data: savingsSuggestions } = useSavingsSuggestions()
+  const { data: categories } = useCategories()
+  const categorizeMutation = useCategorize()
+  const qc = useQueryClient()
 
   const [showHistory, setShowHistory] = useState(false)
   const [showAddTx, setShowAddTx] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [editingHolding, setEditingHolding] = useState<HoldingResponse | null>(null)
   const [range, setRange] = useState<TimeRange>('1Y')
+
+  function handleCategorize(txId: number, categoryId: number) {
+    categorizeMutation.mutate(
+      { id: txId, data: { categoryId, createRule: false } },
+      {
+        // The hook's own onSuccess already invalidates ['budget'] and ['dashboard'].
+        // Additionally refresh the account transaction list so the new category shows.
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['accounts', accountId, 'transactions'] }),
+      },
+    )
+  }
 
   if (!account && !isLoading) return null
 
@@ -141,6 +157,8 @@ export function AccountDetailPage() {
             transactions={transactions}
             onDelete={(txId) => deleteTxMutation.mutate(txId)}
             onEdit={(tx) => setEditingTx(tx)}
+            categories={categories}
+            onCategorize={handleCategorize}
           />
         </>
       ) : (
