@@ -412,7 +412,7 @@ export interface TransactionRequest {
 
 /** Drives cashflow/envelope/allocation behaviour. Transfers feed only allocation. */
 export type CategoryKind = 'INCOME' | 'EXPENSE' | 'TRANSFER'
-export type RuleMatchType = 'COUNTERPARTY' | 'KEYWORD'
+export type RuleMatchType = 'COUNTERPARTY' | 'KEYWORD' | 'KEYWORDS_ALL' | 'KEYWORDS_ANY'
 export type RuleSource = 'USER' | 'AUTO'
 export type RecurringCadence = 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
 export type RecurringStatus = 'SUGGESTED' | 'CONFIRMED' | 'IGNORED'
@@ -467,6 +467,30 @@ export interface CategorizationRuleRequest {
 export interface CategorizeRequest {
   categoryId: number
   createRule: boolean
+  /** Explicit rule pattern from RuleWordPicker (KEYWORDS_ALL/KEYWORDS_ANY). When set, ruleMatchType must also be set. */
+  rulePattern?: string
+  /** Match type for the explicit rule pattern. */
+  ruleMatchType?: RuleMatchType
+  /** Cherry-pick: if non-empty, retro-apply the rule only to these transaction ids. */
+  applyToTransactionIds?: number[]
+}
+
+export interface RulePreviewRequest {
+  matchType: RuleMatchType
+  pattern: string
+}
+
+export interface RulePreviewTransaction {
+  id: number
+  date: string
+  label: string
+  amount: number
+  currentCategoryName: string | null
+}
+
+export interface RulePreviewResponse {
+  matchCount: number
+  transactions: RulePreviewTransaction[]
 }
 
 /** A transaction still missing a managed category (the "to categorize" inbox). */

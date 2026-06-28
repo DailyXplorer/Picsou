@@ -43,7 +43,9 @@ public class TransactionCategorizationController {
     @PutMapping("/{id}/category")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void categorize(@PathVariable Long id, @Valid @RequestBody CategorizeRequest req) {
-        categorizationService.categorize(id, req.categoryId(), req.createRule(), userContext.currentMemberId());
+        categorizationService.categorize(id, req.categoryId(), req.createRule(),
+            req.rulePattern(), req.ruleMatchType(), req.applyToTransactionIds(),
+            userContext.currentMemberId());
     }
 
     /**

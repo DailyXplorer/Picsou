@@ -144,6 +144,20 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     @Query("UPDATE Transaction t SET t.categoryRef = NULL WHERE t.categoryRef.id = :categoryId")
     void clearCategory(@Param("categoryId") Long categoryId);
 
+    // ─── Rule preview ────────────────────────────────────────────────────────
+
+    /**
+     * All member transactions that could be changed by a new rule:
+     * those without a category or with a non-manual (auto/brand/AI) category assignment.
+     */
+    @Query("""
+        SELECT t FROM Transaction t
+        WHERE t.account.member.id = :memberId
+          AND (t.categoryRef IS NULL OR t.categoryManual = false)
+        ORDER BY t.date DESC, t.id DESC
+        """)
+    List<Transaction> findChangeable(@Param("memberId") Long memberId);
+
     // ─── Savings livrets (1.1.0) ──────────────────────────────────────────────
 
     /**

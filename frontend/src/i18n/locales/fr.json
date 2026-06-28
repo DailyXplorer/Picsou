@@ -268,12 +268,31 @@
         "real_estate": "Immobilier"
       },
       "countryNames": {
-        "US": "États-Unis", "NL": "Pays-Bas", "CA": "Canada", "FR": "France",
-        "GB": "Royaume-Uni", "DE": "Allemagne", "CH": "Suisse", "IE": "Irlande",
-        "JP": "Japon", "CN": "Chine", "LU": "Luxembourg", "AU": "Australie",
-        "ES": "Espagne", "IT": "Italie", "SE": "Suède", "DK": "Danemark", "HK": "Hong Kong",
-        "KR": "Corée du Sud", "TW": "Taïwan", "IN": "Inde", "BR": "Brésil", "BE": "Belgique",
-        "FI": "Finlande", "NO": "Norvège", "SG": "Singapour"
+        "US": "États-Unis",
+        "NL": "Pays-Bas",
+        "CA": "Canada",
+        "FR": "France",
+        "GB": "Royaume-Uni",
+        "DE": "Allemagne",
+        "CH": "Suisse",
+        "IE": "Irlande",
+        "JP": "Japon",
+        "CN": "Chine",
+        "LU": "Luxembourg",
+        "AU": "Australie",
+        "ES": "Espagne",
+        "IT": "Italie",
+        "SE": "Suède",
+        "DK": "Danemark",
+        "HK": "Hong Kong",
+        "KR": "Corée du Sud",
+        "TW": "Taïwan",
+        "IN": "Inde",
+        "BR": "Brésil",
+        "BE": "Belgique",
+        "FI": "Finlande",
+        "NO": "Norvège",
+        "SG": "Singapour"
       }
     }
   },
@@ -505,7 +524,9 @@
       "emptyHint": "Les nouvelles transactions à classer apparaîtront ici.",
       "error": "Impossible de charger les transactions à catégoriser.",
       "aiProgress": "Catégorisation IA… {{processed}}/{{total}}",
-      "aiDone": "IA terminée : {{applied}} appliquées, {{suggested}} suggérées"
+      "aiDone": "IA terminée : {{applied}} appliquées, {{suggested}} suggérées",
+      "createRule": "Créer une règle",
+      "editRule": "Modifier la règle"
     },
     "category": {
       "title": "Catégories",
@@ -533,13 +554,26 @@
       "error": "Impossible de charger les règles.",
       "learned": "Auto",
       "matchType": "Critère",
-      "pattern": "Motif",
+      "pattern": "Modèle",
       "category": "Catégorie",
       "formHint": "Toute transaction correspondante sera catégorisée automatiquement.",
       "match": {
         "counterparty": "Bénéficiaire",
-        "keyword": "Mot-clé"
-      }
+        "keyword": "Mot-clé",
+        "keywords_all": "Tous les mots (ET)",
+        "keywords_any": "Au moins un mot (OU)"
+      },
+      "wordPickerTitle": "Sélectionner les mots à faire correspondre",
+      "matchMode": "Mode de correspondance",
+      "matchAll": "Tous les mots (ET)",
+      "matchAny": "Au moins un mot (OU)",
+      "previewLoading": "Chargement de l’aperçu…",
+      "previewCount": "{{count}} transaction sera modifiée",
+      "previewCount_other": "{{count}} transactions seront modifiées",
+      "previewCapped": "Affichage des 200 premières correspondances sur {{count}}",
+      "createRule": "Créer une règle",
+      "editRule": "Modifier la règle",
+      "ruleActive": "Règle : {{pattern}}"
     },
     "settings": {
       "cycleTitle": "Jour de paie",
@@ -848,16 +882,46 @@
     "revokeTitle": "Révoquer cette clé ?",
     "revokeDescription": "Tout client MCP utilisant cette clé perd l'accès immédiatement. Action irréversible.",
     "scopes": {
-      "accounts_read": { "label": "Comptes", "desc": "Voir les comptes, soldes, positions et historique" },
-      "transactions_read": { "label": "Transactions", "desc": "Voir les transactions" },
-      "goals_read": { "label": "Objectifs", "desc": "Voir les objectifs d'épargne" },
-      "dashboard_read": { "label": "Tableau de bord", "desc": "Voir le patrimoine, le tableau de bord et les +/- values" },
-      "prices_read": { "label": "Cours", "desc": "Consulter les cours des actifs" },
-      "family_read": { "label": "Famille", "desc": "Voir le tableau de bord familial partagé" },
-      "accounts_write": { "label": "Comptes", "desc": "Créer et modifier comptes manuels, soldes et positions" },
-      "transactions_write": { "label": "Transactions", "desc": "Ajouter, modifier et supprimer des transactions manuelles" },
-      "goals_write": { "label": "Objectifs", "desc": "Créer, modifier et supprimer objectifs et contributions" },
-      "sync_trigger": { "label": "Synchronisation", "desc": "Rafraîchir les connexions bancaires, crypto et courtier existantes" }
+      "accounts_read": {
+        "label": "Comptes",
+        "desc": "Voir les comptes, soldes, positions et historique"
+      },
+      "transactions_read": {
+        "label": "Transactions",
+        "desc": "Voir les transactions"
+      },
+      "goals_read": {
+        "label": "Objectifs",
+        "desc": "Voir les objectifs d'épargne"
+      },
+      "dashboard_read": {
+        "label": "Tableau de bord",
+        "desc": "Voir le patrimoine, le tableau de bord et les +/- values"
+      },
+      "prices_read": {
+        "label": "Cours",
+        "desc": "Consulter les cours des actifs"
+      },
+      "family_read": {
+        "label": "Famille",
+        "desc": "Voir le tableau de bord familial partagé"
+      },
+      "accounts_write": {
+        "label": "Comptes",
+        "desc": "Créer et modifier comptes manuels, soldes et positions"
+      },
+      "transactions_write": {
+        "label": "Transactions",
+        "desc": "Ajouter, modifier et supprimer des transactions manuelles"
+      },
+      "goals_write": {
+        "label": "Objectifs",
+        "desc": "Créer, modifier et supprimer objectifs et contributions"
+      },
+      "sync_trigger": {
+        "label": "Synchronisation",
+        "desc": "Rafraîchir les connexions bancaires, crypto et courtier existantes"
+      }
     }
   },
   "admin": {

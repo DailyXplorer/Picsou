@@ -2,6 +2,7 @@ package com.picsou.controller;
 
 import com.picsou.dto.CategorizationRuleRequest;
 import com.picsou.dto.CategorizationRuleResponse;
+import com.picsou.dto.RulePreviewRequest;
 import com.picsou.service.UserContext;
 import com.picsou.service.budget.CategorizationService;
 import jakarta.validation.Valid;
@@ -54,5 +55,13 @@ public class CategorizationRuleController {
     public Map<String, Integer> recategorize() {
         int count = categorizationService.recategorizeUncategorized(userContext.currentMemberId());
         return Map.of("categorized", count);
+    }
+
+    /** Preview matching uncategorized transactions for a rule before creating it. */
+    @PostMapping("/preview")
+    public CategorizationService.RulePreviewResult preview(
+            @Valid @RequestBody RulePreviewRequest req) {
+        return categorizationService.previewRule(req.matchType(), req.pattern(),
+            userContext.currentMemberId());
     }
 }

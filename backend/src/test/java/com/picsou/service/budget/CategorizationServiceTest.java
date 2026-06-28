@@ -372,4 +372,135 @@ class CategorizationServiceTest {
         assertThat(result).doesNotContainKey(42L);
         assertThat(unc.getCategoryRef()).isEqualTo(existing);
     }
+
+    // ─── KEYWORDS_ALL match type ──────────────────────────────────────────────
+
+    @Test
+    void apply_keywordsAllRule_requiresAllTokens_caseInsensitive() {
+        Category groceries = category(1L, CategoryKind.EXPENSE, "Courses");
+        List<CategorizationRule> rules = List.of(rule(RuleMatchType.KEYWORDS_ALL, "carrefour city", groceries, 0));
+
+        // All tokens present
+        Transaction t = tx("CARREFOUR CITY", "CB CARREFOUR CITY PARIS");
+        assertThat(service.apply(t, rules)).isTrue();
+        assertThat(t.getCategoryRef()).isEqualTo(groceries);
+    }
+
+    @Test
+    void apply_keywordsAllRule_failsWhenOneTokenMissing() {
+        Category groceries = category(1L, CategoryKind.EXPENSE, "Courses");
+        List<CategorizationRule> rules = List.of(rule(RuleMatchType.KEYWORDS_ALL, "carrefour bio", groceries, 0));
+
+        // "bio" is absent
+        Transaction t = tx("CARREFOUR CITY", "CB CARREFOUR CITY PARIS");
+        assertThat(service.apply(t, rules)).isFalse();
+        assertThat(t.getCategoryRef()).isNull();
+    }
+
+    @Test
+    void apply_keywordsAllRule_orderIndependent() {
+        Category groceries = category(1L, CategoryKind.EXPENSE, "Courses");
+        List<CategorizationRule> rules = List.of(rule(RuleMatchType.KEYWORDS_ALL, "city carrefour", groceries, 0));
+
+        Transaction t = tx("CARREFOUR CITY", "CB CARREFOUR CITY PARIS");
+        assertThat(service.apply(t, rules)).isTrue();
+    }
+
+    // ─── KEYWORDS_ANY match type ──────────────────────────────────────────────
+
+    @Test
+    void apply_keywordsAnyRule_matchesWhenAtLeastOneTokenPresent() {
+        Category subs = category(2L, CategoryKind.EXPENSE, "Abonnements");
+        List<CategorizationRule> rules = List.of(rule(RuleMatchType.KEYWORDS_ANY, "netflix spotify", subs, 0));
+
+        Transaction t = tx(null, "PRLV SPOTIFY.COM");
+        assertThat(service.apply(t, rules)).isTrue();
+        assertThat(t.getCategoryRef()).isEqualTo(subs);
+    }
+
+    @Test
+    void apply_keywordsAnyRule_failsWhenNoTokenPresent() {
+        Category subs = category(2L, CategoryKind.EXPENSE, "Abonnements");
+        List<CategorizationRule> rules = List.of(rule(RuleMatchType.KEYWORDS_ANY, "netflix spotify", subs, 0));
+
+        Transaction t = tx("AMAZON", "AMZN MKTPLACE");
+        assertThat(service.apply(t, rules)).isFalse();
+    }
+
+    // ─── merchantLabel as match source ────────────────────────────────────────
+
+    @Test
+    void apply_keywordRule_matchesMerchantLabel() {
+        Category restaurants = category(3L, CategoryKind.EXPENSE, "Restaurants");
+        // Pattern "mcdonald" is a substring of the merchantLabel "McDonald's" (lowercased: "mcdonald's")
+        // but NOT a substring of the counterparty "MC DONALD'S FR 7521" (space between MC and DONALD'S)
+        // — so this test specifically exercises the merchantLabel source.
+        List<CategorizationRule> rules = List.of(rule(RuleMatchType.KEYWORD, "mcdonald", restaurants, 0));
+
+        Transaction t = Transaction.builder()
+            .counterparty("MC DONALD'S FR 7521")
+            .description("CB 7521")
+            .merchantLabel("McDonald's")
+            .build();
+        assertThat(service.apply(t, rules)).isTrue();
+        assertThat(t.getCategoryRef()).isEqualTo(restaurants);
+    }
+
+    @Test
+    void apply_keywordsAllRule_matchesMerchantLabel() {
+        Category restaurants = category(3L, CategoryKind.EXPENSE, "Restaurants");
+        List<CategorizationRule> rules = List.of(rule(RuleMatchType.KEYWORDS_ALL, "mc donald", restaurants, 0));
+
+        Transaction t = Transaction.builder()
+            .counterparty("MC DONALD'S")
+            .description("CB")
+            .merchantLabel("Mc Donald's Paris")
+            .build();
+        // "mc" and "donald" must both appear anywhere in the sources
+        assertThat(service.apply(t, rules)).isTrue();
+    }
+
+    // ─── manual-override guard with categoryManual ────────────────────────────
+
+    @Test
+    void apply_neverOverridesManuallySetCategory() {
+        Category existing = category(5L, CategoryKind.EXPENSE, "Manual");
+        Category groceries = category(1L, CategoryKind.EXPENSE, "Courses");
+        List<CategorizationRule> rules = List.of(rule(RuleMatchType.COUNTERPARTY, "Carrefour", groceries, 0));
+
+        Transaction t = tx("CARREFOUR", "CB CARREFOUR");
+        t.setCategoryRef(existing);
+        t.setCategoryManual(true);
+
+        assertThat(service.apply(t, rules)).isFalse();
+        assertThat(t.getCategoryRef()).isEqualTo(existing);
+    }
+
+    // ─── learnRule idempotency for new types ─────────────────────────────────
+
+    @Test
+    void learnRuleInternal_isIdempotent_forKeywordsAll() {
+        Category groceries = category(1L, CategoryKind.EXPENSE, "Courses");
+        CategorizationRule existing = rule(RuleMatchType.KEYWORDS_ALL, "carrefour city", groceries, 0);
+        when(ruleRepository.findFirstByMemberIdAndMatchTypeAndPatternIgnoreCase(
+            MEMBER_ID, RuleMatchType.KEYWORDS_ALL, "carrefour city")).thenReturn(Optional.of(existing));
+
+        CategorizationRule result = service.learnRuleInternal("carrefour city", RuleMatchType.KEYWORDS_ALL, 1L, MEMBER_ID);
+
+        assertThat(result).isEqualTo(existing);
+        verify(ruleRepository, never()).save(any());
+    }
+
+    @Test
+    void learnRuleInternal_isIdempotent_forKeywordsAny() {
+        Category subs = category(2L, CategoryKind.EXPENSE, "Abonnements");
+        CategorizationRule existing = rule(RuleMatchType.KEYWORDS_ANY, "netflix spotify", subs, 0);
+        when(ruleRepository.findFirstByMemberIdAndMatchTypeAndPatternIgnoreCase(
+            MEMBER_ID, RuleMatchType.KEYWORDS_ANY, "netflix spotify")).thenReturn(Optional.of(existing));
+
+        CategorizationRule result = service.learnRuleInternal("netflix spotify", RuleMatchType.KEYWORDS_ANY, 2L, MEMBER_ID);
+
+        assertThat(result).isEqualTo(existing);
+        verify(ruleRepository, never()).save(any());
+    }
 }

@@ -5,6 +5,7 @@ import com.picsou.dto.CategorizationRuleResponse;
 import com.picsou.dto.CategoryResponse;
 import com.picsou.dto.TransactionResponse;
 import com.picsou.exception.ResourceNotFoundException;
+import com.picsou.model.AiCategorizationMode;
 import com.picsou.model.BudgetSettings;
 import com.picsou.model.CategorizationRule;
 import com.picsou.model.Category;
@@ -22,8 +23,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.picsou.model.AiCategorizationMode;
-
+import java.math.BigDecimal;
+import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -37,13 +39,12 @@ import java.util.stream.Collectors;
  * Assigns managed {@link Category} to transactions. Precedence is strict and never inverted:
  * <ol>
  *   <li><b>USER / AUTO rules</b> — {@link #apply} runs the member's rules (highest priority
- *       first) over a transaction's counterparty/description.</li>
+ *       first) over a transaction's counterparty/description/merchantLabel.</li>
  *   <li><b>BRAND</b> — when no rule matches, {@link #autoCategorize} falls back to the offline
  *       {@link MerchantKnowledgeBase}: the matched brand's {@code default_category_slug} resolves
  *       to the member's own category. Zero-config — works before the member tags anything.</li>
- *   <li><b>Manual</b> — {@link #categorize} sets a category by hand and can {@link #learnRule
- *       learn} a COUNTERPARTY rule so the next occurrence is automatic (a USER rule, which wins
- *       over BRAND forever after).</li>
+ *   <li><b>Manual</b> — {@link #categorize} sets a category by hand (sets {@code categoryManual=true})
+ *       and can learn a rule so future transactions categorize automatically.</li>
  *   <li><b>Bulk</b> — {@link #recategorizeUncategorized} re-runs the whole pipeline over
  *       everything still uncategorized (e.g. after a new rule, or a KB version bump).</li>
  * </ol>
@@ -139,8 +140,9 @@ public class CategorizationService {
         }
         String counterparty = safeLower(tx.getCounterparty());
         String description = safeLower(tx.getDescription());
+        String merchantLabel = safeLower(tx.getMerchantLabel());
         for (CategorizationRule rule : rules) {
-            if (matches(rule, counterparty, description)) {
+            if (matches(rule, counterparty, description, merchantLabel)) {
                 tx.setCategoryRef(rule.getCategory());
                 return true;
             }
@@ -241,58 +243,179 @@ public class CategorizationService {
             .collect(Collectors.toMap(Category::getSlug, Function.identity(), (first, dup) -> first));
     }
 
-    private boolean matches(CategorizationRule rule, String counterparty, String description) {
+    private boolean matches(CategorizationRule rule, String counterparty, String description, String merchantLabel) {
         String pattern = rule.getPattern().toLowerCase(Locale.ROOT);
-        if (rule.getMatchType() == RuleMatchType.COUNTERPARTY) {
-            return !counterparty.isEmpty() && counterparty.equals(pattern);
+        return switch (rule.getMatchType()) {
+            case COUNTERPARTY -> !counterparty.isEmpty() && counterparty.equals(pattern);
+            case KEYWORD -> anyContains(pattern, counterparty, description, merchantLabel);
+            case KEYWORDS_ALL -> {
+                String[] tokens = pattern.split("\\s+");
+                yield Arrays.stream(tokens).allMatch(tok ->
+                    anyContains(tok, counterparty, description, merchantLabel));
+            }
+            case KEYWORDS_ANY -> {
+                String[] tokens = pattern.split("\\s+");
+                yield Arrays.stream(tokens).anyMatch(tok ->
+                    anyContains(tok, counterparty, description, merchantLabel));
+            }
+        };
+    }
+
+    private static boolean anyContains(String sub, String... sources) {
+        for (String s : sources) {
+            if (!s.isEmpty() && s.contains(sub)) return true;
         }
-        // KEYWORD: substring match against either field
-        return counterparty.contains(pattern) || description.contains(pattern);
+        return false;
     }
 
     // ─── Manual categorization + learning ─────────────────────────────────────
 
     /**
-     * Assign a category to a transaction by hand. When {@code createRule} is set and the
-     * transaction has a counterparty, also learn an AUTO COUNTERPARTY rule so future
-     * transactions from the same counterparty categorize themselves.
+     * Assign a category to a transaction by hand (sets {@code categoryManual = true}).
+     * Optionally learns a rule from the assignment, and retro-applies it to matching uncategorized
+     * transactions. When {@code applyToTransactionIds} is non-empty, ONLY those transactions get
+     * the retro-apply (cherry-pick); otherwise every matching uncategorized tx is covered.
      */
     @Transactional
-    public void categorize(Long transactionId, Long categoryId, boolean createRule, Long memberId) {
+    public void categorize(Long transactionId, Long categoryId, boolean createRule,
+                           String rulePattern, RuleMatchType ruleMatchType,
+                           List<Long> applyToTransactionIds, Long memberId) {
         Transaction tx = transactionRepository.findByIdAndAccountMemberId(transactionId, memberId)
             .orElseThrow(() -> ResourceNotFoundException.transaction(transactionId));
         Category category = requireCategory(categoryId, memberId);
         tx.setCategoryRef(category);
+        tx.setCategoryManual(true);
         transactionRepository.save(tx);
 
-        if (createRule && tx.getCounterparty() != null && !tx.getCounterparty().isBlank()) {
-            learnRule(tx.getCounterparty().trim(), categoryId, memberId);
+        if (!createRule) {
+            return;
         }
+        // Determine pattern and matchType for the rule to create
+        String effectivePattern;
+        RuleMatchType effectiveMatchType;
+        if (rulePattern != null && !rulePattern.isBlank() && ruleMatchType != null) {
+            effectivePattern = rulePattern.trim();
+            effectiveMatchType = ruleMatchType;
+        } else if (tx.getCounterparty() != null && !tx.getCounterparty().isBlank()) {
+            effectivePattern = tx.getCounterparty().trim();
+            effectiveMatchType = RuleMatchType.COUNTERPARTY;
+        } else {
+            return;
+        }
+
+        // Create or update the rule (idempotent)
+        CategorizationRule rule = learnRuleInternal(effectivePattern, effectiveMatchType, categoryId, memberId);
+
+        // Retro-apply: categorize matching uncategorized (or non-manually-categorized) transactions.
+        retroApply(rule, applyToTransactionIds, memberId);
     }
 
     /**
-     * Create an AUTO COUNTERPARTY rule for {@code counterparty → category} if one does not
-     * already exist for that exact counterparty. Idempotent so repeated manual
-     * categorizations of the same merchant don't pile up duplicate rules.
+     * Create an AUTO rule for {@code pattern + matchType → category} if one does not
+     * already exist. Idempotent on (matchType, pattern). Returns the existing or newly created rule.
+     */
+    @Transactional
+    public CategorizationRule learnRuleInternal(String pattern, RuleMatchType matchType, Long categoryId, Long memberId) {
+        return ruleRepository
+            .findFirstByMemberIdAndMatchTypeAndPatternIgnoreCase(memberId, matchType, pattern)
+            .orElseGet(() -> {
+                Category category = requireCategory(categoryId, memberId);
+                return ruleRepository.save(CategorizationRule.builder()
+                    .member(familyMemberRepository.getReferenceById(memberId))
+                    .matchType(matchType)
+                    .pattern(pattern)
+                    .category(category)
+                    .priority(0)
+                    .source(RuleSource.AUTO)
+                    .build());
+            });
+    }
+
+    /**
+     * Legacy public entry point kept for backward compatibility (auto COUNTERPARTY rule).
      */
     @Transactional
     public void learnRule(String counterparty, Long categoryId, Long memberId) {
-        boolean exists = ruleRepository
-            .findFirstByMemberIdAndMatchTypeAndPatternIgnoreCase(memberId, RuleMatchType.COUNTERPARTY, counterparty)
-            .isPresent();
-        if (exists) {
-            return;
-        }
-        Category category = requireCategory(categoryId, memberId);
-        ruleRepository.save(CategorizationRule.builder()
-            .member(familyMemberRepository.getReferenceById(memberId))
-            .matchType(RuleMatchType.COUNTERPARTY)
-            .pattern(counterparty)
-            .category(category)
-            .priority(0)
-            .source(RuleSource.AUTO)
-            .build());
+        learnRuleInternal(counterparty, RuleMatchType.COUNTERPARTY, categoryId, memberId);
     }
+
+    /**
+     * Retro-apply a rule to matching uncategorized transactions (those where
+     * {@code categoryRef IS NULL OR categoryManual = false}).
+     * If {@code explicitIds} is non-empty, only those ids are considered (cherry-pick).
+     * Skips transactions that were manually categorized (categoryManual = true).
+     */
+    @Transactional
+    public void retroApply(CategorizationRule rule, List<Long> explicitIds, Long memberId) {
+        List<Transaction> candidates;
+        if (explicitIds != null && !explicitIds.isEmpty()) {
+            candidates = transactionRepository.findAllByIdInAndAccountMemberId(explicitIds, memberId);
+        } else {
+            candidates = transactionRepository.findUncategorizedByMemberId(memberId);
+        }
+        for (Transaction tx : candidates) {
+            // Skip already manually categorized rows
+            if (tx.isCategoryManual()) {
+                continue;
+            }
+            // Skip rows that already have a category (unless explicitly cherry-picked)
+            if (tx.getCategoryRef() != null && (explicitIds == null || explicitIds.isEmpty())) {
+                continue;
+            }
+            String counterparty = safeLower(tx.getCounterparty());
+            String description = safeLower(tx.getDescription());
+            String merchantLabel = safeLower(tx.getMerchantLabel());
+            if (matches(rule, counterparty, description, merchantLabel)) {
+                tx.setCategoryRef(rule.getCategory());
+                transactionRepository.save(tx);
+            }
+        }
+    }
+
+    /** Preview result: total matching rows + a capped list for display. */
+    public record RulePreviewResult(int matchCount, List<PreviewTransaction> transactions) {}
+
+    /** A summarized transaction for the preview list. */
+    public record PreviewTransaction(Long id, String date, String label, BigDecimal amount, String currentCategoryName) {}
+
+    /**
+     * Preview how many and which uncategorized (or non-manually-categorized) transactions
+     * would be affected by a new rule with the given matchType + pattern.
+     * Returns the true total count and up to {@link #PREVIEW_CAP} row details.
+     * "Would be affected" = matches AND (categoryRef IS NULL OR categoryManual = false).
+     */
+    @Transactional(readOnly = true)
+    public RulePreviewResult previewRule(RuleMatchType matchType, String pattern, Long memberId) {
+        // Build a synthetic rule to reuse matches()
+        CategorizationRule synthetic = CategorizationRule.builder()
+            .matchType(matchType)
+            .pattern(pattern != null ? pattern.trim() : "")
+            .build();
+
+        // Load transactions that could be changed: no category, or category not manually set
+        List<Transaction> candidates = transactionRepository.findChangeable(memberId);
+
+        List<PreviewTransaction> matching = new ArrayList<>();
+        for (Transaction tx : candidates) {
+            String counterparty = safeLower(tx.getCounterparty());
+            String description = safeLower(tx.getDescription());
+            String merchantLabel = safeLower(tx.getMerchantLabel());
+            if (matches(synthetic, counterparty, description, merchantLabel)) {
+                String label = tx.getMerchantLabel() != null ? tx.getMerchantLabel()
+                    : (tx.getCounterparty() != null ? tx.getCounterparty() : tx.getDescription());
+                String catName = tx.getCategoryRef() != null ? tx.getCategoryRef().getName() : null;
+                matching.add(new PreviewTransaction(tx.getId(),
+                    tx.getDate() != null ? tx.getDate().toString() : null,
+                    label, tx.getAmount(), catName));
+            }
+        }
+
+        int total = matching.size();
+        List<PreviewTransaction> capped = matching.stream().limit(PREVIEW_CAP).toList();
+        return new RulePreviewResult(total, capped);
+    }
+
+    private static final int PREVIEW_CAP = 200;
 
     /**
      * Re-run the full pipeline (enrich → rules → brand fallback) over every still-uncategorized

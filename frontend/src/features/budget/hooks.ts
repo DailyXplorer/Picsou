@@ -10,6 +10,7 @@ import type {
   CategorizeRequest,
   RecurringSeriesRequest,
   RecurringStatus,
+  RulePreviewRequest,
 } from '@/types/api'
 import { QUERY_STALE_TIMES } from '@/lib/constants'
 
@@ -97,6 +98,12 @@ export function useDeleteRule() {
   return useMutation({
     mutationFn: (id: number) => budgetApi.deleteRule(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['budget', 'rules'] }),
+  })
+}
+
+export function usePreviewRule() {
+  return useMutation({
+    mutationFn: (data: RulePreviewRequest) => budgetApi.previewRule(data),
   })
 }
 

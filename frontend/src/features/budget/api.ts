@@ -19,6 +19,8 @@ import type {
   RecurringSeries,
   RecurringSeriesRequest,
   RecurringStatus,
+  RulePreviewRequest,
+  RulePreviewResponse,
   SpendingByCategoryResponse,
   SpendingDetailResponse,
   UncategorizedTransaction,
@@ -50,6 +52,8 @@ export const budgetApi = {
   deleteRule: (id: number) => api.delete(`/categorization-rules/${id}`),
   recategorize: () =>
     api.post<{ categorized: number }>('/categorization-rules/recategorize').then(r => r.data),
+  previewRule: (data: RulePreviewRequest) =>
+    api.post<RulePreviewResponse>('/categorization-rules/preview', data).then(r => r.data),
 
   // ─── To-categorize inbox ──────────────────────────────────────────────────
   listUncategorized: () =>

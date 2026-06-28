@@ -44,6 +44,15 @@ public class Transaction {
     @JoinColumn(name = "category_id")
     private Category categoryRef;
 
+    /**
+     * True when the category was explicitly chosen by the user (manual override).
+     * The automatic categorization pipeline (rules, brand KB, AI) never overwrites
+     * a transaction where {@code categoryManual = true}.
+     */
+    @Column(name = "category_manual", nullable = false)
+    @Builder.Default
+    private boolean categoryManual = false;
+
     /** Creditor/debtor name from the bank — used for rule matching and recurring detection. */
     @Column(length = 255)
     private String counterparty;

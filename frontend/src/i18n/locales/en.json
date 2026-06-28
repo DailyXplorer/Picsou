@@ -268,12 +268,31 @@
         "real_estate": "Real Estate"
       },
       "countryNames": {
-        "US": "United States", "NL": "Netherlands", "CA": "Canada", "FR": "France",
-        "GB": "United Kingdom", "DE": "Germany", "CH": "Switzerland", "IE": "Ireland",
-        "JP": "Japan", "CN": "China", "LU": "Luxembourg", "AU": "Australia",
-        "ES": "Spain", "IT": "Italy", "SE": "Sweden", "DK": "Denmark", "HK": "Hong Kong",
-        "KR": "South Korea", "TW": "Taiwan", "IN": "India", "BR": "Brazil", "BE": "Belgium",
-        "FI": "Finland", "NO": "Norway", "SG": "Singapore"
+        "US": "United States",
+        "NL": "Netherlands",
+        "CA": "Canada",
+        "FR": "France",
+        "GB": "United Kingdom",
+        "DE": "Germany",
+        "CH": "Switzerland",
+        "IE": "Ireland",
+        "JP": "Japan",
+        "CN": "China",
+        "LU": "Luxembourg",
+        "AU": "Australia",
+        "ES": "Spain",
+        "IT": "Italy",
+        "SE": "Sweden",
+        "DK": "Denmark",
+        "HK": "Hong Kong",
+        "KR": "South Korea",
+        "TW": "Taiwan",
+        "IN": "India",
+        "BR": "Brazil",
+        "BE": "Belgium",
+        "FI": "Finland",
+        "NO": "Norway",
+        "SG": "Singapore"
       }
     }
   },
@@ -505,7 +524,9 @@
       "emptyHint": "New transactions to classify will appear here.",
       "error": "Couldn't load transactions to categorize.",
       "aiProgress": "AI categorizing… {{processed}}/{{total}}",
-      "aiDone": "AI done: {{applied}} applied, {{suggested}} suggested"
+      "aiDone": "AI done: {{applied}} applied, {{suggested}} suggested",
+      "createRule": "Create rule",
+      "editRule": "Edit rule"
     },
     "category": {
       "title": "Categories",
@@ -538,8 +559,21 @@
       "formHint": "Any matching transaction will be categorized automatically.",
       "match": {
         "counterparty": "Counterparty",
-        "keyword": "Keyword"
-      }
+        "keyword": "Keyword",
+        "keywords_all": "All words (AND)",
+        "keywords_any": "Any word (OR)"
+      },
+      "wordPickerTitle": "Select words to match",
+      "matchMode": "Match mode",
+      "matchAll": "All words (AND)",
+      "matchAny": "Any word (OR)",
+      "previewLoading": "Loading preview…",
+      "previewCount": "{{count}} transaction will change",
+      "previewCount_other": "{{count}} transactions will change",
+      "previewCapped": "Showing first 200 of {{count}} matches",
+      "createRule": "Create rule",
+      "editRule": "Edit rule",
+      "ruleActive": "Rule: {{pattern}}"
     },
     "settings": {
       "cycleTitle": "Payday",
@@ -848,16 +882,46 @@
     "revokeTitle": "Revoke this key?",
     "revokeDescription": "Any MCP client using this key loses access immediately. This can't be undone.",
     "scopes": {
-      "accounts_read": { "label": "Accounts", "desc": "View accounts, balances, holdings and history" },
-      "transactions_read": { "label": "Transactions", "desc": "View transactions" },
-      "goals_read": { "label": "Goals", "desc": "View savings goals" },
-      "dashboard_read": { "label": "Dashboard", "desc": "View net worth, dashboard and P&L" },
-      "prices_read": { "label": "Prices", "desc": "Look up asset prices" },
-      "family_read": { "label": "Family", "desc": "View the shared family dashboard" },
-      "accounts_write": { "label": "Accounts", "desc": "Create and edit manual accounts, balances and holdings" },
-      "transactions_write": { "label": "Transactions", "desc": "Add, edit and delete manual transactions" },
-      "goals_write": { "label": "Goals", "desc": "Create, edit and delete goals and contributions" },
-      "sync_trigger": { "label": "Sync", "desc": "Refresh existing bank, crypto and broker connections" }
+      "accounts_read": {
+        "label": "Accounts",
+        "desc": "View accounts, balances, holdings and history"
+      },
+      "transactions_read": {
+        "label": "Transactions",
+        "desc": "View transactions"
+      },
+      "goals_read": {
+        "label": "Goals",
+        "desc": "View savings goals"
+      },
+      "dashboard_read": {
+        "label": "Dashboard",
+        "desc": "View net worth, dashboard and P&L"
+      },
+      "prices_read": {
+        "label": "Prices",
+        "desc": "Look up asset prices"
+      },
+      "family_read": {
+        "label": "Family",
+        "desc": "View the shared family dashboard"
+      },
+      "accounts_write": {
+        "label": "Accounts",
+        "desc": "Create and edit manual accounts, balances and holdings"
+      },
+      "transactions_write": {
+        "label": "Transactions",
+        "desc": "Add, edit and delete manual transactions"
+      },
+      "goals_write": {
+        "label": "Goals",
+        "desc": "Create, edit and delete goals and contributions"
+      },
+      "sync_trigger": {
+        "label": "Sync",
+        "desc": "Refresh existing bank, crypto and broker connections"
+      }
     }
   },
   "admin": {
