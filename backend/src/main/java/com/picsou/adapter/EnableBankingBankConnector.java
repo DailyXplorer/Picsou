@@ -157,9 +157,18 @@ public class EnableBankingBankConnector implements BankConnectorPort {
     @Override
     public List<AccountData> fetchBalances(String sessionId) {
         List<String> accounts = fetchSessionAccountsWithRetry(sessionId);
-        return accounts.stream()
-            .map(accountId -> fetchAccountData(accountId))
-            .toList();
+        List<AccountData> results = new ArrayList<>();
+        for (String accountId : accounts) {
+            try {
+                results.add(fetchAccountData(accountId));
+            } catch (Exception ex) {
+                // Isolate per-account failures: one bad account (e.g. 404 after a provider uid
+                // rotation like Enable Banking v0.16.4 for Boursorama) must not abort the whole
+                // batch and leave the user with zero accounts.
+                log.warn("Skipping account {} — fetchAccountData failed: {}", accountId, ex.getMessage());
+            }
+        }
+        return results;
     }
 
     /**
@@ -177,7 +186,8 @@ public class EnableBankingBankConnector implements BankConnectorPort {
      * user (and the scheduler) can retry from the UI without losing the session id. Throwing here
      * turned the legitimate "still linking" case into a 502 in production.
      */
-    private List<String> fetchSessionAccountsWithRetry(String sessionId) {
+    // package-private for unit-test stubbing via Mockito.spy()
+    List<String> fetchSessionAccountsWithRetry(String sessionId) {
         int maxAttempts = sessionPollAttempts;
         int delayMs = sessionPollDelayMs;
 
@@ -338,7 +348,8 @@ public class EnableBankingBankConnector implements BankConnectorPort {
 
     // ─── Private helpers ──────────────────────────────────────────────────────
 
-    private AccountData fetchAccountData(String accountId) {
+    // package-private for unit-test stubbing via Mockito.spy()
+    AccountData fetchAccountData(String accountId) {
         BalancesResponse balances = webClient.get()
             .uri("/accounts/{id}/balances", accountId)
             .header("Authorization", "Bearer " + buildJwt())
@@ -368,7 +379,9 @@ public class EnableBankingBankConnector implements BankConnectorPort {
                 .orElse(balances.balances().get(0));
             if (b.balanceAmount() != null) {
                 balance = new BigDecimal(b.balanceAmount().amount());
-                currency = b.balanceAmount().currency();
+                // Some ASPSPs (e.g. Boursorama) do not provide per-account currency
+                // (Enable Banking changelog v0.16.4). Default to EUR rather than propagating null.
+                currency = b.balanceAmount().currency() != null ? b.balanceAmount().currency() : "EUR";
             }
         }
 

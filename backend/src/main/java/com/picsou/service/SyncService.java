@@ -291,16 +291,38 @@ public class SyncService {
      * Returns {@link Optional#empty()} when the matching account was soft-deleted
      * by the user — we must not resurrect it on the next sync. The bank may keep
      * returning the same external id forever; that's not consent to bring it back.
+     *
+     * <p>Matching strategy (Enable Banking v0.16.4 uid-rotation resilience):
+     * <ol>
+     *   <li>If the account has an IBAN, look up by {@code (iban, memberId)} first — IBAN is
+     *       stable even when the provider uid changes (e.g. Boursorama after EB v0.16.4).
+     *       When matched via IBAN, the stored {@code externalAccountId} is refreshed to the
+     *       current uid so future syncs stay aligned.</li>
+     *   <li>Fall back to {@code (externalAccountId, memberId)} for accounts without an IBAN
+     *       and for providers whose uid never changes.</li>
+     * </ol>
+     * Soft-delete guards follow the same two-step order.
      */
     private Optional<AccountResponse> upsertAccount(BankConnectorPort.AccountData data, String provider, FamilyMember member, String sessionId) {
-        Optional<Account> existing = accountRepository
-            .findByExternalAccountIdAndMemberId(data.externalId(), member.getId());
+        // Step 1: locate an existing active account (IBAN-first when available)
+        Optional<Account> existing = Optional.empty();
+        if (data.iban() != null) {
+            existing = accountRepository.findByIbanAndMemberId(data.iban(), member.getId());
+        }
+        if (existing.isEmpty()) {
+            existing = accountRepository.findByExternalAccountIdAndMemberId(data.externalId(), member.getId());
+        }
 
-        if (existing.isEmpty() &&
-            accountRepository.existsSoftDeletedByExternalAccountIdAndMemberId(data.externalId(), member.getId())) {
-            log.info("Skipping resurrection of soft-deleted account externalId={} member={}",
-                data.externalId(), member.getId());
-            return Optional.empty();
+        // Step 2: soft-delete guard — refuse to resurrect an account the user removed
+        if (existing.isEmpty()) {
+            boolean softDeleted = (data.iban() != null &&
+                accountRepository.existsSoftDeletedByIbanAndMemberId(data.iban(), member.getId()))
+                || accountRepository.existsSoftDeletedByExternalAccountIdAndMemberId(data.externalId(), member.getId());
+            if (softDeleted) {
+                log.info("Skipping resurrection of soft-deleted account externalId={} iban={} member={}",
+                    data.externalId(), data.iban(), member.getId());
+                return Optional.empty();
+            }
         }
 
         Account account;
@@ -308,6 +330,11 @@ public class SyncService {
             account = existing.get();
             account.setCurrentBalance(data.balance());
             account.setLastSyncedAt(Instant.now());
+            // Refresh uid in case the provider rotated it (EB v0.16.4 Boursorama case)
+            account.setExternalAccountId(data.externalId());
+            if (data.iban() != null) {
+                account.setIban(data.iban());
+            }
         } else {
             account = Account.builder()
                 .member(member)
@@ -318,6 +345,7 @@ public class SyncService {
                 .currentBalance(data.balance())
                 .lastSyncedAt(Instant.now())
                 .externalAccountId(data.externalId())
+                .iban(data.iban())
                 .isManual(false)
                 .color("#6366f1")
                 .build();

@@ -59,6 +59,14 @@ public class Account extends AuditableEntity {
     @Builder.Default
     private String color = "#6366f1";
 
+    /**
+     * IBAN when provided by the bank (e.g. via Open Banking).
+     * Used as a stable match key across provider uid changes (e.g. Enable Banking v0.16.4).
+     * NULL for accounts without an IBAN (crypto, pocket sub-accounts, etc.).
+     */
+    @Column(length = 34)
+    private String iban;
+
     /** Ticker symbol for live price lookup, e.g. "BTC", "IWDA.AS" */
     @Column(length = 20)
     private String ticker;

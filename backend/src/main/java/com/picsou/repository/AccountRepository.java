@@ -35,6 +35,27 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         @Param("memberId") Long memberId
     );
 
+    /**
+     * Find an active account by IBAN + member. Used as a stable match key when the
+     * provider's uid changes (e.g. Enable Banking v0.16.4 identification hash rotation).
+     * Only called when data.iban() is non-null; bypassed for accounts without an IBAN.
+     */
+    Optional<Account> findByIbanAndMemberId(String iban, Long memberId);
+
+    /**
+     * Returns true if any soft-deleted account exists with this IBAN for the member.
+     * Bypasses {@code @SQLRestriction("deleted_at IS NULL")} on Account.
+     * Companion to {@link #existsSoftDeletedByExternalAccountIdAndMemberId} for the IBAN path.
+     */
+    @Query(value =
+        "SELECT EXISTS(SELECT 1 FROM account " +
+        "  WHERE iban = :iban AND member_id = :memberId AND deleted_at IS NOT NULL)",
+        nativeQuery = true)
+    boolean existsSoftDeletedByIbanAndMemberId(
+        @Param("iban") String iban,
+        @Param("memberId") Long memberId
+    );
+
     // ─── Revolut pockets (1.1.0) ──────────────────────────────────────────────
 
     /**
