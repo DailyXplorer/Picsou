@@ -47,6 +47,56 @@ function key(method: string, url: string): string {
 handlers.set(key('POST', '/auth/login'), () => ({ username: 'demo' }))
 handlers.set(key('POST', '/auth/refresh'), () => ({ username: 'demo' }))
 
+// Persistent sessions — demo shows one current desktop session
+handlers.set(key('GET', '/auth/sessions'), () => [
+  {
+    id: 1,
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+    ipPrefix: '192.168.1',
+    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    lastUsedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    trustedFor2fa: true,
+    current: true,
+  },
+])
+handlers.set(key('DELETE', '/auth/sessions'), () => null)
+
+// Access keys — demo shows one active key (read-only)
+handlers.set(key('GET', '/access-keys'), () => [
+  {
+    id: 1,
+    name: 'Demo key',
+    keyPrefix: 'psk_demo',
+    scopes: ['accounts:read', 'transactions:read'],
+    lastUsedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+    revokedAt: null,
+    createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+])
+handlers.set(key('POST', '/access-keys'), (config) => {
+  const body = JSON.parse(config.data || '{}')
+  const secret = 'psk_demo_' + Math.random().toString(36).slice(2, 14)
+  return {
+    secret,
+    key: {
+      id: Date.now(),
+      name: body.name ?? 'New key',
+      keyPrefix: secret.slice(0, 12),
+      scopes: body.scopes ?? [],
+      lastUsedAt: null,
+      expiresAt: body.expiresAt ?? null,
+      revokedAt: null,
+      createdAt: new Date().toISOString(),
+    },
+  }
+})
+for (const id of [1]) {
+  handlers.set(key('DELETE', `/access-keys/${id}`), () => ({}))
+  handlers.set(key('DELETE', `/auth/sessions/${id}`), () => ({}))
+}
+
 // Family — the sidebar profile switcher fetches members on every authenticated
 // route, so an unhandled call here (which would fall back to `{}`) breaks the
 // whole shell via `members.filter`. Return a small, realistic family: the demo
