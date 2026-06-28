@@ -226,6 +226,29 @@ class RevolutPocketServiceTest {
     }
 
     @Test
+    void processTransaction_softDeletedPocket_notResurrectedAndNoMirror() {
+        when(categorizationService.categoriesBySlug(MEMBER_ID))
+            .thenReturn(Map.of("virement-interne", virementInterne));
+        when(accountRepository.findPocketByParentAndUuid(MEMBER_ID, wallet.getId(), POCKET_UUID))
+            .thenReturn(Optional.empty());
+        // The user deleted this pocket (soft-deleted, invisible to the JPQL finder above).
+        when(accountRepository.existsSoftDeletedPocketByParentAndUuid(MEMBER_ID, wallet.getId(), POCKET_UUID))
+            .thenReturn(true);
+
+        Transaction walletTx = pocketTx(wallet, POCKET_UUID, "-50.00");
+        walletTx.setExternalId("ext-wallet-deleted");
+        service.processTransaction(walletTx, MEMBER_ID);
+
+        // Wallet debit is still reclassified — the row remains a genuine internal transfer.
+        assertThat(walletTx.getCategoryRef()).isEqualTo(virementInterne);
+        // The deleted pocket is NOT recreated...
+        verify(accountRepository, never()).save(any(Account.class));
+        // ...and no mirror leg is attempted (only the wallet tx is saved).
+        verify(transactionRepository, never()).existsByAccountIdAndExternalId(anyLong(), anyString());
+        verify(transactionRepository, times(1)).save(any(Transaction.class));
+    }
+
+    @Test
     void processTransaction_idempotent_mirrorNotDuplicated() {
         Account existingPocket = Account.builder()
             .id(400L).member(member).name("Vacances").type(AccountType.CHECKING)

@@ -123,12 +123,18 @@ public class RevolutPocketService {
             return;
         }
 
-        // 1. Find or create the pocket sub-account keyed by uuid.
+        // 1. Find or create the pocket sub-account keyed by uuid (null if the user deleted it).
         Account pocket = findOrCreatePocket(pocketUuid, walletAccount, memberId);
 
         // 2. Reclassify the wallet debit (unconditional — even over a prior manual category).
+        //    Still valid even when the pocket was deleted: the row is a genuine internal transfer.
         walletTx.setCategoryRef(virementInterne);
         transactionRepository.save(walletTx);
+
+        // The user removed this pocket — keep the transfer reclassification but don't mirror it back.
+        if (pocket == null) {
+            return;
+        }
 
         // 3. Mirror: a +amount credit leg into the pocket (idempotent by external_id).
         String mirrorExternalId = MIRROR_EXTERNAL_ID_PREFIX +
@@ -267,30 +273,45 @@ public class RevolutPocketService {
 
     // ─── Private helpers ──────────────────────────────────────────────────────
 
+    /**
+     * Find an existing pocket by uuid, or create one — unless the user previously deleted it.
+     *
+     * <p>{@code findPocketByParentAndUuid} runs through Account's
+     * {@code @SQLRestriction("deleted_at IS NULL")}, so a soft-deleted pocket is invisible to it.
+     * Without the explicit soft-delete check below, every sync/backfill would resurrect a deleted
+     * pocket as a fresh placeholder. Returns {@code null} when the pocket was deliberately removed.</p>
+     */
     private Account findOrCreatePocket(String pocketUuid, Account walletAccount, Long memberId) {
-        return accountRepository
-            .findPocketByParentAndUuid(memberId, walletAccount.getId(), pocketUuid)
-            .orElseGet(() -> {
-                String suffix = pocketUuid.length() >= 6
-                    ? pocketUuid.substring(pocketUuid.length() - 6)
-                    : pocketUuid;
-                FamilyMember member = familyMemberRepository.getReferenceById(memberId);
-                Account pocket = Account.builder()
-                    .member(member)
-                    .name(PLACEHOLDER_PREFIX + suffix)
-                    .type(AccountType.CHECKING)
-                    .provider("Revolut")
-                    .currency(walletAccount.getCurrency())
-                    .externalAccountId(pocketUuid)
-                    .parentAccountId(walletAccount.getId())
-                    .isManual(false)
-                    .color("#6366f1")
-                    .build();
-                Account saved = accountRepository.save(pocket);
-                log.info("Created Revolut pocket sub-account {} (parent={}, uuid={})",
-                    saved.getId(), walletAccount.getId(), pocketUuid);
-                return saved;
-            });
+        Optional<Account> existing = accountRepository
+            .findPocketByParentAndUuid(memberId, walletAccount.getId(), pocketUuid);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        if (accountRepository.existsSoftDeletedPocketByParentAndUuid(
+                memberId, walletAccount.getId(), pocketUuid)) {
+            log.debug("Pocket uuid={} (parent={}) was deleted by the user; not recreating",
+                pocketUuid, walletAccount.getId());
+            return null;
+        }
+        String suffix = pocketUuid.length() >= 6
+            ? pocketUuid.substring(pocketUuid.length() - 6)
+            : pocketUuid;
+        FamilyMember member = familyMemberRepository.getReferenceById(memberId);
+        Account pocket = Account.builder()
+            .member(member)
+            .name(PLACEHOLDER_PREFIX + suffix)
+            .type(AccountType.CHECKING)
+            .provider("Revolut")
+            .currency(walletAccount.getCurrency())
+            .externalAccountId(pocketUuid)
+            .parentAccountId(walletAccount.getId())
+            .isManual(false)
+            .color("#6366f1")
+            .build();
+        Account saved = accountRepository.save(pocket);
+        log.info("Created Revolut pocket sub-account {} (parent={}, uuid={})",
+            saved.getId(), walletAccount.getId(), pocketUuid);
+        return saved;
     }
 
     private Category resolveVirementInterne(Long memberId) {

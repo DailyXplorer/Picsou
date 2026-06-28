@@ -65,6 +65,22 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     );
 
     /**
+     * Returns true if a soft-deleted pocket sub-account exists for this parent + uuid.
+     * Bypasses {@code @SQLRestriction("deleted_at IS NULL")} on Account.
+     * Used by pocket reconstruction to refuse resurrecting pockets the user explicitly removed.
+     */
+    @Query(value =
+        "SELECT EXISTS(SELECT 1 FROM account " +
+        "  WHERE member_id = :memberId AND parent_account_id = :parentAccountId " +
+        "  AND external_account_id = :pocketUuid AND deleted_at IS NOT NULL)",
+        nativeQuery = true)
+    boolean existsSoftDeletedPocketByParentAndUuid(
+        @Param("memberId") Long memberId,
+        @Param("parentAccountId") Long parentAccountId,
+        @Param("pocketUuid") String pocketUuid
+    );
+
+    /**
      * All pocket sub-accounts for a member: parent_account_id IS NOT NULL.
      */
     @Query("""
