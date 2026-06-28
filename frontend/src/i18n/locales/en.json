@@ -133,6 +133,7 @@
     "allTypes": "All types",
     "total": "Total",
     "currentBalance": "Current balance",
+    "tabOverview": "Overview",
     "snapshots": "Monthly snapshots",
     "addSnapshot": "Save",
     "monthlyHistory": "Month-end balance",

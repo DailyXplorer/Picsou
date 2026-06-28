@@ -21,6 +21,7 @@ import { LoanDetailSection } from '@/components/loan/LoanDetailSection'
 import { SavingsConfigSection } from '@/features/savings/SavingsConfigSection'
 import { useSavingsSuggestions } from '@/features/savings/hooks'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -84,6 +85,95 @@ export function AccountDetailPage() {
   const pnlPct = pnlLatest && pnlLatest.invested > 0
     ? ((pnlLatest.pnl / pnlLatest.invested) * 100).toFixed(1) : null
   const pnlPositive = pnl !== null && pnl >= 0
+
+  // History + holdings + transactions + snapshots. Rendered flat for most accounts,
+  // or inside the "Aperçu" tab for savings accounts (config lives in its own tab).
+  const overviewSections = (
+    <>
+      {/* History chart */}
+      {!isLoan && showHoldings && pnlData && pnlData.length > 1 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('dashboard.gainLoss')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <NetWorthChart data={pnlData} range={range} onRangeChange={setRange} />
+          </CardContent>
+        </Card>
+      ) : !isLoan && chartData.length > 1 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('accounts.history')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BalanceHistoryChart data={chartData} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Holdings */}
+      {showHoldings && (
+        holdings ? (
+          <HoldingsTable
+            holdings={holdings}
+            onEdit={setEditingHolding}
+            onDelete={(h) => deleteHoldingMutation.mutate(h.ticker)}
+          />
+        ) : (
+          <Card>
+            <CardContent className="pt-6">
+              <Skeleton className="h-32 w-full" />
+            </CardContent>
+          </Card>
+        )
+      )}
+
+      {/* Transactions */}
+      {!isLoan && (transactions ? (
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-semibold">{t('accounts.transactions')}</h3>
+            <Button size="sm" variant="outline" onClick={() => setShowAddTx(true)}>
+              + Ajouter
+            </Button>
+          </div>
+          <TransactionsList
+            transactions={transactions}
+            onDelete={(txId) => deleteTxMutation.mutate(txId)}
+            onEdit={(tx) => setEditingTx(tx)}
+          />
+        </>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Skeleton className="h-32 w-full" />
+          </CardContent>
+        </Card>
+      ))}
+
+      {/* Snapshot list */}
+      {!isLoan && recentSnapshots.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('accounts.snapshots')}</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {recentSnapshots.map(snap => (
+              <div
+                key={snap.id}
+                className="flex items-center justify-between px-6 py-3 border-b last:border-0"
+              >
+                <span className="text-sm text-muted-foreground">
+                  {formatLocalDate(snap.date)}
+                </span>
+                <CurrencyDisplay value={snap.balance} className="text-sm font-semibold" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </>
+  )
 
   return (
     <div className="space-y-4">
@@ -187,97 +277,28 @@ export function AccountDetailPage() {
       {/* Loan detail */}
       {isLoan && account && <LoanDetailSection accountId={account.id} />}
 
-      {/* Savings config + projection */}
-      {isSavings && account && (
-        <SavingsConfigSection
-          accountId={account.id}
-          initialConfig={account.savingsConfig}
-          suggestedProduct={savingsSuggestion?.suggestedProduct}
-          suggestedRate={savingsSuggestion?.defaultAnnualRate}
-        />
-      )}
-
-      {/* History chart */}
-      {!isLoan && showHoldings && pnlData && pnlData.length > 1 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t('dashboard.gainLoss')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <NetWorthChart data={pnlData} range={range} onRangeChange={setRange} />
-          </CardContent>
-        </Card>
-      ) : !isLoan && chartData.length > 1 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t('accounts.history')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BalanceHistoryChart data={chartData} />
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {/* Holdings */}
-      {showHoldings && (
-        holdings ? (
-          <HoldingsTable
-            holdings={holdings}
-            onEdit={setEditingHolding}
-            onDelete={(h) => deleteHoldingMutation.mutate(h.ticker)}
-          />
-        ) : (
-          <Card>
-            <CardContent className="pt-6">
-              <Skeleton className="h-32 w-full" />
-            </CardContent>
-          </Card>
-        )
-      )}
-
-      {/* Transactions */}
-      {!isLoan && (transactions ? (
-        <>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-semibold">{t('accounts.transactions')}</h3>
-            <Button size="sm" variant="outline" onClick={() => setShowAddTx(true)}>
-              + Ajouter
-            </Button>
-          </div>
-          <TransactionsList
-            transactions={transactions}
-            onDelete={(txId) => deleteTxMutation.mutate(txId)}
-            onEdit={(tx) => setEditingTx(tx)}
-          />
-        </>
+      {/* Savings accounts: split into Overview / Config tabs so the page stays clean.
+          Other account types keep the flat layout. */}
+      {isSavings && account ? (
+        <Tabs defaultValue="overview">
+          <TabsList>
+            <TabsTrigger value="overview">{t('accounts.tabOverview')}</TabsTrigger>
+            <TabsTrigger value="config">{t('savings.configSection')}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="overview" className="mt-4 space-y-4">
+            {overviewSections}
+          </TabsContent>
+          <TabsContent value="config" className="mt-4">
+            <SavingsConfigSection
+              accountId={account.id}
+              initialConfig={account.savingsConfig}
+              suggestedProduct={savingsSuggestion?.suggestedProduct}
+              suggestedRate={savingsSuggestion?.defaultAnnualRate}
+            />
+          </TabsContent>
+        </Tabs>
       ) : (
-        <Card>
-          <CardContent className="pt-6">
-            <Skeleton className="h-32 w-full" />
-          </CardContent>
-        </Card>
-      ))}
-
-      {/* Snapshot list */}
-      {!isLoan && recentSnapshots.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t('accounts.snapshots')}</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {recentSnapshots.map(snap => (
-              <div
-                key={snap.id}
-                className="flex items-center justify-between px-6 py-3 border-b last:border-0"
-              >
-                <span className="text-sm text-muted-foreground">
-                  {formatLocalDate(snap.date)}
-                </span>
-                <CurrencyDisplay value={snap.balance} className="text-sm font-semibold" />
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+        overviewSections
       )}
 
       {/* Add Transaction modal */}
