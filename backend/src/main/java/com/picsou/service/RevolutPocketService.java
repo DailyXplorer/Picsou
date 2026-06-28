@@ -126,9 +126,12 @@ public class RevolutPocketService {
         // 1. Find or create the pocket sub-account keyed by uuid (null if the user deleted it).
         Account pocket = findOrCreatePocket(pocketUuid, walletAccount, memberId);
 
-        // 2. Reclassify the wallet debit (unconditional — even over a prior manual category).
+        // 2. Reclassify the wallet debit and label it with the pocket name.
         //    Still valid even when the pocket was deleted: the row is a genuine internal transfer.
         walletTx.setCategoryRef(virementInterne);
+        if (pocket != null) {
+            walletTx.setMerchantLabel(pocket.getName());
+        }
         transactionRepository.save(walletTx);
 
         // The user removed this pocket — keep the transfer reclassification but don't mirror it back.
@@ -146,6 +149,7 @@ public class RevolutPocketService {
                 .account(pocket)
                 .date(walletTx.getDate())
                 .description(walletTx.getDescription())
+                .merchantLabel(pocket.getName())
                 .amount(walletTx.getAmount().negate()) // debit on wallet → credit in pocket
                 .categoryRef(virementInterne)
                 .externalId(mirrorExternalId)

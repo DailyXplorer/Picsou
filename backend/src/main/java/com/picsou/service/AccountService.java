@@ -110,6 +110,7 @@ public class AccountService {
     public AccountResponse update(Long id, AccountRequest req, Long memberId) {
         Account account = getOrThrow(id, memberId);
 
+        boolean nameChanged = !req.name().equals(account.getName());
         account.setName(req.name());
         account.setType(req.type());
         account.setProvider(req.provider());
@@ -126,7 +127,18 @@ public class AccountService {
             }
         }
 
-        return toResponse(accountRepository.save(account));
+        AccountResponse response = toResponse(accountRepository.save(account));
+
+        // When a Revolut pocket is renamed, propagate the new name as merchantLabel on its
+        // transactions (mirror legs in the pocket) and on the corresponding wallet-side debits.
+        if (nameChanged && account.getParentAccountId() != null
+                && account.getExternalAccountId() != null) {
+            transactionRepository.updateMerchantLabelByAccountId(account.getId(), req.name());
+            transactionRepository.updateMerchantLabelForPocketWalletSide(
+                account.getParentAccountId(), account.getExternalAccountId(), req.name());
+        }
+
+        return response;
     }
 
     @Transactional

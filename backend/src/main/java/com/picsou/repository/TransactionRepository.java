@@ -3,6 +3,7 @@ package com.picsou.repository;
 import com.picsou.model.Transaction;
 import com.picsou.model.TransactionType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,6 +15,26 @@ import java.util.Optional;
 
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
     List<Transaction> findByAccountIdOrderByDateDesc(Long accountId);
+
+    /** Bulk-update the merchant label for all transactions of an account (pocket rename). */
+    @Modifying
+    @Query("UPDATE Transaction t SET t.merchantLabel = :label WHERE t.account.id = :accountId")
+    void updateMerchantLabelByAccountId(@Param("accountId") Long accountId, @Param("label") String label);
+
+    /**
+     * Bulk-update the merchant label for all wallet transactions whose description matches
+     * the pocket's UUID pattern (wallet side of pocket transfers, e.g. "To EUR MB:<uuid>").
+     */
+    @Modifying
+    @Query("""
+        UPDATE Transaction t SET t.merchantLabel = :label
+        WHERE t.account.id = :walletAccountId
+        AND LOWER(t.description) LIKE LOWER(CONCAT('%mb:', :pocketUuid))
+        """)
+    void updateMerchantLabelForPocketWalletSide(
+        @Param("walletAccountId") Long walletAccountId,
+        @Param("pocketUuid") String pocketUuid,
+        @Param("label") String label);
 
     Optional<Transaction> findByIdAndAccountId(Long id, Long accountId);
 
