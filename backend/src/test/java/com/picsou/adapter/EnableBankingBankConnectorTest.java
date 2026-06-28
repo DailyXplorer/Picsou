@@ -19,7 +19,7 @@ class EnableBankingBankConnectorTest {
     @Mock EnableBankingConfigProvider configProvider;
 
     private EnableBankingBankConnector connector() {
-        return new EnableBankingBankConnector(configProvider, "https://api.enablebanking.test");
+        return new EnableBankingBankConnector(configProvider, "https://api.enablebanking.test", 8, 2000);
     }
 
     @Test

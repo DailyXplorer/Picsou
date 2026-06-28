@@ -38,12 +38,18 @@ public class EnableBankingBankConnector implements BankConnectorPort {
 
     private final EnableBankingConfigProvider configProvider;
     private final WebClient webClient;
+    private final int sessionPollAttempts;
+    private final int sessionPollDelayMs;
 
     public EnableBankingBankConnector(
         EnableBankingConfigProvider configProvider,
-        @Value("${app.enablebanking.base-url:https://api.enablebanking.com}") String baseUrl
+        @Value("${app.enablebanking.base-url:https://api.enablebanking.com}") String baseUrl,
+        @Value("${app.enablebanking.session-poll-attempts:8}") int sessionPollAttempts,
+        @Value("${app.enablebanking.session-poll-delay-ms:2000}") int sessionPollDelayMs
     ) {
         this.configProvider = configProvider;
+        this.sessionPollAttempts = sessionPollAttempts;
+        this.sessionPollDelayMs = sessionPollDelayMs;
         this.webClient = WebClient.builder()
             .baseUrl(baseUrl)
             .defaultHeader("Accept", "application/json")
@@ -161,17 +167,19 @@ public class EnableBankingBankConnector implements BankConnectorPort {
      * links accounts asynchronously after OAuth — usually a few seconds, but
      * occasionally longer.
      *
-     * <p>Total worst-case wall time is bounded to ~4.5 s (3 attempts × 1.5 s)
-     * so the request stays well under any reverse-proxy {@code proxy_read_timeout}.
-     * If the session still hasn't been populated by then, we return an empty
-     * list rather than throw: the caller marks the requisition LINKED so the
-     * user (and the scheduler) can retry from the UI without losing the
-     * session id. Throwing here turned the legitimate "still linking" case
-     * into a 502 in production.
+     * <p>The poll window is configurable via {@code app.enablebanking.session-poll-attempts}
+     * (default 8) and {@code app.enablebanking.session-poll-delay-ms} (default 2000), giving a
+     * ~16 s worst-case wall time — long enough for slow ASPSPs like Boursorama, which take
+     * longer than the former 4.5 s window to finish async account linking, while still under a
+     * typical reverse-proxy {@code proxy_read_timeout}. Operators behind a stricter proxy can
+     * tune these down without a redeploy. If the session still hasn't been populated by then, we
+     * return an empty list rather than throw: the caller keeps the requisition retryable so the
+     * user (and the scheduler) can retry from the UI without losing the session id. Throwing here
+     * turned the legitimate "still linking" case into a 502 in production.
      */
     private List<String> fetchSessionAccountsWithRetry(String sessionId) {
-        int maxAttempts = 3;
-        int delayMs = 1_500;
+        int maxAttempts = sessionPollAttempts;
+        int delayMs = sessionPollDelayMs;
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             SessionResponse session = webClient.get()
