@@ -78,6 +78,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     /** Cross-account search with optional account and category filters, newest first. */
     @Query("""
         SELECT t FROM Transaction t
+        JOIN FETCH t.account
+        LEFT JOIN FETCH t.categoryRef
         WHERE t.account.member.id = :memberId
         AND t.date BETWEEN :from AND :to
         AND (:accountId IS NULL OR t.account.id = :accountId)
