@@ -328,7 +328,7 @@ export function AccountsPage() {
                       </span>
                     )}
                   </span>
-                  <span className="text-sm text-muted-foreground">{t('dashboard.netWorthChange')}</span>
+                  <span className="text-sm text-muted-foreground">{t('dashboard.portfolioPerformance')}</span>
                 </div>
               )}
             </CardContent>
