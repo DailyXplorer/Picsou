@@ -41,18 +41,11 @@ export function TransactionRow({ transaction: tx, logoUrlFor, onClick, index = 0
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {tx.category != null && (
-              <span className="text-xs text-muted-foreground px-1.5 py-0.5">
-                {tx.category}
-              </span>
-            )}
-            {tx.accountName && (
-              <span className="text-xs text-muted-foreground/60 px-1.5 py-0.5 border-l border-muted">
-                {tx.accountName}
-              </span>
-            )}
-          </div>
+          {(tx.accountName || tx.category) && (
+            <p className="text-xs text-muted-foreground px-1.5 py-0.5">
+              {[tx.accountName, tx.category].filter(Boolean).join(' — ')}
+            </p>
+          )}
         </div>
       </div>
       <CurrencyDisplay
