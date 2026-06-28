@@ -73,6 +73,9 @@ public class DashboardService {
         BigDecimal totalInvested = BigDecimal.ZERO;
 
         for (Account account : accounts) {
+            // Pocket sub-accounts: balance already counted in the parent wallet.
+            if (account.getParentAccountId() != null) continue;
+
             List<AccountHolding> holdings = holdingsByAccount.get(account.getId());
 
             BigDecimal accountValue;
@@ -176,6 +179,9 @@ public class DashboardService {
         List<DistributionItem> items = new ArrayList<>();
 
         for (Account account : accounts) {
+            // Pocket sub-accounts are internal transfers from their parent wallet — their balance
+            // is already included in the wallet, so including them here would double-count.
+            if (account.getParentAccountId() != null) continue;
             boolean isLoan = account.getType() == AccountType.LOAN;
             if (liabilitiesOnly != isLoan) continue;
 
