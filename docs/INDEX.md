@@ -54,8 +54,9 @@
 | Demo mode | 2026-04-08 | [demo-mode.md](./features/demo-mode.md) |
 | Theme (dark / light / system) + theme-adaptive rendering | 2026-06-02 | [theme-persistence.md](./features/theme-persistence.md) |
 | Dashboard — Time range isolation | 2026-04-13 | [dashboard-time-range-isolation.md](./features/dashboard-time-range-isolation.md) |
-| Bank sync | 2026-06-03 | [bank-sync.md](./features/bank-sync.md) |
-| Budget & Cashflow | 2026-06-09 | [budget.md](./features/budget.md) |
+| Bank sync | 2026-06-28 | [bank-sync.md](./features/bank-sync.md) |
+| Budget & Cashflow | 2026-06-28 | [budget.md](./features/budget.md) |
+| Budget categorization rules (word-picker authoring UX) | 2026-06-28 | [budget-rules.md](./features/budget-rules.md) |
 | Optional AI transaction categorization | 2026-06-26 | [ai-categorization.md](./features/ai-categorization.md) |
 | Trade Republic | 2026-05-18 | [trade-republic.md](./features/trade-republic.md) |
 | Trade Republic — Holdings deduplication | 2026-05-18 | [trade-republic-holding-deduplication.md](./features/trade-republic-holding-deduplication.md) |
@@ -68,7 +69,7 @@
 | Live prices (holdings) | 2026-05-19 | [live-prices-holdings.md](./features/live-prices-holdings.md) |
 | Security Insight (asset type + ETF composition) | 2026-06-02 | [security-insight.md](./features/security-insight.md) |
 | Finary import + auto-sync | 2026-04-21 | [finary-import.md](./features/finary-import.md) |
-| Manual transactions + holdings derivation | 2026-04-21 | [manual-transactions.md](./features/manual-transactions.md) |
+| Manual transactions + holdings derivation | 2026-06-28 | [manual-transactions.md](./features/manual-transactions.md) |
 | BoursoBank sync ⏸ disabled in 1.0.0 | 2026-04-26 | [bourso-bank.md](./features/bourso-bank.md) |
 | Accounts overview (PnL chart + summary card + filters) | 2026-04-13 | [accounts-overview.md](./features/accounts-overview.md) |
 | Savings livrets (classification + projected interest) | 2026-06-28 | [savings-livrets.md](./features/savings-livrets.md) |

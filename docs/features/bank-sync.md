@@ -27,6 +27,29 @@ Since 1.1.0 the sync also ingests **transactions**, not just balances. After ups
 
 **Powens** (`PowensBankConnector`) — ⚠ experimental, disabled in 1.0.0. Uses screen scraping via the Budget Insight API. Auth is an OAuth webview that handles bank selection and credential entry. The OAuth code is exchanged for a permanent access token. Gated behind `@ConditionalOnExpression` (so it only registers when `POWENS_CLIENT_ID` is set), but `@Primary` was removed for 1.0.0, so Enable Banking remains injected even when the bean is registered.
 
+### Account-matching resilience (Enable Banking 0.16.4)
+
+Enable Banking 0.16.4 (released 2026-05-30) changed the account identification hash for ASPSPs that
+do not expose a per-account currency (e.g. Boursorama) — the account `uid` is now derived from the
+account number alone, breaking the uid-based match used by the previous upsert logic.
+
+Picsou now handles this with a two-pronged strategy:
+
+1. **IBAN-first account matching.** `SyncService.upsertAccount()` matches an incoming account against
+   stored accounts by **IBAN** first (stable, bank-issued identifier), falling back to the Enable
+   Banking `uid` only when the IBAN is absent. On a successful IBAN match the stored `uid` is
+   refreshed in place, so the next sync uses the new uid without user intervention. The soft-delete
+   guard (which prevents re-creating an account the user removed) also checks IBAN alongside uid.
+   - New column: `account.iban VARCHAR(34)`, added by `V46__account_iban.sql`.
+
+2. **Per-account failure isolation in `fetchBalances()`.** Previously, a single failing account
+   would surface an exception that zeroed the entire balance batch. Failures are now caught
+   per-account: the adapter logs the error and skips that account, letting the rest of the batch
+   succeed.
+
+3. **Missing currency tolerance.** Some ASPSPs omit the per-account currency field. The adapter now
+   defaults to `EUR` rather than throwing, matching the most common case for French current accounts.
+
 ### Requisition lifecycle
 
 1. **CREATED** -- `SyncService.initiateConnection()` calls the port and stores a `Requisition` with `authLink`.
@@ -124,6 +147,10 @@ Because the text fields (Application ID + Redirect URI) live in Postgres while t
 - **ALREADY_AUTHORIZED**: If the OAuth code is reused (e.g. browser back button), `SyncService.completeConnection()` catches the error and falls back to refreshing the latest linked session instead of failing.
 - **Type upgrade on resync**: If the user has not customized an account's type, `upsertAccount()` will upgrade it from CHECKING to the detected type on the next sync. Manual user changes are preserved (only CHECKING is auto-upgraded).
 - **Both providers are optional**: The app starts fine without either. No `BankConnectorPort` bean is required at startup.
+- **Enable Banking uid instability.** EB 0.16.4 changed the account uid derivation for ASPSPs that
+  don't expose per-account currency. Picsou resolves this via IBAN-first matching and uid refresh on
+  match; if an account has no IBAN it will fall back to uid matching and may be treated as a new
+  account after an EB provider upgrade. This is tracked by `V46__account_iban.sql`.
 
 ## Tests
 

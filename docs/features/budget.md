@@ -173,6 +173,18 @@ label and step size from them rather than recomputing on the client.
 - **`keepPreviousData`** — the prior period's data remains visible while the next one loads,
   eliminating blank-flash transitions during stepping.
 
+**Shared period state across tabs**
+
+Previously each budget page held its own local `useState` for the anchor, lost on tab switch (Outlet
+unmount). Since M6 the anchor is **shared and persisted**:
+
+- `BudgetPeriodProvider` (mounted in `BudgetLayout`,
+  `frontend/src/pages/budget/BudgetPeriodContext.tsx`) exposes `useBudgetPeriod()` —
+  `{ anchor, setAnchor }` — consumed by every nested route page.
+- The anchor is backed by `sessionStorage` (key `picsou_budget_anchor`), so it survives tab
+  switches within the same browser session and is restored on reload.
+- URL `?anchor=` query-param sync is a future enhancement (out of scope).
+
 ### Sub-categories (the category tree)
 
 Categories nest **one level deep** — a parent with leaf children (e.g. *Logement* → *Loyer*,
@@ -225,9 +237,13 @@ silently**, with a safety net so silent ≠ unexplained.
 - **Price-change detection** — `isPriceChange(prev, curr)` fires only on a step that is **both**
   ≥ 0.01 absolute **and** > 5% relative, so cent-level drift on a "fixed" subscription stays quiet.
 - **Runtime status is computed, never stored** — `recurring_status` is a native PG enum
-  (append-only), so `LATE` / `DUE_SOON` / `SCHEDULED` are derived in `RecurringSeriesResponse.from(s,
-  today)` from `nextDueDate` (DUE_SOON window = 7 days). Same for the DTO-only
-  `RecurringRuntimeStatus` / `RecurringActivityType` enums.
+  (append-only), so `LATE` / `DUE_SOON` / `SCHEDULED` / **`STALE`** are derived in
+  `RecurringSeriesResponse.from(s, today)` from `nextDueDate` (DUE_SOON window = 7 days). **`STALE`**
+  takes precedence over `LATE`: a CONFIRMED series whose `nextDueDate` is ≥ `STALE_MISSED_PERIODS`
+  (= 2) cadence steps before today (computed via `Cadence.next()`) is marked STALE — excluded from
+  `upcoming()` but still listed in `findAll()` with an "Inactive" badge. It auto-reactivates (reverts
+  to the appropriate active status) when the detector refreshes the series on the next sync. Same for
+  the DTO-only `RecurringRuntimeStatus` / `RecurringActivityType` enums.
 - **Activity feed (the safety net)** — `RecurringSeriesService.activity(member, today)` derives a
   newest-first "what changed" list from series state over a 60-day lookback (no new table): a recent
   `priceChangedAt` emits a `PRICE_CHANGE` entry, else a recent silently-auto-confirmed `CONFIRMED`
@@ -312,7 +328,9 @@ overlap guard added in M4): `model/Budget.java` + `BudgetService` + `BudgetContr
 (rate-limit → opt-in → fetch gates); `config/RateLimitConfig.java` (`logoBuckets`);
 `model/BudgetSettings.java` + `BudgetSettingsService`/`-Request`/`-Response` (`logoFetchEnabled`).
 
-**Frontend:** `pages/budget/BudgetLayout.tsx` + `budget-nav.ts` + the nested pages above;
+**Frontend:** `pages/budget/BudgetLayout.tsx` (mounts `BudgetPeriodProvider`) +
+`pages/budget/BudgetPeriodContext.tsx` (`BudgetPeriodProvider` / `useBudgetPeriod()`,
+`sessionStorage`-backed anchor, key `picsou_budget_anchor`) + `budget-nav.ts` + the nested pages above;
 `pages/budget/{SubscriptionCard,ActivityFeed}.tsx` + `budget-meta.ts` (runtime/activity lookups);
 `features/budget/{api,hooks}.ts` (TanStack Query, cascade invalidations rooted at `['budget']`);
 `components/shared/{MerchantAvatar,CashflowSankey,FlowBars,flow-utils}.ts(x)`;
@@ -350,7 +368,7 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
 | **Silent auto-confirm** of high-confidence recurring series | Zero-config "grandmother" UX — nothing to triage in the ideal case | Always leave detections as `SUGGESTED` for manual review |
 | Safety net: activity feed + per-item undo + price alerts | Silent ≠ unexplained; every silent action is reversible and surfaced | Trust the math with no recourse |
 | Recurring identity = canonical `merchant_label` | Stable grouping; raw `counterparty` drifts (card digits, cities, dates) | Group on raw bank string |
-| Runtime status (`LATE`/`DUE_SOON`) computed in the DTO | `recurring_status` is an append-only PG enum; transient states aren't persisted | Store every transient state as an enum value |
+| Runtime status (`LATE`/`DUE_SOON`/`STALE`) computed in the DTO | `recurring_status` is an append-only PG enum; transient states aren't persisted; `STALE` auto-reactivates without a DB write | Store every transient state as an enum value |
 | Opt-in logos via a **server-side proxy** (off by default) | Enabling logos never leaks the member's IP or the list of brands they spend at to a third party on every render; lets us cache, gate, and rate-limit centrally | Browser `<img>` straight to a logo CDN |
 | **DuckDuckGo** keyless icon service behind `MerchantLogoPort` | No API key or quota to manage in a self-hosted app; privacy-aligned; swappable in a single adapter | Google s2 favicons (routes every brand through Google), Clearbit / Brandfetch (API key + commercial terms) |
 
@@ -390,6 +408,10 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
   canonical `merchant_label`, deduped via the `(member_id, lower(label))` unique index.
 - **`IGNORED` is durable on purpose.** Re-detection (`upsert`) skips `IGNORED` series so a user's
   rejection — including an undone auto-confirm — is never silently re-confirmed on the next sync.
+- **`STALE` is computed, not stored; it auto-heals.** A CONFIRMED series whose `nextDueDate` is ≥
+  `STALE_MISSED_PERIODS` (2) cadence steps in the past is shown STALE and omitted from `upcoming()`.
+  It reverts to a normal status on the next detection run — no DB write required. STALE takes
+  precedence over LATE so a long-lapsed series is not misleadingly flagged as merely late.
 - **Activity-feed recency keys on domain `LocalDate`s, not audit `Instant`s.** `AuditableEntity`
   exposes `createdAt`/`updatedAt` as read-only (no setters, populated only by the JPA auditing
   listener), so they can't be set in pure-Mockito unit tests. The feed therefore keys recency on
@@ -424,7 +446,8 @@ Enable Banking sync ─▶ SyncService.fetchTransactions ─▶ dedup ─▶ per
 - `RecurringDetectionServiceTest` (rewritten for v2) — stable identity, confidence math at the
   auto-confirm threshold, FIXED/VARIABLE classification, price-step detection, `IGNORED` never
   resurrected, `recurring_series_id` populated
-- `RecurringSeriesServiceTest` — runtime status relative to "today", activity feed (newest-first,
+- `RecurringSeriesServiceTest` — runtime status relative to "today" (incl. `STALE` at ≥2 missed
+  periods, STALE precedence over LATE, excluded from `upcoming()`), activity feed (newest-first,
   price-change preferred, stale/user-confirmed excluded), context-aware undo
 - `BudgetCycleTest`, `BudgetServiceTest` (incl. **parent-envelope subtree rollup** + the
   **overlap guard** rejecting a parent/child both budgeted), `CashflowServiceTest`,
