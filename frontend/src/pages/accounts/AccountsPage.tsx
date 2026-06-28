@@ -195,11 +195,11 @@ export function AccountsPage() {
 
   // PnL from the latest history point for filtered non-pocket accounts
   const { pnl, pnlPct, totalInvested } = useMemo(() => {
-    if (!historyData || historyData.length === 0 || filteredNonPockets.length === 0) {
+    if (!historyData || !Array.isArray(historyData) || historyData.length === 0 || filteredNonPockets.length === 0) {
       return { pnl: 0, pnlPct: null, totalInvested: 0 }
     }
     const latest = historyData[historyData.length - 1]
-    if (!latest.accounts) return { pnl: 0, pnlPct: null, totalInvested: 0 }
+    if (!latest || !latest.accounts) return { pnl: 0, pnlPct: null, totalInvested: 0 }
 
     let inv = 0
     let pnlSum = 0
@@ -240,7 +240,7 @@ export function AccountsPage() {
 
   // Chart PnL data from split history (non-pocket accounts only)
   const chartPnlData = useMemo(() => {
-    if (!historyData || !accounts) return []
+    if (!historyData || !Array.isArray(historyData) || !accounts) return []
 
     if (filter !== 'ALL') {
       const ids = nonPocketAccounts

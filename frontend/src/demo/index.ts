@@ -31,6 +31,13 @@ type MockHandler = (config: InternalAxiosRequestConfig) => unknown
 
 const handlers = new Map<string, MockHandler>()
 
+// Mutable demo state for the pocket rename flow (resets on page reload).
+// Both are `let` so PUT handlers can reassign to a NEW array reference —
+// TanStack Query uses referential equality first (replaceEqualDeep) and will
+// not update React state if the same reference is returned after a mutation.
+let _demoAccounts = mockAccounts.map(a => ({ ...a }))
+let _demoUnnamedPockets = mockUnnamedPockets.slice()
+
 function key(method: string, url: string): string {
   const normalized = url.split('?')[0].replace(/\/$/, '')
   return `${method.toUpperCase()} ${normalized}`
@@ -53,14 +60,15 @@ handlers.set(key('GET', '/family/members'), () => [
 handlers.set(key('GET', '/dashboard'), () => mockDashboard)
 
 // Accounts
-handlers.set(key('GET', '/accounts'), () => mockAccounts)
+handlers.set(key('GET', '/accounts'), () => _demoAccounts)
 for (let i = 1; i <= 7; i++) {
   handlers.set(key('GET', `/accounts/${i}`), () => mockAccounts[i - 1])
 }
 
-// Individual account lookups (extends the loop above for accounts 8–10)
+// Individual account lookups (extends the loop above for accounts 8–10).
+// Uses _demoAccounts so renames are reflected immediately after refetch.
 for (let i = 8; i <= 10; i++) {
-  handlers.set(key('GET', `/accounts/${i}`), () => mockAccounts[i - 1])
+  handlers.set(key('GET', `/accounts/${i}`), () => _demoAccounts[i - 1])
 }
 
 // Account CRUD
@@ -99,7 +107,8 @@ for (let i = 1; i <= 10; i++) {
 
 // Revolut pockets — unnamed list
 // Backend: GET /api/revolut-pockets/unnamed → UnnamedPocketResponse[]
-handlers.set(key('GET', '/revolut-pockets/unnamed'), () => mockUnnamedPockets)
+// Uses mutable state so a rename during the session removes the pocket from the list.
+handlers.set(key('GET', '/revolut-pockets/unnamed'), () => _demoUnnamedPockets)
 
 // Revolut pockets — CSV name suggestions (wrapped in CsvNamingResponse envelope)
 // Backend: POST /api/revolut-pockets/csv-naming → { suggestions: CsvNameSuggestion[] }
@@ -107,14 +116,23 @@ handlers.set(key('POST', '/revolut-pockets/csv-naming'), () => ({
   suggestions: mockCsvSuggestions,
 }))
 
-// Pocket rename (accounts 9 and 10) — re-uses the standard PUT /accounts/:id shape
+// Pocket rename (accounts 9 and 10) — re-uses the standard PUT /accounts/:id shape.
+// Reassigns _demoAccounts to a NEW array so TanStack Query detects the change
+// (replaceEqualDeep bails early on same-reference without inspecting contents).
+// Removes the pocket from _demoUnnamedPockets so the onboarding banner disappears.
 handlers.set(key('PUT', '/accounts/9'), (config) => {
   const body = JSON.parse(config.data || '{}')
-  return { ...mockAccounts[8], ...body }
+  const updated = { ..._demoAccounts[8], ...body }
+  _demoAccounts = _demoAccounts.map((a, i) => i === 8 ? updated : a)
+  if (body.name) _demoUnnamedPockets = _demoUnnamedPockets.filter(p => p.accountId !== 9)
+  return updated
 })
 handlers.set(key('PUT', '/accounts/10'), (config) => {
   const body = JSON.parse(config.data || '{}')
-  return { ...mockAccounts[9], ...body }
+  const updated = { ..._demoAccounts[9], ...body }
+  _demoAccounts = _demoAccounts.map((a, i) => i === 9 ? updated : a)
+  if (body.name) _demoUnnamedPockets = _demoUnnamedPockets.filter(p => p.accountId !== 10)
+  return updated
 })
 
 // Security insight (asset type + ETF composition). Mirrors the backend
@@ -220,6 +238,58 @@ handlers.set(key('GET', '/accounts/9/history'), () => generateHistory(
 // Pocket unnamed (id=10): inflows-only
 handlers.set(key('GET', '/accounts/10/history'), () => generateHistory(
   [0, 0, 0, 100, 200, 200, 300, 300, 300, 300, 300, 300]))
+
+// Aggregate net worth history — GET /history?accountIds=...&months=...&split=...
+// Mirrors HistoryController which aggregates account snapshots into NetWorthPoint[].
+// When split=true, includes per-account breakdown used by AccountsPage PnL chart.
+const DEMO_NW_BALANCES: Record<number, number[]> = {
+  1: [6100, 6250, 6400, 6500, 6650, 6800, 6950, 7100, 7200, 7400, 7600, 7800],
+  2: [8200, 8600, 9100, 8800, 9400, 9900, 10200, 10800, 11200, 11600, 12000, 12450.5],
+  3: [5800, 6200, 6700, 6400, 6900, 7200, 7500, 7100, 7600, 7900, 8100, 8320.75],
+  4: [1200, 2800, 1500, 3100, 1800, 2600, 1400, 2900, 1700, 2500, 2100, 2340.2],
+  5: [800, 1100, 950, 1300, 1050, 1200, 900, 1350, 1100, 1250, 1400, 1580.9],
+  6: [1800, 2100, 2400, 1900, 2600, 2800, 3100, 2700, 3400, 3600, 3900, 4250],
+  7: [4200, 4320, 4440, 4560, 4620, 4740, 4800, 4920, 4980, 5040, 5080, 5120],
+  8: [3000, 3050, 3100, 3200, 3150, 3100, 3200, 3300, 3250, 3200, 3240, 3240.5],
+}
+// Initial invested amounts for investment accounts (drives PnL computation in demo).
+const DEMO_NW_INVESTED: Record<number, number> = {
+  2: 8200,  // PEA — initial position
+  3: 5800,  // Compte Titres
+  6: 1800,  // Crypto
+}
+
+handlers.set(key('GET', '/history'), (config) => {
+  const params = (config.params ?? {}) as Record<string, string>
+  const ids = String(params.accountIds ?? '').split(',').map(Number).filter(n => n > 0)
+  const months = Math.min(Number(params.months ?? 12), 12)
+  const split = String(params.split) === 'true'
+
+  const now = new Date()
+  return Array.from({ length: months }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (months - 1 - i), 1)
+    const date = d.toISOString().split('T')[0]
+    const idx = 12 - months + i
+
+    let total = 0
+    let invested = 0
+    let pnl = 0
+    const accounts: Record<string, { total: number; invested: number; pnl: number }> = {}
+
+    for (const id of ids) {
+      const bal = (DEMO_NW_BALANCES[id] ?? [])[idx] ?? 0
+      const inv = DEMO_NW_INVESTED[id] ?? bal
+      const ap = bal - inv
+
+      total += bal
+      invested += inv
+      pnl += ap
+      if (split) accounts[String(id)] = { total: bal, invested: inv, pnl: ap }
+    }
+
+    return { date, total, invested, pnl, ...(split ? { accounts } : {}) }
+  })
+})
 
 // Goals
 handlers.set(key('GET', '/goals'), () => mockGoals)
