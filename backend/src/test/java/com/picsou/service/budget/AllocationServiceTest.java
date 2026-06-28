@@ -123,6 +123,29 @@ class AllocationServiceTest {
     }
 
     @Test
+    void compute_pocketInflow_notCountedAsContribution() {
+        // A Revolut pocket is CHECKING → AssetClass.CURRENT → tracksContributions() = false.
+        // Mirror credit legs (positive, TRANSFER) into a pocket must NOT appear in contributions.
+        Account wallet = account(1L, "Revolut Wallet", AccountType.CHECKING, "5000.00");
+        Account pocket = account(10L, "Pocket ••89abfe", AccountType.CHECKING, "666.00");
+
+        when(budgetSettingsService.cycleStartDay(MEMBER_ID)).thenReturn(1);
+        when(accountRepository.findAllByMemberIdOrderByCreatedAtAsc(MEMBER_ID))
+            .thenReturn(List.of(wallet, pocket));
+        when(transactionRepository.findByMemberIdAndKindAndDateBetween(
+                eq(MEMBER_ID), eq(CategoryKind.TRANSFER), any(), any()))
+            .thenReturn(List.of(
+                transfer(pocket, "666.00") // pocket inflow — CURRENT, must not be counted
+            ));
+
+        AllocationResponse r = service.compute(MEMBER_ID, CashflowPeriod.CYCLE, TODAY);
+
+        // CURRENT accounts do not track contributions
+        assertThat(r.totalContributions()).isEqualByComparingTo("0.00");
+        assertThat(r.contributions()).isEmpty();
+    }
+
+    @Test
     void compute_contributions_sumIncomingTransfersIntoSavingsAndInvestment() {
         Account livret = account(2L, "Livret A", AccountType.SAVINGS, "5000.00");
         Account pea = account(4L, "PEA", AccountType.PEA, "2000.00");

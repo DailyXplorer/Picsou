@@ -1236,5 +1236,29 @@
       "loginFallback": "Aller à la connexion",
       "loggingIn": "Connexion en cours..."
     }
+  },
+  "pockets": {
+    "title": "Pockets Revolut",
+    "onboardingTitle": "Nommer vos pockets Revolut",
+    "onboardingDescription": "Des pockets Revolut ont été détectées. Donnez-leur un nom pour les reconnaître facilement.",
+    "transfersTitle": "Virements reçus",
+    "namePlaceholder": "Nom de la pocket (ex : Vacances)",
+    "allocatedLabel": "Alloué",
+    "allocatedTooltip": "Total transféré — pas le solde réel. Les dépenses internes de la pocket ne sont pas synchronisées via PSD2.",
+    "csvDropzone": "Déposez un export CSV Revolut pour pré-remplir les noms",
+    "csvDropzoneActive": "Relâchez pour analyser",
+    "csvDropzoneHint": "Le CSV est utilisé uniquement pour suggérer des noms — aucune dépense n'est importée.",
+    "csvBrowse": "Parcourir",
+    "csvError": "Impossible d'analyser le CSV. Vérifiez que c'est un export Revolut valide.",
+    "csvAmbiguous": "Suggestion incertaine — confirmez manuellement",
+    "csvSuggestedLabel": "Suggestion CSV",
+    "saveNames": "Enregistrer les noms",
+    "skipForNow": "Plus tard",
+    "unnamedPocketsBanner": "{{count}} pocket Revolut non nommée",
+    "unnamedPocketsBanner_other": "{{count}} pockets Revolut non nommées",
+    "nameYourPockets": "Nommer les pockets",
+    "pocketOf": "Pocket de {{walletName}}",
+    "subAccountsCount": "{{count}} pocket",
+    "subAccountsCount_other": "{{count}} pockets"
   }
 }

@@ -68,7 +68,7 @@ class GoalServiceTest {
             new com.picsou.dto.AccountResponse(
                 1L, "LEP", AccountType.LEP, null, "EUR",
                 new BigDecimal("5000"), new BigDecimal("5000"),
-                null, true, "#6366f1", null, null, null, null
+                null, true, "#6366f1", null, null, null, null, null
             )
         );
         when(accountService.liveBalanceEur(account)).thenReturn(new BigDecimal("5000"));
@@ -165,7 +165,7 @@ class GoalServiceTest {
             new com.picsou.dto.AccountResponse(
                 1L, "Livret", AccountType.SAVINGS, null, "EUR",
                 BigDecimal.ZERO, BigDecimal.ZERO,
-                null, true, "#000", null, null, null, null
+                null, true, "#000", null, null, null, null, null
             )
         );
         when(accountService.liveBalanceEur(account)).thenReturn(BigDecimal.ZERO);
@@ -224,7 +224,7 @@ class GoalServiceTest {
             new com.picsou.dto.AccountResponse(
                 1L, "Livret", AccountType.SAVINGS, null, "EUR",
                 BigDecimal.ZERO, BigDecimal.ZERO,
-                null, true, "#000", null, null, null, null
+                null, true, "#000", null, null, null, null, null
             )
         );
         when(accountService.liveBalanceEur(account)).thenReturn(BigDecimal.ZERO);
@@ -270,7 +270,7 @@ class GoalServiceTest {
             new com.picsou.dto.AccountResponse(
                 1L, "LEP", AccountType.LEP, null, "EUR",
                 BigDecimal.ZERO, BigDecimal.ZERO,
-                null, true, "#000", null, null, null, null
+                null, true, "#000", null, null, null, null, null
             )
         );
         when(accountService.liveBalanceEur(account)).thenReturn(BigDecimal.ZERO);

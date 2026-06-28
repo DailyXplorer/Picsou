@@ -122,6 +122,40 @@ class CashflowServiceTest {
     }
 
     @Test
+    void compute_excludesReclassifiedPocketWalletDebit() {
+        // A "To EUR MB:<uuid>" row reclassified to TRANSFER must not appear in spending.
+        when(budgetSettingsService.cycleStartDay(MEMBER_ID)).thenReturn(1);
+        when(transactionRepository.findByMemberIdAndDateBetween(eq(MEMBER_ID), any(), any()))
+            .thenReturn(List.of(
+                tx(LocalDate.of(2026, 6, 2), "2500.00", CategoryKind.INCOME),
+                tx(LocalDate.of(2026, 6, 3), "-666.00", CategoryKind.TRANSFER), // pocket debit — excluded
+                tx(LocalDate.of(2026, 6, 3), "666.00", CategoryKind.TRANSFER)   // mirror credit — excluded
+            ));
+
+        CashflowResponse r = service.compute(MEMBER_ID, CashflowPeriod.CYCLE, TODAY);
+
+        assertThat(r.income()).isEqualByComparingTo("2500.00");
+        assertThat(r.expense()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void compute_mirrorLegNotCountedAsExpenseOrIncome() {
+        // The pocket mirror credit (+amount, TRANSFER) must not inflate income.
+        when(budgetSettingsService.cycleStartDay(MEMBER_ID)).thenReturn(1);
+        when(transactionRepository.findByMemberIdAndDateBetween(eq(MEMBER_ID), any(), any()))
+            .thenReturn(List.of(
+                tx(LocalDate.of(2026, 6, 2), "2500.00", CategoryKind.INCOME),
+                tx(LocalDate.of(2026, 6, 3), "666.00", CategoryKind.TRANSFER) // pocket mirror credit
+            ));
+
+        CashflowResponse r = service.compute(MEMBER_ID, CashflowPeriod.CYCLE, TODAY);
+
+        // Only real income counted; mirror leg excluded by TRANSFER kind
+        assertThat(r.income()).isEqualByComparingTo("2500.00");
+        assertThat(r.expense()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
     void compute_ytd_bucketsPerCycleAndTotalsMatchSum() {
         when(budgetSettingsService.cycleStartDay(MEMBER_ID)).thenReturn(1);
         when(transactionRepository.findByMemberIdAndDateBetween(eq(MEMBER_ID), any(), any()))

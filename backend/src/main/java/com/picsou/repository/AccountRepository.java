@@ -34,4 +34,43 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         @Param("externalId") String externalId,
         @Param("memberId") Long memberId
     );
+
+    // ─── Revolut pockets (1.1.0) ──────────────────────────────────────────────
+
+    /**
+     * Find all Revolut wallet accounts for a member (provider = 'Revolut', no parent account).
+     * Pocket sub-accounts are excluded (they carry a parent_account_id).
+     */
+    @Query("""
+        SELECT a FROM Account a
+        WHERE a.member.id = :memberId AND a.provider = 'Revolut'
+        AND a.parentAccountId IS NULL
+        """)
+    List<Account> findRevolutWalletsByMemberId(@Param("memberId") Long memberId);
+
+    /**
+     * Find an existing Revolut pocket sub-account by its stable uuid (external_account_id)
+     * and parent wallet id. Used for idempotent find-or-create.
+     */
+    @Query("""
+        SELECT a FROM Account a
+        WHERE a.member.id = :memberId
+        AND a.parentAccountId = :parentAccountId
+        AND a.externalAccountId = :pocketUuid
+        """)
+    java.util.Optional<Account> findPocketByParentAndUuid(
+        @Param("memberId") Long memberId,
+        @Param("parentAccountId") Long parentAccountId,
+        @Param("pocketUuid") String pocketUuid
+    );
+
+    /**
+     * All pocket sub-accounts for a member: parent_account_id IS NOT NULL.
+     */
+    @Query("""
+        SELECT a FROM Account a
+        WHERE a.member.id = :memberId AND a.parentAccountId IS NOT NULL
+        ORDER BY a.parentAccountId ASC, a.id ASC
+        """)
+    List<Account> findAllPocketsByMemberId(@Param("memberId") Long memberId);
 }

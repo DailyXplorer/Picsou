@@ -143,4 +143,31 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     @org.springframework.data.jpa.repository.Modifying
     @Query("UPDATE Transaction t SET t.categoryRef = NULL WHERE t.categoryRef.id = :categoryId")
     void clearCategory(@Param("categoryId") Long categoryId);
+
+    // ─── Revolut pockets (1.1.0) ─────────────────────────────────────────────
+
+    /**
+     * All transactions for an account ordered by date (oldest first), used for backfill.
+     * Member-scoped via account ownership.
+     */
+    @Query("""
+        SELECT t FROM Transaction t
+        WHERE t.account.id = :accountId
+        ORDER BY t.date ASC, t.id ASC
+        """)
+    List<Transaction> findByAccountIdOrderByDateAsc(@Param("accountId") Long accountId);
+
+    /**
+     * Transactions for a specific pocket account (by id), newest first.
+     * Used by the unnamed-pockets listing to show recent inflows.
+     */
+    @Query("""
+        SELECT t FROM Transaction t
+        WHERE t.account.id = :accountId
+        ORDER BY t.date DESC, t.id DESC
+        """)
+    List<Transaction> findTopByAccountIdOrderByDateDesc(
+        @Param("accountId") Long accountId,
+        org.springframework.data.domain.Pageable pageable
+    );
 }

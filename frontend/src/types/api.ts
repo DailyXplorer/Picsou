@@ -39,6 +39,12 @@ export interface Account {
   createdAt: string
   realEstate?: RealEstateMetadata
   debt?: DebtInfo
+  /** Set for Revolut pocket sub-accounts: the id of the parent Revolut wallet.
+   *  Null / absent for regular top-level accounts. */
+  parentAccountId?: number | null
+  /** Stable external identifier (e.g. Revolut pocket UUID from "To EUR MB:<uuid>").
+   *  Null / absent for regular accounts. */
+  externalAccountId?: string | null
 }
 
 export interface AccountRequest {

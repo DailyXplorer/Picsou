@@ -35,6 +35,7 @@ public class SyncService {
     private final TransactionRepository transactionRepository;
     private final CategorizationService categorizationService;
     private final RecurringDetectionService recurringDetectionService;
+    private final RevolutPocketService revolutPocketService;
 
     /** How far back to pull transactions on each sync; dedup makes the overlap harmless. */
     private static final int TRANSACTION_LOOKBACK_DAYS = 90;
@@ -47,7 +48,8 @@ public class SyncService {
         AccountService accountService,
         TransactionRepository transactionRepository,
         CategorizationService categorizationService,
-        RecurringDetectionService recurringDetectionService
+        RecurringDetectionService recurringDetectionService,
+        RevolutPocketService revolutPocketService
     ) {
         this.bankConnector = bankConnector;
         this.accountRepository = accountRepository;
@@ -57,6 +59,7 @@ public class SyncService {
         this.transactionRepository = transactionRepository;
         this.categorizationService = categorizationService;
         this.recurringDetectionService = recurringDetectionService;
+        this.revolutPocketService = revolutPocketService;
     }
 
     /**
@@ -68,6 +71,23 @@ public class SyncService {
             recurringDetectionService.detect(memberId, LocalDate.now());
         } catch (Exception ex) {
             log.warn("Recurring detection skipped for member {}: {}", memberId, ex.getMessage());
+        }
+    }
+
+    /**
+     * Run the Revolut pocket backfill for a member after all accounts and their transactions
+     * have been upserted. The backfill reconstructs pockets over the member's full history
+     * (not just the 90-day sync window), so historical "To … MB" rows are cleaned up too.
+     * Isolated from the enclosing sync transaction the same way {@link #detectRecurring} is —
+     * a backfill failure must never roll back freshly-ingested balances.
+     * <p>
+     * No-op if the member has no Revolut wallet accounts.
+     */
+    private void runPocketBackfill(Long memberId) {
+        try {
+            revolutPocketService.backfillForMember(memberId);
+        } catch (Exception ex) {
+            log.warn("Revolut pocket backfill skipped for member {}: {}", memberId, ex.getMessage());
         }
     }
 
@@ -150,6 +170,7 @@ public class SyncService {
         requisitionRepository.save(requisition);
 
         detectRecurring(member.getId());
+        runPocketBackfill(member.getId());
 
         log.info("Completed Enable Banking sync for {}: {} accounts linked", requisition.getInstitutionName(), responses.size());
         return responses;
@@ -196,6 +217,7 @@ public class SyncService {
         requisitionRepository.save(req);
 
         detectRecurring(member.getId());
+        runPocketBackfill(member.getId());
 
         log.info("Retry sync OK for {}: {} accounts linked", req.getInstitutionName(), responses.size());
         return responses;
@@ -220,6 +242,7 @@ public class SyncService {
                 req.setLastSyncedAt(Instant.now());
                 requisitionRepository.save(req);
                 detectRecurring(member.getId());
+                runPocketBackfill(member.getId());
                 log.info("Auto-resync OK for {}: {} accounts", req.getInstitutionName(), accounts.size());
             } catch (Exception ex) {
                 req.setStatus(RequisitionStatus.FAILED);
@@ -246,6 +269,7 @@ public class SyncService {
         req.setLastSyncedAt(Instant.now());
         requisitionRepository.save(req);
         detectRecurring(member.getId());
+        runPocketBackfill(member.getId());
         log.info("Refreshed {} accounts for {}", responses.size(), req.getInstitutionName());
         return responses;
     }
@@ -339,6 +363,8 @@ public class SyncService {
                 .build();
             categorizationService.autoCategorize(tx, categorization);
             transactionRepository.save(tx);
+            // After persisting, detect and process Revolut pocket transfers.
+            revolutPocketService.processTransaction(tx, member.getId());
             inserted++;
         }
         if (inserted > 0) {

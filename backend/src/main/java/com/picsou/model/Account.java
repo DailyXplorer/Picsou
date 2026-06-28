@@ -65,4 +65,11 @@ public class Account extends AuditableEntity {
 
     @Column(name = "deleted_at")
     private Instant deletedAt;
+
+    /**
+     * For Revolut pockets only: points to the parent wallet account.
+     * NULL for all normal accounts.
+     */
+    @Column(name = "parent_account_id")
+    private Long parentAccountId;
 }

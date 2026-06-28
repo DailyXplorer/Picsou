@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAccounts, useUpdateAccount, useDeleteAccount, useUpdateDebtMetadata } from '@/features/accounts/hooks'
 import { useHistory } from '@/features/history/hooks'
+import { useUnnamedPockets } from '@/features/pockets/hooks'
+import { PocketOnboardingModal } from '@/features/pockets/PocketOnboardingModal'
 import { AccountForm } from '@/components/shared/AccountForm'
 import { AddAccountModal } from '@/components/shared/AddAccountModal'
 import { AccountCard } from '@/components/shared/AccountCard'
@@ -14,7 +16,8 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Plus, Wallet, Pencil, Trash2, TrendingUp, TrendingDown } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Plus, Wallet, Pencil, Trash2, TrendingUp, TrendingDown, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Account, AccountRequest, AccountType } from '@/types/api'
 
@@ -75,6 +78,46 @@ type AccountFormData = {
   endDate?: string
 }
 
+// ─── Inline pocket card (smaller, with "alloué" tooltip) ─────────────────────
+
+function PocketCard({ account, onClick }: { account: Account; onClick?: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <Card
+      className="cursor-pointer transition-shadow hover:shadow-md"
+      onClick={onClick}
+    >
+      <CardContent className="flex items-start gap-3 p-3 sm:p-4">
+        <div
+          className="mt-1 h-8 w-1 shrink-0 rounded-full"
+          style={{ backgroundColor: account.color }}
+        />
+        <div className="min-w-0 flex-1">
+          <span className="truncate text-sm font-medium">{account.name}</span>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <CurrencyDisplay value={account.currentBalanceEur} className="text-base font-semibold" />
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex cursor-help items-center gap-0.5 text-xs text-muted-foreground">
+                    {t('pockets.allocatedLabel')}
+                    <Info className="size-3" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-56 text-center text-xs">
+                  {t('pockets.allocatedTooltip')}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export function AccountsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -83,35 +126,76 @@ export function AccountsPage() {
   const updateAccount = useUpdateAccount()
   const updateDebt = useUpdateDebtMetadata()
   const deleteAccount = useDeleteAccount()
+  const { data: unnamedPockets } = useUnnamedPockets()
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditForm, setShowEditForm] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [filter, setFilter] = useState<AssetFilter>('ALL')
+  const [showPocketModal, setShowPocketModal] = useState(false)
 
-  // All account IDs for history query (split mode for per-account breakdown)
-  const allAccountIds = useMemo(() => (accounts ?? []).map(a => a.id), [accounts])
+  // ── Pocket grouping ──────────────────────────────────────────────────────────
+  //
+  // Pockets (accounts with parentAccountId set) are excluded from the flat list
+  // to avoid double-counting their balance. They are rendered nested under their
+  // parent Revolut wallet instead.
+
+  const pocketsByParent = useMemo(() => {
+    const map = new Map<number, Account[]>()
+    for (const a of (accounts ?? [])) {
+      if (a.parentAccountId != null) {
+        if (!map.has(a.parentAccountId)) map.set(a.parentAccountId, [])
+        map.get(a.parentAccountId)!.push(a)
+      }
+    }
+    return map
+  }, [accounts])
+
+  // Non-pocket accounts only — used for totals, history IDs, and chart
+  const nonPocketAccounts = useMemo(
+    () => (accounts ?? []).filter((a) => a.parentAccountId == null),
+    [accounts],
+  )
+
+  // All non-pocket IDs for history query (split mode for per-account breakdown)
+  const allAccountIds = useMemo(() => nonPocketAccounts.map((a) => a.id), [nonPocketAccounts])
   const { data: historyData, isLoading: isHistoryLoading } = useHistory(allAccountIds, 12, true)
 
-  // Grid accounts: always individual, filtered by type
-  const filteredAccounts = useMemo(() => {
-    if (!accounts) return []
+  // Non-pocket accounts filtered by type
+  const filteredNonPockets = useMemo(() => {
     const types = ASSET_FILTER_MAP[filter]
-    if (!types) return accounts
-    return accounts.filter(a => types.includes(a.type))
-  }, [accounts, filter])
+    if (!types) return nonPocketAccounts
+    return nonPocketAccounts.filter((a) => types.includes(a.type))
+  }, [nonPocketAccounts, filter])
+
+  // Wallet groups: parents that have child pockets (e.g. Revolut wallet)
+  const walletGroups = useMemo(
+    () =>
+      filteredNonPockets
+        .filter((a) => pocketsByParent.has(a.id))
+        .map((wallet) => ({ wallet, pockets: pocketsByParent.get(wallet.id)! })),
+    [filteredNonPockets, pocketsByParent],
+  )
+
+  // Standalone accounts: non-pockets without any child pockets
+  const standaloneAccounts = useMemo(
+    () => filteredNonPockets.filter((a) => !pocketsByParent.has(a.id)),
+    [filteredNonPockets, pocketsByParent],
+  )
 
   // Whether current filter contains investment accounts (for PnL display)
-  const hasHoldings = filteredAccounts.some(a => HOLDING_ACCOUNT_TYPES.includes(a.type))
+  const hasHoldings = filteredNonPockets.some((a) => HOLDING_ACCOUNT_TYPES.includes(a.type))
 
-  // Summary card values
-  const totalBalance = filteredAccounts.reduce((sum, a) =>
-    a.type === 'LOAN' ? sum - a.currentBalanceEur : sum + a.currentBalanceEur, 0)
+  // Summary card values (pockets excluded — their balance is already in the wallet)
+  const totalBalance = filteredNonPockets.reduce(
+    (sum, a) => (a.type === 'LOAN' ? sum - a.currentBalanceEur : sum + a.currentBalanceEur),
+    0,
+  )
 
-  // PnL from the latest history point for filtered accounts
+  // PnL from the latest history point for filtered non-pocket accounts
   const { pnl, pnlPct, totalInvested } = useMemo(() => {
-    if (!historyData || historyData.length === 0 || filteredAccounts.length === 0) {
+    if (!historyData || historyData.length === 0 || filteredNonPockets.length === 0) {
       return { pnl: 0, pnlPct: null, totalInvested: 0 }
     }
     const latest = historyData[historyData.length - 1]
@@ -119,7 +203,7 @@ export function AccountsPage() {
 
     let inv = 0
     let pnlSum = 0
-    for (const a of filteredAccounts) {
+    for (const a of filteredNonPockets) {
       const ap = latest.accounts[String(a.id)]
       if (ap) {
         inv += ap.invested
@@ -128,7 +212,7 @@ export function AccountsPage() {
     }
     const pct = inv > 0 ? ((pnlSum / inv) * 100).toFixed(1) : null
     return { pnl: pnlSum, pnlPct: pct, totalInvested: inv }
-  }, [historyData, filteredAccounts])
+  }, [historyData, filteredNonPockets])
 
   const pnlPositive = pnl >= 0
 
@@ -136,9 +220,9 @@ export function AccountsPage() {
   const chartAccounts = useMemo(() => {
     if (!accounts) return []
     if (filter !== 'ALL') {
-      return accounts.filter(a => ASSET_FILTER_MAP[filter]!.includes(a.type))
+      return nonPocketAccounts.filter((a) => ASSET_FILTER_MAP[filter]!.includes(a.type))
     }
-    return Object.values(TYPE_GROUP_META).map(meta => ({
+    return Object.values(TYPE_GROUP_META).map((meta) => ({
       id: meta.key as unknown as number,
       name: t(meta.labelKey),
       type: 'OTHER' as AccountType,
@@ -152,20 +236,20 @@ export function AccountsPage() {
       ticker: null,
       createdAt: '',
     }))
-  }, [accounts, filter, t])
+  }, [accounts, nonPocketAccounts, filter, t])
 
-  // Chart PnL data from split history
+  // Chart PnL data from split history (non-pocket accounts only)
   const chartPnlData = useMemo(() => {
     if (!historyData || !accounts) return []
 
     if (filter !== 'ALL') {
-      const ids = accounts
-        .filter(a => ASSET_FILTER_MAP[filter]!.includes(a.type))
-        .map(a => String(a.id))
+      const ids = nonPocketAccounts
+        .filter((a) => ASSET_FILTER_MAP[filter]!.includes(a.type))
+        .map((a) => String(a.id))
 
       return historyData
-        .filter(p => p.accounts)
-        .map(point => {
+        .filter((p) => p.accounts)
+        .map((point) => {
           const row: { date: string; [key: string]: string | number } = { date: point.date! }
           for (const id of ids) {
             const ap = point.accounts![id]
@@ -175,17 +259,17 @@ export function AccountsPage() {
         })
     }
 
-    // ALL → aggregate PnL per type group
+    // ALL → aggregate PnL per type group (pockets excluded)
     const groupIds: Record<string, Set<string>> = {}
-    for (const a of accounts) {
+    for (const a of nonPocketAccounts) {
       const group = TYPE_TO_GROUP[a.type]
       if (!groupIds[group]) groupIds[group] = new Set()
       groupIds[group].add(String(a.id))
     }
 
     return historyData
-      .filter(p => p.accounts)
-      .map(point => {
+      .filter((p) => p.accounts)
+      .map((point) => {
         const row: { date: string; [key: string]: string | number } = { date: point.date! }
         for (const [group, ids] of Object.entries(groupIds)) {
           let pnlSum = 0
@@ -197,7 +281,7 @@ export function AccountsPage() {
         }
         return row
       })
-  }, [historyData, accounts, filter])
+  }, [historyData, accounts, nonPocketAccounts, filter])
 
   function handleOpenCreate() {
     setShowCreateModal(true)
@@ -279,6 +363,9 @@ export function AccountsPage() {
 
   const isMutating = updateAccount.isPending || updateDebt.isPending
 
+  const hasAnyAccounts = (accounts?.length ?? 0) > 0
+  const hasUnnamedPockets = (unnamedPockets?.length ?? 0) > 0
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -291,10 +378,27 @@ export function AccountsPage() {
         }
       />
 
-      {accounts && accounts.length > 0 && (
+      {/* Unnamed pockets banner */}
+      {hasUnnamedPockets && unnamedPockets && (
+        <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/30">
+          <p className="text-sm text-amber-800 dark:text-amber-300">
+            {t('pockets.unnamedPocketsBanner', { count: unnamedPockets.length })}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-4 shrink-0"
+            onClick={() => setShowPocketModal(true)}
+          >
+            {t('pockets.nameYourPockets')}
+          </Button>
+        </div>
+      )}
+
+      {hasAnyAccounts && (
         <>
           <div className="flex flex-wrap items-center gap-1">
-            {FILTER_KEYS.map(f => (
+            {FILTER_KEYS.map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -302,7 +406,7 @@ export function AccountsPage() {
                   'inline-flex items-center justify-center rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
                   filter === f
                     ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
               >
                 {t(`accounts.filters.${f}`)}
@@ -358,46 +462,118 @@ export function AccountsPage() {
             <Skeleton key={i} className="h-32 w-full rounded-xl" />
           ))}
         </div>
-      ) : filteredAccounts.length === 0 ? (
+      ) : filteredNonPockets.length === 0 ? (
         <EmptyState
           icon={<Wallet className="size-12" />}
           title={t('accounts.noAccounts')}
           action={{ label: t('accounts.addAccount'), onClick: handleOpenCreate }}
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredAccounts.map((account) => (
-            <div key={account.id} className="relative group">
-              <AccountCard
-                account={account}
-                onClick={() => navigate(`/accounts/${account.id}`)}
-              />
-              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleOpenEdit(account)
-                  }}
-                >
-                  <Pencil className="size-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 text-destructive hover:text-destructive"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setDeleteId(account.id)
-                  }}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
+        <div className="space-y-4">
+          {/* Wallet groups: parent account + nested pocket sub-accounts */}
+          {walletGroups.map(({ wallet, pockets: walletPockets }) => (
+            <div key={wallet.id} className="space-y-2">
+              {/* Parent wallet card */}
+              <div className="relative group">
+                <AccountCard
+                  account={wallet}
+                  onClick={() => navigate(`/accounts/${wallet.id}`)}
+                />
+                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleOpenEdit(wallet)
+                    }}
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-destructive hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setDeleteId(wallet.id)
+                    }}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Pocket sub-accounts */}
+              <div className="ml-3 pl-4 border-l-2 border-border/40 space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {t('pockets.subAccountsCount', { count: walletPockets.length })}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {walletPockets.map((pocket) => (
+                    <div key={pocket.id} className="relative group">
+                      <PocketCard
+                        account={pocket}
+                        onClick={() => navigate(`/accounts/${pocket.id}`)}
+                      />
+                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleOpenEdit(pocket)
+                          }}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           ))}
+
+          {/* Standalone accounts — normal responsive grid */}
+          {standaloneAccounts.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {standaloneAccounts.map((account) => (
+                <div key={account.id} className="relative group">
+                  <AccountCard
+                    account={account}
+                    onClick={() => navigate(`/accounts/${account.id}`)}
+                  />
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleOpenEdit(account)
+                      }}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 text-destructive hover:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDeleteId(account.id)
+                      }}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -424,6 +600,16 @@ export function AccountsPage() {
         loading={deleteAccount.isPending}
         variant="destructive"
       />
+
+      {/* Pocket onboarding modal — shown when unnamed pockets exist */}
+      {unnamedPockets && unnamedPockets.length > 0 && accounts && (
+        <PocketOnboardingModal
+          open={showPocketModal}
+          onOpenChange={setShowPocketModal}
+          pockets={unnamedPockets}
+          accounts={accounts}
+        />
+      )}
     </div>
   )
 }

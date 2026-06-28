@@ -1,6 +1,6 @@
 import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import type { GoalProgress } from '@/types/api'
-import { mockAccounts } from './data/accounts'
+import { mockAccounts, mockUnnamedPockets, mockCsvSuggestions } from './data/accounts'
 import { mockDashboard } from './data/dashboard'
 import { mockGoals } from './data/goals'
 import { mockHoldings } from './data/holdings'
@@ -58,6 +58,11 @@ for (let i = 1; i <= 7; i++) {
   handlers.set(key('GET', `/accounts/${i}`), () => mockAccounts[i - 1])
 }
 
+// Individual account lookups (extends the loop above for accounts 8–10)
+for (let i = 8; i <= 10; i++) {
+  handlers.set(key('GET', `/accounts/${i}`), () => mockAccounts[i - 1])
+}
+
 // Account CRUD
 handlers.set(key('POST', '/accounts'), (config) => {
   const body = JSON.parse(config.data || '{}')
@@ -87,10 +92,30 @@ handlers.set(key('GET', '/accounts/2/holdings'), () => mockHoldings[2] ?? [])
 handlers.set(key('GET', '/accounts/3/holdings'), () => mockHoldings[3] ?? [])
 handlers.set(key('GET', '/accounts/6/holdings'), () => mockHoldings[6] ?? [])
 
-// Account details: transactions for all accounts
-for (let i = 1; i <= 7; i++) {
+// Account details: transactions for all accounts (1–10)
+for (let i = 1; i <= 10; i++) {
   handlers.set(key('GET', `/accounts/${i}/transactions`), () => mockTransactions[i] ?? [])
 }
+
+// Revolut pockets — unnamed list
+// Backend: GET /api/revolut-pockets/unnamed → UnnamedPocketResponse[]
+handlers.set(key('GET', '/revolut-pockets/unnamed'), () => mockUnnamedPockets)
+
+// Revolut pockets — CSV name suggestions (wrapped in CsvNamingResponse envelope)
+// Backend: POST /api/revolut-pockets/csv-naming → { suggestions: CsvNameSuggestion[] }
+handlers.set(key('POST', '/revolut-pockets/csv-naming'), () => ({
+  suggestions: mockCsvSuggestions,
+}))
+
+// Pocket rename (accounts 9 and 10) — re-uses the standard PUT /accounts/:id shape
+handlers.set(key('PUT', '/accounts/9'), (config) => {
+  const body = JSON.parse(config.data || '{}')
+  return { ...mockAccounts[8], ...body }
+})
+handlers.set(key('PUT', '/accounts/10'), (config) => {
+  const body = JSON.parse(config.data || '{}')
+  return { ...mockAccounts[9], ...body }
+})
 
 // Security insight (asset type + ETF composition). Mirrors the backend
 // SecurityInsightResponse: { ticker, assetType, composition | null }.
@@ -183,6 +208,18 @@ handlers.set(key('GET', '/accounts/6/history'), () => generateHistory(
 // Livret A: slow steady growth
 handlers.set(key('GET', '/accounts/7/history'), () => generateHistory(
   [4200, 4320, 4440, 4560, 4620, 4740, 4800, 4920, 4980, 5040, 5080, 5120]))
+
+// Revolut wallet (id=8)
+handlers.set(key('GET', '/accounts/8/history'), () => generateHistory(
+  [3000, 3050, 3100, 3200, 3150, 3100, 3200, 3300, 3250, 3200, 3240, 3240.5]))
+
+// Pocket "Vacances" (id=9): inflows-only
+handlers.set(key('GET', '/accounts/9/history'), () => generateHistory(
+  [0, 0, 100, 300, 500, 600, 666, 774, 774, 774, 774, 774]))
+
+// Pocket unnamed (id=10): inflows-only
+handlers.set(key('GET', '/accounts/10/history'), () => generateHistory(
+  [0, 0, 0, 100, 200, 200, 300, 300, 300, 300, 300, 300]))
 
 // Goals
 handlers.set(key('GET', '/goals'), () => mockGoals)
