@@ -17,6 +17,7 @@ import { useCashflow } from '@/features/budget/hooks'
 import type { CashflowPeriod } from '@/types/api'
 import { PeriodToggle } from './budget-utils'
 import { PeriodNavigator } from './PeriodNavigator'
+import { useBudgetPeriod } from './BudgetPeriodContext'
 
 const chartConfig = {
   income: { label: 'Income', color: 'var(--chart-2)' },
@@ -40,7 +41,7 @@ function StatCard({ labelKey, value, tone }: { labelKey: string; value: number; 
 export function CashflowTab() {
   const { t } = useTranslation()
   const [period, setPeriod] = useState<CashflowPeriod>('CYCLE')
-  const [anchor, setAnchor] = useState<string | undefined>(undefined)
+  const { anchor, setAnchor } = useBudgetPeriod()
   const { data, isLoading, isError, refetch } = useCashflow(period, anchor)
 
   return (

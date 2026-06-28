@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, CalendarClock, Inbox, PiggyBank, TrendingUp, Wallet } from 'lucide-react'
@@ -16,6 +15,7 @@ import {
 } from '@/features/budget/hooks'
 import { ColorDot } from './budget-utils'
 import { PeriodNavigator } from './PeriodNavigator'
+import { useBudgetPeriod } from './BudgetPeriodContext'
 
 function RecapCard({ icon: Icon, label, children, onClick, index = 0 }: {
   icon: LucideIcon
@@ -61,7 +61,7 @@ export function OverviewTab() {
   const { t } = useTranslation()
   // Recap cards deep-link into the nested budget routes (relative to `/budget`).
   const navigate = useNavigate()
-  const [anchor, setAnchor] = useState<string | undefined>(undefined)
+  const { anchor, setAnchor } = useBudgetPeriod()
   const cashflowQ = useCashflow('CYCLE', anchor)
   const budgetsQ = useBudgets()
   const upcomingQ = useRecurringCalendar(30)

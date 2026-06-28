@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useUncategorized } from '@/features/budget/hooks'
 import { BUDGET_NAV } from './budget-nav'
+import { BudgetPeriodProvider } from './BudgetPeriodContext'
 
 /**
  * Shell for the whole Budget section. Replaces the former single-page / in-page-tabs
@@ -51,11 +52,14 @@ export function BudgetLayout() {
         </nav>
       </div>
 
-      {/* Keyed by path so each navigation replays a subtle entrance (no-op under
-          prefers-reduced-motion, which the global guard neutralizes). */}
-      <div key={location.pathname} className="mt-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
-        <Outlet />
-      </div>
+      {/* Provider mounts outside the keyed div so the anchor survives tab switches.
+          The keyed div still remounts per path (entrance animation, local page state reset)
+          but BudgetPeriodProvider stays alive for the whole /budget section. */}
+      <BudgetPeriodProvider>
+        <div key={location.pathname} className="mt-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
+          <Outlet />
+        </div>
+      </BudgetPeriodProvider>
     </div>
   )
 }

@@ -18,13 +18,14 @@ import type { CashflowPeriod } from '@/types/api'
 import { ColorDot, PeriodToggle } from './budget-utils'
 import { PeriodNavigator } from './PeriodNavigator'
 import { ASSET_CLASS_COLOR, ASSET_CLASS_LABEL_KEY } from './budget-meta'
+import { useBudgetPeriod } from './BudgetPeriodContext'
 
 const chartConfig = { amount: { label: 'Amount' } } satisfies ChartConfig
 
 export function AllocationTab() {
   const { t } = useTranslation()
   const [period, setPeriod] = useState<CashflowPeriod>('CYCLE')
-  const [anchor, setAnchor] = useState<string | undefined>(undefined)
+  const { anchor, setAnchor } = useBudgetPeriod()
   const { data, isLoading, isError, refetch } = useAllocation(period, anchor)
 
   const stockData = (data?.stock ?? []).map((s) => ({

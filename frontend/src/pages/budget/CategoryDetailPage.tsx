@@ -12,6 +12,7 @@ import type { CashflowPeriod, ChildSpend } from '@/types/api'
 import { FALLBACK_COLOR } from './budget-meta'
 import { PeriodToggle } from './budget-utils'
 import { PeriodNavigator } from './PeriodNavigator'
+import { useBudgetPeriod } from './BudgetPeriodContext'
 
 /**
  * `/budget/spending/:categoryId` — one category's transactions over the period. Keyed by
@@ -49,7 +50,7 @@ export function CategoryDetailPage() {
   const { t } = useTranslation()
   const { categoryId } = useParams()
   const [period, setPeriod] = useState<CashflowPeriod>('CYCLE')
-  const [anchor, setAnchor] = useState<string | undefined>(undefined)
+  const { anchor, setAnchor } = useBudgetPeriod()
   const id = Number(categoryId)
   const { data, isLoading, isError, refetch } = useCategoryDetail(id, period, anchor)
   const logoUrlFor = useMerchantLogoUrl()

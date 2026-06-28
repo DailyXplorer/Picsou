@@ -14,6 +14,7 @@ import type { CashflowPeriod, CategorySpend } from '@/types/api'
 import { FALLBACK_COLOR } from './budget-meta'
 import { PeriodToggle } from './budget-utils'
 import { PeriodNavigator } from './PeriodNavigator'
+import { useBudgetPeriod } from './BudgetPeriodContext'
 
 /**
  * `/budget/spending` — where the money goes. A flow diagram (Sankey on ≥md, proportion
@@ -170,7 +171,7 @@ function ParentGroupRows({ group, total }: { group: ParentGroup; total: number }
 export function SpendingPage() {
   const { t } = useTranslation()
   const [period, setPeriod] = useState<CashflowPeriod>('CYCLE')
-  const [anchor, setAnchor] = useState<string | undefined>(undefined)
+  const { anchor, setAnchor } = useBudgetPeriod()
   const isMobile = useIsMobile()
   const flow = useCashflowFlow(period, anchor)
   const breakdown = useSpendingByCategory(period, anchor)
