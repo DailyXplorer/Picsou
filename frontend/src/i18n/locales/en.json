@@ -45,7 +45,8 @@
     "account": "My account",
     "logout": "Logout",
     "admin": "Administration",
-    "admin.desc": "Instance settings"
+    "admin.desc": "Instance settings",
+    "switchLanguage": "Switch language"
   },
   "auth": {
     "login": "Sign in",

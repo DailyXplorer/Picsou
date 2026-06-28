@@ -10,6 +10,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import picsouLogo from '@/assets/picsou_logo_white.svg'
+import { LanguageToggle } from './LanguageToggle'
 
 const NAV_ITEMS = [
   { path: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard', end: true },
@@ -57,7 +58,7 @@ export function MobileBottomNav() {
     <nav className="fixed bottom-4 inset-x-4 z-50 md:hidden">
       <div className="flex items-center justify-between rounded-xl bg-background px-3 py-3 shadow-md">
         {/* Left items */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           {NAV_ITEMS.slice(0, 2).map((item) => (
             <MobileNavItem
               key={item.path}
@@ -67,6 +68,7 @@ export function MobileBottomNav() {
               label={t(item.labelKey)}
             />
           ))}
+          <LanguageToggle />
         </div>
 
         {/* Center logo */}

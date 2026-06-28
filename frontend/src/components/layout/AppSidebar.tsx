@@ -7,7 +7,6 @@ import {
   PieChart,
   Settings,
   LogOut,
-  Languages,
   ChevronsUpDown,
   Users,
   Shield,
@@ -25,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAppStore } from '@/stores/app-store'
+import { LanguageToggle } from './LanguageToggle'
 import { useProfileStore } from '@/stores/profile-store'
 import { useFamilyMembers } from '@/features/family/hooks'
 import { selectSwitchableMembers } from '@/features/family/members'
@@ -87,7 +87,7 @@ const NAV_ITEMS = [
 ] as const
 
 export function AppSidebar() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const demoMode = useAppStore((s) => s.demoMode)
@@ -117,10 +117,6 @@ export function AppSidebar() {
   const displayColor = activeManaged?.avatarColor ?? '#6366f1'
   const initial = displayName.charAt(0).toUpperCase()
 
-  function toggleLanguage() {
-    i18n.changeLanguage(i18n.language === 'fr' ? 'en' : 'fr')
-  }
-
   return (
     <nav className="hidden md:flex h-fit max-h-[calc(100vh-2rem)] w-60 shrink-0 flex-col bg-background px-3 py-4 rounded-xl">
       {/* Logo */}
@@ -146,6 +142,11 @@ export function AppSidebar() {
           title={t('nav.family', 'Family')}
           description={t('nav.family.desc', 'Shared overview')}
         />
+      </div>
+
+      {/* Language toggle — always visible, next to theme (in /settings > Appearance) */}
+      <div className="mt-3 flex justify-center">
+        <LanguageToggle />
       </div>
 
       {/* User dropdown */}
@@ -178,11 +179,6 @@ export function AppSidebar() {
               {demoMode && <p className="text-xs text-muted-foreground">Demo mode</p>}
             </div>
           </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={toggleLanguage}>
-            <Languages className="mr-2 size-4" />
-            {t('settings.language')}
-          </DropdownMenuItem>
           <DropdownMenuSeparator />
           {isAdmin && managedMembers.length > 0 && (
             <>

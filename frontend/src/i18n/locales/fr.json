@@ -45,7 +45,8 @@
     "account": "Mon compte",
     "logout": "Déconnexion",
     "admin": "Administration",
-    "admin.desc": "Réglages de l'instance"
+    "admin.desc": "Réglages de l'instance",
+    "switchLanguage": "Changer la langue"
   },
   "auth": {
     "login": "Connexion",
