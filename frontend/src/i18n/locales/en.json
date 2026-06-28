@@ -500,6 +500,7 @@
         "ignored": "Ignored"
       },
       "runtime": {
+        "stale": "Inactive",
         "late": "Late",
         "dueSoon": "Due soon"
       },

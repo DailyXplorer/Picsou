@@ -417,7 +417,7 @@ export type RuleSource = 'USER' | 'AUTO'
 export type RecurringCadence = 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
 export type RecurringStatus = 'SUGGESTED' | 'CONFIRMED' | 'IGNORED'
 /** Computed (never stored) urgency of a series' next due date — drives the late / due-soon badges. */
-export type RecurringRuntimeStatus = 'LATE' | 'DUE_SOON' | 'SCHEDULED'
+export type RecurringRuntimeStatus = 'STALE' | 'LATE' | 'DUE_SOON' | 'SCHEDULED'
 /** The kind of change surfaced in the recurring "what changed" activity feed. */
 export type RecurringActivityType = 'AUTO_CONFIRMED' | 'PRICE_CHANGE'
 export type AssetClass = 'CURRENT' | 'SAVINGS' | 'INVESTMENT' | 'OTHER'

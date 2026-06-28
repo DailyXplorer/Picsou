@@ -181,6 +181,11 @@ public class RecurringSeriesService {
             if (due == null) {
                 continue;
             }
+            // Stale series (missed >= STALE_MISSED_PERIODS occurrences) are excluded from the
+            // upcoming calendar — they are no longer active enough to project forward.
+            if (RecurringSeriesResponse.isStale(due, today, series.getCadence())) {
+                continue;
+            }
             // Skip past-due dates forward into the window without emitting stale occurrences.
             while (due.isBefore(today)) {
                 due = series.getCadence().next(due);

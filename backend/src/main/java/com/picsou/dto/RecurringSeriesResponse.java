@@ -41,6 +41,14 @@ public record RecurringSeriesResponse(
     /** How soon ahead a due date counts as "due soon" rather than merely scheduled. */
     private static final int DUE_SOON_DAYS = 7;
 
+    /**
+     * Number of missed cadence periods that makes a series stale. A series is considered inactive
+     * when at least this many expected occurrences have passed without the series being updated.
+     * Computed cadence-correctly via {@link RecurringCadence#next(LocalDate)} — not approximated
+     * with fixed day counts.
+     */
+    public static final int STALE_MISSED_PERIODS = 2;
+
     /** Without a reference date the runtime urgency is unknown, so it resolves to SCHEDULED. */
     public static RecurringSeriesResponse from(RecurringSeries s) {
         return from(s, null);
@@ -68,13 +76,35 @@ public record RecurringSeriesResponse(
             s.getPreviousAmount(),
             s.getPriceChangedAt(),
             s.isAutoConfirmed(),
-            runtimeStatus(s.getNextDueDate(), today)
+            runtimeStatus(s.getNextDueDate(), today, s.getCadence())
         );
     }
 
-    private static RecurringRuntimeStatus runtimeStatus(LocalDate due, LocalDate today) {
+    /**
+     * True when {@code due} is at least {@link #STALE_MISSED_PERIODS} cadence steps before
+     * {@code today}, meaning that many expected occurrences have passed without the series being
+     * refreshed. Uses {@link RecurringCadence#next} for cadence-correct computation.
+     */
+    public static boolean isStale(LocalDate due, LocalDate today, RecurringCadence cadence) {
+        if (due == null || today == null || cadence == null || !due.isBefore(today)) {
+            return false;
+        }
+        int missed = 0;
+        LocalDate step = due;
+        while (missed < STALE_MISSED_PERIODS) {
+            step = cadence.next(step);
+            if (!step.isBefore(today)) break;
+            missed++;
+        }
+        return missed >= STALE_MISSED_PERIODS;
+    }
+
+    private static RecurringRuntimeStatus runtimeStatus(LocalDate due, LocalDate today, RecurringCadence cadence) {
         if (due == null || today == null) {
             return RecurringRuntimeStatus.SCHEDULED;
+        }
+        if (isStale(due, today, cadence)) {
+            return RecurringRuntimeStatus.STALE;
         }
         if (due.isBefore(today)) {
             return RecurringRuntimeStatus.LATE;

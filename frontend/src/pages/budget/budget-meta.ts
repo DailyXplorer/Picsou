@@ -39,12 +39,16 @@ export const STATUS_LABEL_KEY: Record<RecurringStatus, string> = {
 
 /**
  * Runtime urgency badge presentation. SCHEDULED is the quiet default and renders no badge, so it
- * carries no label key — only LATE and DUE_SOON surface a chip on the subscription card.
+ * carries no label key — only STALE, LATE and DUE_SOON surface a chip on the subscription card.
  */
 export const RUNTIME_STATUS_META: Record<
   Exclude<RecurringRuntimeStatus, 'SCHEDULED'>,
   { labelKey: string; className: string }
 > = {
+  STALE: {
+    labelKey: 'budget.recurring.runtime.stale',
+    className: 'border-transparent bg-slate-500/15 text-slate-500 dark:text-slate-400',
+  },
   LATE: {
     labelKey: 'budget.recurring.runtime.late',
     className: 'border-transparent bg-rose-500/15 text-rose-600 dark:text-rose-400',
