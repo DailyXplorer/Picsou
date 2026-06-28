@@ -21,6 +21,7 @@ public record AccountResponse(
     Instant createdAt,
     RealEstateMetadataResponse realEstate,
     DebtResponse debt,
+    SavingsConfigDto savingsConfig,
     /** Non-null only for Revolut pocket sub-accounts; the parent wallet's account id. */
     Long parentAccountId
 ) {
@@ -40,6 +41,7 @@ public record AccountResponse(
             a.getCreatedAt(),
             null,
             null,
+            null,
             a.getParentAccountId()
         );
     }
@@ -47,12 +49,18 @@ public record AccountResponse(
     public AccountResponse withRealEstate(RealEstateMetadataResponse realEstate) {
         return new AccountResponse(id, name, type, provider, currency, currentBalance,
             currentBalanceEur, lastSyncedAt, isManual, color, ticker, createdAt, realEstate, debt,
-            parentAccountId);
+            savingsConfig, parentAccountId);
     }
 
     public AccountResponse withDebt(DebtResponse debt) {
         return new AccountResponse(id, name, type, provider, currency, currentBalance,
             currentBalanceEur, lastSyncedAt, isManual, color, ticker, createdAt, realEstate, debt,
-            parentAccountId);
+            savingsConfig, parentAccountId);
+    }
+
+    public AccountResponse withSavingsConfig(SavingsConfigDto savingsConfig) {
+        return new AccountResponse(id, name, type, provider, currency, currentBalance,
+            currentBalanceEur, lastSyncedAt, isManual, color, ticker, createdAt, realEstate, debt,
+            savingsConfig, parentAccountId);
     }
 }

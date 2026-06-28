@@ -144,6 +144,24 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     @Query("UPDATE Transaction t SET t.categoryRef = NULL WHERE t.categoryRef.id = :categoryId")
     void clearCategory(@Param("categoryId") Long categoryId);
 
+    // ─── Savings livrets (1.1.0) ──────────────────────────────────────────────
+
+    /**
+     * All transactions for a specific account in a date range, oldest first.
+     * Used by the savings interest projection engine to replay the capital history.
+     */
+    @Query("""
+        SELECT t FROM Transaction t
+        WHERE t.account.id = :accountId
+          AND t.date BETWEEN :from AND :to
+        ORDER BY t.date ASC, t.id ASC
+        """)
+    List<Transaction> findByAccountIdAndDateBetweenOrderByDateAsc(
+        @Param("accountId") Long accountId,
+        @Param("from") LocalDate from,
+        @Param("to") LocalDate to
+    );
+
     // ─── Revolut pockets (1.1.0) ─────────────────────────────────────────────
 
     /**

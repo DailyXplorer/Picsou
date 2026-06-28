@@ -45,6 +45,7 @@ export interface Account {
   /** Stable external identifier (e.g. Revolut pocket UUID from "To EUR MB:<uuid>").
    *  Null / absent for regular accounts. */
   externalAccountId?: string | null
+  savingsConfig?: SavingsConfig | null
 }
 
 export interface AccountRequest {
@@ -77,6 +78,44 @@ export interface DebtRequest {
   endDate?: string
   insuranceMonthly?: number
   fileFees?: number
+}
+
+// ─── Savings livrets ─────────────────────────────────────────────────────────
+
+export type SavingsProduct = 'LIVRET_A' | 'LDDS' | 'LEP' | 'COMMERCIAL'
+export type RateBasis = 'GROSS' | 'NET'
+
+export interface SavingsConfig {
+  product: SavingsProduct
+  annualRate: number
+  rateBasis: RateBasis
+  taxRatePct: number | null
+  ceiling: number | null
+}
+
+export interface SavingsConfigRequest {
+  product: SavingsProduct
+  annualRate: number
+  rateBasis: RateBasis
+  taxRatePct: number | null
+  ceiling: number | null
+}
+
+export interface SavingsInterestProjection {
+  estimatedInterestYtd: number
+  projectedInterestFullYear: number
+  nextCapitalizationDate: string
+  annualRatePct: number
+  basis: RateBasis
+  netOfTax: boolean
+}
+
+export interface SavingsSuggestion {
+  accountId: number
+  accountName: string
+  suggestedProduct: SavingsProduct
+  defaultAnnualRate: number | null
+  uncertain: boolean
 }
 
 export interface LoanInstallment {

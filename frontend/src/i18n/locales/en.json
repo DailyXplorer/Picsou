@@ -1261,5 +1261,38 @@
     "pocketOf": "Pocket of {{walletName}}",
     "subAccountsCount": "{{count}} pocket",
     "subAccountsCount_other": "{{count}} pockets"
+  },
+  "savings": {
+    "configSection": "Savings configuration",
+    "product": "Product",
+    "products": {
+      "LIVRET_A": "Livret A",
+      "LDDS": "LDDS",
+      "LEP": "LEP",
+      "COMMERCIAL": "Commercial savings account"
+    },
+    "annualRate": "Annual rate (%)",
+    "rateBasis": "Rate basis",
+    "gross": "Gross",
+    "net": "Net",
+    "taxRate": "Withholding tax (%)",
+    "taxRateHint": "PFU: 30% (flat tax)",
+    "ceiling": "Legal ceiling (€)",
+    "ceilingOptional": "Optional",
+    "saveConfig": "Save configuration",
+    "deleteConfig": "Remove configuration",
+    "deleteConfigConfirm": "Remove savings configuration?",
+    "configSaved": "Configuration saved",
+    "regulatedNet": "Regulated product — interest is net of tax by law",
+    "projectionTitle": "Estimated interest {{year}}",
+    "projectionYtd": "YTD",
+    "projectionFullYear": "Full year estimate",
+    "projectionNextCapitalization": "Next capitalization",
+    "projectionDisclaimer": "This is an estimate. The bank's annual credit is authoritative.",
+    "projectionBasis": "{{basis}} rate",
+    "suggestionsBanner": "{{count}} savings account to configure",
+    "suggestionsBanner_other": "{{count}} savings accounts to configure",
+    "configureSavings": "Configure",
+    "uncertain": "Uncertain classification — please verify"
   }
 }

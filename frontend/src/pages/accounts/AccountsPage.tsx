@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAccounts, useUpdateAccount, useDeleteAccount, useUpdateDebtMetadata } from '@/features/accounts/hooks'
 import { useHistory } from '@/features/history/hooks'
 import { useUnnamedPockets } from '@/features/pockets/hooks'
+import { useSavingsSuggestions } from '@/features/savings/hooks'
 import { PocketOnboardingModal } from '@/features/pockets/PocketOnboardingModal'
 import { AccountForm } from '@/components/shared/AccountForm'
 import { AddAccountModal } from '@/components/shared/AddAccountModal'
@@ -127,6 +128,8 @@ export function AccountsPage() {
   const updateDebt = useUpdateDebtMetadata()
   const deleteAccount = useDeleteAccount()
   const { data: unnamedPockets } = useUnnamedPockets()
+  const { data: savingsSuggestions } = useSavingsSuggestions()
+  const hasSavingsSuggestions = Array.isArray(savingsSuggestions) && savingsSuggestions.length > 0
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditForm, setShowEditForm] = useState(false)
@@ -391,6 +394,23 @@ export function AccountsPage() {
             onClick={() => setShowPocketModal(true)}
           >
             {t('pockets.nameYourPockets')}
+          </Button>
+        </div>
+      )}
+
+      {/* Savings suggestions banner */}
+      {hasSavingsSuggestions && (
+        <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-900/50 dark:bg-emerald-950/30">
+          <p className="text-sm text-emerald-800 dark:text-emerald-300">
+            {t('savings.suggestionsBanner', { count: savingsSuggestions!.length })}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-4 shrink-0"
+            onClick={() => navigate(`/accounts/${savingsSuggestions![0].accountId}`)}
+          >
+            {t('savings.configureSavings')}
           </Button>
         </div>
       )}

@@ -81,7 +81,7 @@ class SyncServiceRevolutBackfillTest {
         AccountResponse fakeResponse = new AccountResponse(
             10L, "Revolut", AccountType.CHECKING, "Revolut", "EUR",
             BigDecimal.valueOf(1000), BigDecimal.valueOf(1000),
-            null, false, "#6366f1", null, null, null, null, null);
+            null, false, "#6366f1", null, null, null, null, null, null);
         when(accountService.toResponse(any(Account.class))).thenReturn(fakeResponse);
         when(bankConnector.fetchTransactions(anyString(), anyString(), any()))
             .thenReturn(List.of());

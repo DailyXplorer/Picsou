@@ -185,6 +185,71 @@ handlers.set(key('PUT', '/accounts/10'), (config) => {
   return updated
 })
 
+// ─── Savings livrets ─────────────────────────────────────────────────────────
+
+// GET /savings/suggestions — only accounts without an existing config
+handlers.set(key('GET', '/savings/suggestions'), () => {
+  const withoutConfig = _demoAccounts.filter(
+    a => (a.type === 'SAVINGS' || a.type === 'LEP') && !a.savingsConfig
+  )
+  return withoutConfig.map(a => ({
+    accountId: a.id,
+    accountName: a.name,
+    suggestedProduct: a.type === 'LEP' ? 'LEP' : 'LIVRET_A',
+    defaultAnnualRate: a.type === 'LEP' ? 3.50 : 2.40,
+    uncertain: false,
+  }))
+})
+
+// PUT /accounts/{id}/savings-config — update savingsConfig on the account
+// Uses a regex-based approach since handlers.set uses exact string keys
+// We need to handle this for savings accounts (ids 1 and 7 in demo)
+handlers.set(key('PUT', '/accounts/1/savings-config'), (config) => {
+  const body = JSON.parse(config.data || '{}')
+  const updated = { ..._demoAccounts[0], savingsConfig: body }
+  _demoAccounts = _demoAccounts.map((a, i) => i === 0 ? updated : a)
+  return updated
+})
+handlers.set(key('PUT', '/accounts/7/savings-config'), (config) => {
+  const body = JSON.parse(config.data || '{}')
+  const updated = { ..._demoAccounts[6], savingsConfig: body }
+  _demoAccounts = _demoAccounts.map((a, i) => i === 6 ? updated : a)
+  return updated
+})
+
+// DELETE /accounts/{id}/savings-config — remove savingsConfig
+handlers.set(key('DELETE', '/accounts/1/savings-config'), () => {
+  const updated = { ..._demoAccounts[0], savingsConfig: null }
+  _demoAccounts = _demoAccounts.map((a, i) => i === 0 ? updated : a)
+  return null
+})
+handlers.set(key('DELETE', '/accounts/7/savings-config'), () => {
+  const updated = { ..._demoAccounts[6], savingsConfig: null }
+  _demoAccounts = _demoAccounts.map((a, i) => i === 6 ? updated : a)
+  return null
+})
+
+// GET /accounts/{id}/savings-interest — projection data
+function generateSavingsInterest(accountId: number) {
+  const account = _demoAccounts.find(a => a.id === accountId)
+  const rate = account?.savingsConfig?.annualRate ?? (account?.type === 'LEP' ? 3.50 : 2.40)
+  const balance = account?.currentBalance ?? 5000
+  const now = new Date()
+  const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000)
+  const estimatedInterestYtd = balance * (rate / 100) * (dayOfYear / 365)
+  const projectedInterestFullYear = balance * (rate / 100)
+  return {
+    estimatedInterestYtd: Math.round(estimatedInterestYtd * 100) / 100,
+    projectedInterestFullYear: Math.round(projectedInterestFullYear * 100) / 100,
+    nextCapitalizationDate: `${now.getFullYear()}-12-31`,
+    annualRatePct: rate,
+    basis: account?.savingsConfig?.rateBasis ?? 'NET',
+    netOfTax: true,
+  }
+}
+handlers.set(key('GET', '/accounts/1/savings-interest'), () => generateSavingsInterest(1))
+handlers.set(key('GET', '/accounts/7/savings-interest'), () => generateSavingsInterest(7))
+
 // Security insight (asset type + ETF composition). Mirrors the backend
 // SecurityInsightResponse: { ticker, assetType, composition | null }.
 const demoStockTickers = ['AAPL', 'MSFT', 'AMZN', 'NVDA']

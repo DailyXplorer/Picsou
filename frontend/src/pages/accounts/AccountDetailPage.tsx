@@ -18,6 +18,8 @@ import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { AccountTypeBadge } from '@/components/shared/AccountTypeBadge'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { LoanDetailSection } from '@/components/loan/LoanDetailSection'
+import { SavingsConfigSection } from '@/features/savings/SavingsConfigSection'
+import { useSavingsSuggestions } from '@/features/savings/hooks'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -45,6 +47,7 @@ export function AccountDetailPage() {
   const updateHoldingMutation = useUpdateHolding(accountId)
   const deleteHoldingMutation = useDeleteHolding(accountId)
   const { data: pnlData } = useHistory(accountId ? [accountId] : [], 12)
+  const { data: savingsSuggestions } = useSavingsSuggestions()
 
   const [showHistory, setShowHistory] = useState(false)
   const [showAddTx, setShowAddTx] = useState(false)
@@ -57,6 +60,13 @@ export function AccountDetailPage() {
   const chartData = (history ?? []).map(s => ({ date: s.date, balance: s.balance }))
   const isLoan = account?.type === 'LOAN'
   const isPocket = account?.parentAccountId != null
+  // A freshly bank-synced livret is typed CHECKING until configured, so also surface the
+  // section when it already has a config or the detector flagged it as a savings candidate.
+  const isSavingsSuggested = Array.isArray(savingsSuggestions)
+    && savingsSuggestions.some(s => s.accountId === account?.id)
+  const isSavings = account
+    ? (account.type === 'SAVINGS' || account.type === 'LEP' || !!account.savingsConfig || isSavingsSuggested)
+    : false
   const showHoldings = account ? HOLDING_ACCOUNT_TYPES.includes(account.type) : false
   const recentSnapshots = [...(history ?? [])].reverse().slice(0, 10)
 
@@ -175,6 +185,14 @@ export function AccountDetailPage() {
 
       {/* Loan detail */}
       {isLoan && account && <LoanDetailSection accountId={account.id} />}
+
+      {/* Savings config + projection */}
+      {isSavings && account && (
+        <SavingsConfigSection
+          accountId={account.id}
+          initialConfig={account.savingsConfig}
+        />
+      )}
 
       {/* History chart */}
       {!isLoan && showHoldings && pnlData && pnlData.length > 1 ? (

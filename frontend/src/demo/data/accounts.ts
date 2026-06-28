@@ -99,6 +99,13 @@ export const mockAccounts: Account[] = [
     color: '#22c55e',
     ticker: null,
     createdAt: '2024-01-01T08:00:00Z',
+    savingsConfig: {
+      product: 'LIVRET_A' as const,
+      annualRate: 2.40,
+      rateBasis: 'NET' as const,
+      taxRatePct: null,
+      ceiling: 22950,
+    },
   },
   // ─── Revolut wallet + pockets (demo) ────────────────────────────────────────
   {

@@ -1261,5 +1261,38 @@
     "pocketOf": "Pocket de {{walletName}}",
     "subAccountsCount": "{{count}} pocket",
     "subAccountsCount_other": "{{count}} pockets"
+  },
+  "savings": {
+    "configSection": "Configuration livret",
+    "product": "Produit",
+    "products": {
+      "LIVRET_A": "Livret A",
+      "LDDS": "LDDS",
+      "LEP": "LEP",
+      "COMMERCIAL": "Livret bancaire"
+    },
+    "annualRate": "Taux annuel (%)",
+    "rateBasis": "Base du taux",
+    "gross": "Brut",
+    "net": "Net",
+    "taxRate": "Prélèvement fiscal (%)",
+    "taxRateHint": "PFU : 30 % (flat tax)",
+    "ceiling": "Plafond légal (€)",
+    "ceilingOptional": "Optionnel",
+    "saveConfig": "Enregistrer",
+    "deleteConfig": "Supprimer la configuration",
+    "deleteConfigConfirm": "Supprimer la configuration livret ?",
+    "configSaved": "Configuration enregistrée",
+    "regulatedNet": "Produit réglementé — les intérêts sont nets d'impôt par la loi",
+    "projectionTitle": "Intérêts estimés {{year}}",
+    "projectionYtd": "Depuis le 1er janvier",
+    "projectionFullYear": "Estimation pleine année",
+    "projectionNextCapitalization": "Prochaine capitalisation",
+    "projectionDisclaimer": "Estimation uniquement. Le crédit annuel de la banque fait foi.",
+    "projectionBasis": "Taux {{basis}}",
+    "suggestionsBanner": "{{count}} livret à configurer",
+    "suggestionsBanner_other": "{{count}} livrets à configurer",
+    "configureSavings": "Configurer",
+    "uncertain": "Classification incertaine — à vérifier"
   }
 }

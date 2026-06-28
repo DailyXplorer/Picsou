@@ -7,6 +7,7 @@ import com.picsou.dto.DebtResponse;
 import com.picsou.dto.HoldingResponse;
 import com.picsou.dto.RealEstateMetadataRequest;
 import com.picsou.dto.RealEstateMetadataResponse;
+import com.picsou.dto.SavingsConfigDto;
 import com.picsou.dto.SnapshotRequest;
 import com.picsou.dto.TransactionResponse;
 import com.picsou.exception.ResourceNotFoundException;
@@ -22,6 +23,7 @@ import com.picsou.repository.AccountRepository;
 import com.picsou.repository.BalanceSnapshotRepository;
 import com.picsou.repository.DebtRepository;
 import com.picsou.repository.RealEstateMetadataRepository;
+import com.picsou.repository.SavingsInterestConfigRepository;
 import com.picsou.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +45,7 @@ public class AccountService {
     private final TransactionRepository transactionRepository;
     private final RealEstateMetadataRepository realEstateMetadataRepository;
     private final DebtRepository debtRepository;
+    private final SavingsInterestConfigRepository savingsInterestConfigRepository;
     private final PriceService priceService;
     private final LoanAmortizationService loanAmortizationService;
 
@@ -53,6 +56,7 @@ public class AccountService {
         TransactionRepository transactionRepository,
         RealEstateMetadataRepository realEstateMetadataRepository,
         DebtRepository debtRepository,
+        SavingsInterestConfigRepository savingsInterestConfigRepository,
         PriceService priceService,
         LoanAmortizationService loanAmortizationService
     ) {
@@ -62,6 +66,7 @@ public class AccountService {
         this.transactionRepository = transactionRepository;
         this.realEstateMetadataRepository = realEstateMetadataRepository;
         this.debtRepository = debtRepository;
+        this.savingsInterestConfigRepository = savingsInterestConfigRepository;
         this.priceService = priceService;
         this.loanAmortizationService = loanAmortizationService;
     }
@@ -285,6 +290,12 @@ public class AccountService {
             if (debt.isPresent()) {
                 response = response.withDebt(debt.get());
             }
+        }
+
+        Optional<SavingsConfigDto> savings = savingsInterestConfigRepository.findByAccountId(account.getId())
+            .map(SavingsConfigDto::from);
+        if (savings.isPresent()) {
+            response = response.withSavingsConfig(savings.get());
         }
 
         return response;
