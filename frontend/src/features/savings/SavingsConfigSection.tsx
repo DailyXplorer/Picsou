@@ -22,16 +22,23 @@ const DEFAULT_RATES: Record<SavingsProduct, number> = {
 interface SavingsConfigSectionProps {
   accountId: number
   initialConfig?: SavingsConfig | null
+  /** Detector suggestion for an unconfigured account — pre-fills the form. */
+  suggestedProduct?: SavingsProduct
+  suggestedRate?: number | null
 }
 
-export function SavingsConfigSection({ accountId, initialConfig }: SavingsConfigSectionProps) {
+export function SavingsConfigSection({
+  accountId, initialConfig, suggestedProduct, suggestedRate,
+}: SavingsConfigSectionProps) {
   const { t } = useTranslation()
   const setConfig = useSetSavingsConfig()
   const deleteConfig = useDeleteSavingsConfig()
 
-  const [product, setProduct] = useState<SavingsProduct>(initialConfig?.product ?? 'LIVRET_A')
+  // A saved config wins; otherwise fall back to the detector suggestion, then a sane default.
+  const initialProduct: SavingsProduct = initialConfig?.product ?? suggestedProduct ?? 'LIVRET_A'
+  const [product, setProduct] = useState<SavingsProduct>(initialProduct)
   const [annualRate, setAnnualRate] = useState<string>(
-    String(initialConfig?.annualRate ?? DEFAULT_RATES['LIVRET_A'])
+    String(initialConfig?.annualRate ?? suggestedRate ?? DEFAULT_RATES[initialProduct])
   )
   const [rateBasis, setRateBasis] = useState<RateBasis>(initialConfig?.rateBasis ?? 'NET')
   const [taxRatePct, setTaxRatePct] = useState<string>(

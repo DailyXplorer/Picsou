@@ -38,11 +38,12 @@ Drove the real served frontend in demo mode (`VITE_DEMO_MODE=true`, mocked API):
 not the real quinzaine engine (that engine is covered by hand-computed unit tests). The smoke
 validates the integration/flow, not the arithmetic.
 
-## Open follow-up found during the smoke
+## Follow-up found during the smoke (resolved)
 
-The suggestions banner navigates to the account, but the config form defaults the product to the
+The suggestions banner navigates to the account, but the config form defaulted the product to the
 first option (Livret A) instead of pre-selecting the *suggested* product (e.g. LEP) and its default
-rate. Minor UX polish: thread `suggestedProduct` from the suggestion into the form's initial state.
+rate. Fixed by threading `suggestedProduct` / `defaultAnnualRate` from the suggestion into
+`SavingsConfigSection`'s initial state when the account has no saved config.
 
 ## Takeaway
 

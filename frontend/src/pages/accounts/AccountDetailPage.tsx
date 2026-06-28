@@ -62,10 +62,11 @@ export function AccountDetailPage() {
   const isPocket = account?.parentAccountId != null
   // A freshly bank-synced livret is typed CHECKING until configured, so also surface the
   // section when it already has a config or the detector flagged it as a savings candidate.
-  const isSavingsSuggested = Array.isArray(savingsSuggestions)
-    && savingsSuggestions.some(s => s.accountId === account?.id)
+  const savingsSuggestion = Array.isArray(savingsSuggestions)
+    ? savingsSuggestions.find(s => s.accountId === account?.id)
+    : undefined
   const isSavings = account
-    ? (account.type === 'SAVINGS' || account.type === 'LEP' || !!account.savingsConfig || isSavingsSuggested)
+    ? (account.type === 'SAVINGS' || account.type === 'LEP' || !!account.savingsConfig || !!savingsSuggestion)
     : false
   const showHoldings = account ? HOLDING_ACCOUNT_TYPES.includes(account.type) : false
   const recentSnapshots = [...(history ?? [])].reverse().slice(0, 10)
@@ -191,6 +192,8 @@ export function AccountDetailPage() {
         <SavingsConfigSection
           accountId={account.id}
           initialConfig={account.savingsConfig}
+          suggestedProduct={savingsSuggestion?.suggestedProduct}
+          suggestedRate={savingsSuggestion?.defaultAnnualRate}
         />
       )}
 
