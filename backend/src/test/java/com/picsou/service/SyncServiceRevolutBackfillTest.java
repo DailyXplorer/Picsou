@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -92,6 +93,25 @@ class SyncServiceRevolutBackfillTest {
 
         // Backfill must be called once for the member after transactions are ingested
         verify(revolutPocketService).backfillForMember(MEMBER_ID);
+    }
+
+    @Test
+    void retrySync_stillNoAccounts_keepsRequisitionFailedAndSkipsBackfill() {
+        FamilyMember member = FamilyMember.builder().id(MEMBER_ID).build();
+        Requisition req = Requisition.builder()
+            .id(2L).member(member).requisitionId("sess-empty")
+            .institutionName("Boursorama Banque").status(RequisitionStatus.FAILED)
+            .build();
+        when(requisitionRepository.findByIdAndMemberId(2L, MEMBER_ID)).thenReturn(Optional.of(req));
+        when(bankConnector.fetchBalances("sess-empty")).thenReturn(List.of());
+
+        List<AccountResponse> result = syncService.retrySync(2L, MEMBER_ID);
+
+        // No accounts → requisition stays retryable, never promoted to LINKED, no backfill.
+        assertThat(result).isEmpty();
+        assertThat(req.getStatus()).isEqualTo(RequisitionStatus.FAILED);
+        verify(requisitionRepository).save(req);
+        verify(revolutPocketService, never()).backfillForMember(anyLong());
     }
 
     @Test

@@ -212,6 +212,17 @@ public class SyncService {
             .flatMap(Optional::stream)
             .toList();
 
+        // Mirror completeConnection(): if the bank still hasn't populated accounts,
+        // keep the requisition FAILED (retryable) rather than promoting it to LINKED
+        // with zero accounts — which would hide the retry button and strand the user.
+        if (accountDataList.isEmpty()) {
+            req.setStatus(RequisitionStatus.FAILED);
+            requisitionRepository.save(req);
+            log.info("Enable Banking session {} still not populated on retry — keeping retryable",
+                req.getRequisitionId());
+            return responses;
+        }
+
         req.setStatus(RequisitionStatus.LINKED);
         req.setLastSyncedAt(Instant.now());
         requisitionRepository.save(req);
