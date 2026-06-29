@@ -20,6 +20,7 @@ import com.picsou.repository.FamilyMemberRepository;
 import com.picsou.repository.TradeRepublicSessionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -120,6 +121,10 @@ public class TradeRepublicSyncService {
 
         log.info("Trade Republic session stored for member {} (refresh token: {}), firing background sync",
                  memberId, tokens.refreshToken() != null ? "yes" : "no");
+
+        // Lift soft-delete tombstones so the upcoming sync can update (not skip) previously-deleted accounts.
+        // The user explicitly re-authenticated, meaning they want their TR accounts back.
+        accountRepository.restoreSoftDeletedTrAccounts(memberId);
 
         String plainToken = tokens.sessionToken();
         Long sessionId = session.getId();
@@ -340,7 +345,17 @@ public class TradeRepublicSyncService {
                 .build();
         }
 
-        account = accountRepository.save(account);
+        try {
+            account = accountRepository.save(account);
+        } catch (DataIntegrityViolationException ex) {
+            // Rare concurrent insert: another sync already created this account — use that row.
+            account = accountRepository.findByExternalAccountIdAndMemberId(data.externalId(), memberId)
+                .orElseThrow(() -> ex);
+            account.setCurrentBalance(data.balanceEur());
+            account.setLastSyncedAt(Instant.now());
+            account = accountRepository.save(account);
+            log.info("TR upsertAccount: concurrent insert resolved for externalId={}", data.externalId());
+        }
         accountService.upsertSnapshot(account, data.balanceEur(), LocalDate.now());
 
         if (!data.positions().isEmpty()) {

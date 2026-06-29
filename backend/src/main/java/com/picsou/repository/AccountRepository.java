@@ -2,6 +2,7 @@ package com.picsou.repository;
 
 import com.picsou.model.Account;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -110,4 +111,18 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         ORDER BY a.parentAccountId ASC, a.id ASC
         """)
     List<Account> findAllPocketsByMemberId(@Param("memberId") Long memberId);
+
+    /**
+     * Lifts soft-delete tombstones for all Trade Republic accounts of a member.
+     * Called on explicit re-authentication (completeAuth) so the upcoming sync can
+     * find and update — rather than skip — previously-deleted accounts.
+     * The scheduler-driven anti-resurrection guard in upsertAccount is intentionally
+     * bypassed here because the user has actively chosen to reconnect.
+     */
+    @Modifying
+    @Query(value =
+        "UPDATE account SET deleted_at = NULL " +
+        "WHERE member_id = :memberId AND provider = 'Trade Republic' AND deleted_at IS NOT NULL",
+        nativeQuery = true)
+    void restoreSoftDeletedTrAccounts(@Param("memberId") Long memberId);
 }

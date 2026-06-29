@@ -111,8 +111,12 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
   const { data: finaryStatus } = useFinaryConnectionStatus()
   const { data: accounts } = useAccounts()
 
-  // Detect if user has a TR / BoursoBank account
-  const hasTrAccount     = accounts?.some(a => a.provider === 'Trade Republic') ?? false
+  // Show TR in modal if: there are active TR accounts, the session is active, or the session
+  // is expired but was previously created (expiresAt != null). This keeps TR visible even when
+  // accounts were soft-deleted — the session still exists and the user can reconnect from here.
+  // isActive=false + expiresAt=null means no session has ever been created → hide TR.
+  const hasTrSession = trStatus?.isActive === true || trStatus?.expiresAt != null
+  const hasTrAccount = (accounts?.some(a => a.provider === 'Trade Republic') ?? false) || hasTrSession
   // BoursoBank disabled for 1.0.0 — sidecar integration not finished.
   const hasBoursoAccount = false
 
