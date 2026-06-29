@@ -87,6 +87,15 @@ export function useRetryBankSync() {
   })
 }
 
+export function useReconnectBankSync() {
+  return useMutation({
+    mutationFn: (id: number) => bankSyncApi.reconnect(id),
+    onSuccess: ({ authLink }) => {
+      window.location.href = authLink
+    },
+  })
+}
+
 export function useDeleteBankConnection() {
   const queryClient = useQueryClient()
   return useMutation({

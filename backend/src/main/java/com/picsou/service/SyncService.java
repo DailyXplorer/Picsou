@@ -234,6 +234,26 @@ public class SyncService {
         return responses;
     }
 
+    /**
+     * Start a fresh OAuth flow for an existing FAILED/CREATED requisition.
+     * Overwrites the stored session ID and auth link in-place so the OAuth callback
+     * (completeConnection) can still locate the same Requisition row by the new requisitionId.
+     */
+    public String reconnectBank(Long id, Long memberId) {
+        Requisition req = requisitionRepository.findByIdAndMemberId(id, memberId)
+            .orElseThrow(() -> new ResourceNotFoundException("Requisition not found"));
+
+        BankConnectorPort.InitiateResult result = bankConnector.initiateConnection(req.getInstitutionId());
+        req.setRequisitionId(result.requisitionId());
+        req.setAuthLink(result.authLink());
+        req.setStatus(RequisitionStatus.CREATED);
+        req.setLastSyncedAt(null);
+        requisitionRepository.save(req);
+
+        log.info("Reconnect initiated for {} — new session {}", req.getInstitutionName(), result.requisitionId());
+        return result.authLink();
+    }
+
     /** Delete a requisition (cancel or remove a bank connection). */
     public void deleteRequisition(Long id, Long memberId) {
         Requisition req = requisitionRepository.findByIdAndMemberId(id, memberId)

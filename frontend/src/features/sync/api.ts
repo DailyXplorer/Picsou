@@ -52,6 +52,9 @@ export const bankSyncApi = {
   retry: (id: number) =>
     api.post<Account[]>(`/sync/${id}/retry`).then(r => r.data),
 
+  reconnect: (id: number) =>
+    api.post<{ authLink: string }>(`/sync/${id}/reconnect`).then(r => r.data),
+
   deleteConnection: (id: number) =>
     api.delete(`/sync/${id}`),
 }

@@ -77,6 +77,12 @@ public class SyncController {
         return ResponseEntity.ok(accounts);
     }
 
+    @PostMapping("/{id}/reconnect")
+    public ResponseEntity<Map<String, String>> reconnect(@PathVariable Long id) {
+        String authLink = syncService.reconnectBank(id, userContext.currentMemberId());
+        return ResponseEntity.ok(Map.of("authLink", authLink));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteRequisition(@PathVariable Long id) {
         syncService.deleteRequisition(id, userContext.currentMemberId());

@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import {
   Search,
   RefreshCw,
+  Link2,
   Trash2,
   Landmark,
   Loader2,
@@ -122,6 +123,14 @@ export function BankSyncTab() {
       queryClient.invalidateQueries({ queryKey: ['sync', 'connections'] })
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+
+  const reconnectMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.post<{ authLink: string }>(`/sync/${id}/reconnect`).then(r => r.data),
+    onSuccess: ({ authLink }) => {
+      window.location.href = authLink
     },
   })
 
@@ -265,14 +274,30 @@ export function BankSyncTab() {
                   </div>
                   <div className="flex items-center gap-2">
                     {conn.status === 'FAILED' && (
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() => retryMutation.mutate(conn.id)}
-                        disabled={retryMutation.isPending}
-                      >
-                        <RefreshCw className="size-4" />
-                      </Button>
+                      <>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          onClick={() => reconnectMutation.mutate(conn.id)}
+                          disabled={reconnectMutation.isPending}
+                          title="Re-authorize bank connection"
+                        >
+                          {reconnectMutation.isPending ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <Link2 className="size-4" />
+                          )}
+                        </Button>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          onClick={() => retryMutation.mutate(conn.id)}
+                          disabled={retryMutation.isPending}
+                          title="Retry polling existing session"
+                        >
+                          <RefreshCw className="size-4" />
+                        </Button>
+                      </>
                     )}
                     <Button
                       size="icon-sm"
