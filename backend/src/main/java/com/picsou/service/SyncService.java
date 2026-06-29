@@ -242,6 +242,20 @@ public class SyncService {
         log.info("Deleted requisition {}", id);
     }
 
+    /** Retry all FAILED Enable Banking sessions for a member (called by scheduler). */
+    public void retryAllFailed(Long memberId) {
+        List<Requisition> failed = requisitionRepository
+            .findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.FAILED, memberId);
+        for (Requisition req : failed) {
+            try {
+                retrySync(req.getId(), memberId);
+            } catch (Exception ex) {
+                log.warn("Scheduled retry failed for {} (session={}): {}",
+                    req.getInstitutionName(), req.getRequisitionId(), ex.getMessage());
+            }
+        }
+    }
+
     /** Re-sync all LINKED requisitions for a specific member (called by scheduler). */
     public void resyncAll(Long memberId) {
         List<Requisition> linked = requisitionRepository.findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.LINKED, memberId);

@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * WebSocket subscriptions used:
  *   - availableCash      → cash balance
- *   - compactPortfolio   → list of positions (instrumentId, netSize, averageBuyIn)
+ *   - compactPortfolioByType → list of positions (isin, netSize, averageBuyIn), grouped by category
  *   - ticker             → current price per instrument (subscribed dynamically)
  *
  * Portfolio value = sum(ticker.last.price × position.netSize) for each position.
@@ -167,7 +167,7 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
         AtomicInteger expectedTickers = new AtomicInteger(-1);
         AtomicInteger receivedTickers = new AtomicInteger(0);
         AtomicInteger receivedPortfolios = new AtomicInteger(0);
-        int totalPortfolioSubs = Math.max(secAccNos.size(), 1);
+        int totalPortfolioSubs = secAccNos.size();
 
         HttpHeaders headers = new HttpHeaders();
         headers.set("Origin", "https://app.traderepublic.com");
@@ -190,16 +190,14 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
                                     log.info("TR WS --> sub {} availableCash", id1);
 
                                     if (secAccNos.isEmpty()) {
-                                        int id2 = subIdCounter.incrementAndGet();
-                                        portfolioSubIds.put(id2, "default");
-                                        msgs.add(sub(id2, "compactPortfolio", sessionToken));
-                                        log.info("TR WS --> sub {} compactPortfolio (no secAccNo)", id2);
+                                        log.info("TR WS: no securities account in JWT, skipping portfolio subscription");
+                                        expectedTickers.set(0);
                                     } else {
                                         for (String accNo : secAccNos) {
                                             int id = subIdCounter.incrementAndGet();
                                             portfolioSubIds.put(id, accNo);
                                             msgs.add(subCompactPortfolio(id, accNo, sessionToken));
-                                            log.info("TR WS --> sub {} compactPortfolio secAccNo={}", id, accNo);
+                                            log.info("TR WS --> sub {} compactPortfolioByType secAccNo={}", id, accNo);
                                         }
                                     }
 
@@ -223,17 +221,33 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
                                 } else if (portfolioSubIds.containsKey(wsId)) {
                                     String accNo = portfolioSubIds.get(wsId);
                                     receivedPortfolios.incrementAndGet();
-                                    log.info("TR compactPortfolio [{}] raw: {}", accNo,
+                                    log.info("TR compactPortfolioByType [{}] raw: {}", accNo,
                                              payload.length() > 2000
                                                      ? payload.substring(0, 2000) + "…" : payload);
                                     try {
                                         JsonNode root = objectMapper.readTree(payload);
-                                        JsonNode posArray = root.isArray() ? root : root.path("positions");
 
-                                        if (posArray.isArray() && posArray.size() > 0) {
+                                        // compactPortfolioByType (since 2026-06-21):
+                                        //   {"categories":[{"positions":[{"isin":"...","netSize":"...","averageBuyIn":"..."}]}]}
+                                        // Legacy compactPortfolio:
+                                        //   [{"instrumentId":"...","netSize":"...","averageBuyIn":"..."}]
+                                        List<JsonNode> positions = new ArrayList<>();
+                                        JsonNode categories = root.path("categories");
+                                        if (!categories.isMissingNode() && categories.isArray()) {
+                                            for (JsonNode cat : categories) {
+                                                cat.path("positions").forEach(positions::add);
+                                            }
+                                        } else {
+                                            JsonNode posArray = root.isArray() ? root : root.path("positions");
+                                            if (posArray.isArray()) posArray.forEach(positions::add);
+                                        }
+
+                                        if (!positions.isEmpty()) {
                                             List<String> tickerMsgs = new ArrayList<>();
-                                            for (JsonNode pos : posArray) {
-                                                String isin = pos.path("instrumentId").asText("");
+                                            for (JsonNode pos : positions) {
+                                                // new API: "isin"; legacy: "instrumentId"
+                                                String isin = pos.path("isin").asText(
+                                                        pos.path("instrumentId").asText(""));
                                                 if (!isin.isEmpty()) {
                                                     positionsByIsin.put(isin, pos);
                                                     int tid = subIdCounter.incrementAndGet();
@@ -246,8 +260,8 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
                                             }
                                             int prev = expectedTickers.get();
                                             expectedTickers.set((prev < 0 ? 0 : prev) + tickerMsgs.size());
-                                            log.info("TR compactPortfolio [{}]: {} positions, subscribing to {} tickers",
-                                                     accNo, posArray.size(), tickerMsgs.size());
+                                            log.info("TR compactPortfolioByType [{}]: {} positions, subscribing to {} tickers",
+                                                     accNo, positions.size(), tickerMsgs.size());
 
                                             if (!tickerMsgs.isEmpty()) {
                                                 return session.send(
@@ -256,12 +270,11 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
                                                 ).thenReturn(text);
                                             }
                                         } else {
-                                            int prev = expectedTickers.get();
                                             expectedTickers.compareAndSet(-1, 0);
-                                            log.info("TR compactPortfolio [{}]: no positions found", accNo);
+                                            log.info("TR compactPortfolioByType [{}]: no positions found", accNo);
                                         }
                                     } catch (Exception ex) {
-                                        log.error("Failed to parse compactPortfolio [{}]: {}", accNo, payload, ex);
+                                        log.error("Failed to parse compactPortfolioByType [{}]: {}", accNo, payload, ex);
                                         expectedTickers.compareAndSet(-1, 0);
                                     }
 
@@ -431,7 +444,7 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
     private String subCompactPortfolio(int id, String secAccNo, String token) {
         try {
             Map<String, Object> payload = new java.util.LinkedHashMap<>();
-            payload.put("type", "compactPortfolio");
+            payload.put("type", "compactPortfolioByType");
             payload.put("secAccNo", secAccNo);
             payload.put("token", token);
             return "sub " + id + " " + objectMapper.writeValueAsString(payload);

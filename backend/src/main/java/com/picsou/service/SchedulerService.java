@@ -83,6 +83,12 @@ public class SchedulerService {
                 log.error("Daily Enable Banking sync failed for member {}", memberId, ex);
             }
 
+            try {
+                syncService.retryAllFailed(memberId);
+            } catch (Exception ex) {
+                log.error("Daily retry of FAILED Enable Banking sessions failed for member {}", memberId, ex);
+            }
+
             trSyncService.resyncIfSessionActive(memberId);
             boursoSyncService.resyncIfSessionActive(memberId);
 
