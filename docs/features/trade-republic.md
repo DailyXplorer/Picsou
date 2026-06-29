@@ -1,6 +1,6 @@
 # Feature: Trade Republic Sync
 
-> Last updated: 2026-05-18
+> Last updated: 2026-06-29 (compactPortfolioByType migration — TR breaking change 2026-06-21)
 
 ## Context
 
@@ -29,7 +29,7 @@ Both `sessionToken` and `refreshToken` are **encrypted at rest** with AES-256-GC
 The `TradeRepublicAdapter.fetchAccounts()` connects directly to `wss://api.traderepublic.com/` (protocol version 31) using `ReactorNettyWebSocketClient`. No WAF challenge is needed for the WebSocket endpoint. The adapter:
 
 1. Sends a `connect` message with locale, platform info, and client version.
-2. Subscribes to `availableCash` (cash balance) and `compactPortfolio` (list of positions with ISIN, netSize, averageBuyIn).
+2. Subscribes to `availableCash` (cash balance) and `compactPortfolioByType` (list of positions grouped by category, with `isin`, `netSize`, `averageBuyIn`). One subscription per `secAccNo` from the JWT.
 3. For each position, subscribes to `ticker` to get the live market price.
 4. Computes portfolio value as `sum(ticker.last.price * position.netSize)`.
 5. Extracts secAccNo (securities account numbers) from the JWT to handle multiple sub-portfolios.
@@ -90,7 +90,7 @@ TRController.completeAuth() --> TRSyncService.completeAuth()
   TRAdapter.fetchAccounts(sessionToken)
         |
         WebSocket: connect -> sub availableCash
-                  -> sub compactPortfolio
+                  -> sub compactPortfolioByType (per secAccNo)
                   -> sub ticker (per ISIN)
         |
         Build TrAccountData list
@@ -155,7 +155,9 @@ Both compose files (`docker-compose.yml` at repo root and `docker/docker-compose
 - **Session expires ~2h**: The refresh token validity is approximately 2 hours. If auto-sync fails after 2h of inactivity, the user must re-authenticate manually.
 - **WebSocket protocol is reverse-engineered**: The TR WebSocket API is undocumented. Raw responses are logged at INFO level. If TR changes the protocol, the adapter will break and need updating.
 - **timeout-driven completion**: The WebSocket session completes when either all data is received (cash + all portfolios + all tickers) or a 30-second timeout is hit.
-- **Multiple sub-portfolios**: The adapter extracts `secAccNo` from the JWT to subscribe to per-account compactPortfolio. If extraction fails, it falls back to a default subscription.
+- **TR WebSocket API breaks without notice**: Trade Republic removed `compactPortfolio` on 2026-06-21 (protocol v31) and replaced it with `compactPortfolioByType`. The JSON structure changed: positions are now nested under `categories[].positions[]` and use `isin` instead of `instrumentId`. Reference project for future breaks: [pytr-org/pytr](https://github.com/pytr-org/pytr) — they track TR API changes in commit history.
+- **`compactPortfolioByType` requires `secAccNo`**: Unlike the old `compactPortfolio` which had a generic no-secAccNo fallback, `compactPortfolioByType` is always per-securities-account. If `secAccNos` is empty (no securities sub-account in JWT), the portfolio subscription is skipped entirely — only cash is returned.
+- **Multiple sub-portfolios**: The adapter extracts `secAccNo` from the JWT (`act.acc.owner.default.sec[]`) to subscribe to per-account `compactPortfolioByType`. If extraction fails, portfolio is skipped (no fallback subscription).
 - **Holding deduplication by ticker (VWAP)**: Multiple ISINs can map to the same ticker. When syncing, holdings are deduplicated in-memory before insertion to avoid unique constraint violations. Quantities are summed and `averageBuyIn` is the quantity-weighted average (VWAP) via `HoldingDedup::vwapMerge`. The earlier "keep first averageBuyIn" approach was non-deterministic (HashMap iteration order) and produced wrong gain/loss percentages. See [trade-republic-holding-deduplication.md](./trade-republic-holding-deduplication.md).
 - **TrPosition currentPrice fallback**: When a ticker price is missing (ticker subscription timed out or failed), TrPosition.currentPrice is set to averageBuyIn. This allows the sync to complete without blocking on missing real-time data. Portfolio value calculation already uses this fallback logic.
 - **Background sync uses `TransactionTemplate`**: The `completeAuth` background thread runs outside Spring's proxy, so `@Transactional` has no effect. It uses `TransactionTemplate` for programmatic transaction management. If you add more background sync paths, you must wrap them in `txTemplate.executeWithoutResult()` — never rely on class-level `@Transactional` from a non-Spring thread.

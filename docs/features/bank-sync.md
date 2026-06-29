@@ -1,6 +1,6 @@
 # Feature: Bank Sync
 
-> Last updated: 2026-06-03 (Enable Banking: single Application ID field, Key ID derived)
+> Last updated: 2026-06-29 (scheduler auto-retry for FAILED sessions)
 
 > **Status (1.0.0).** Enable Banking is the only enabled provider. The Powens
 > adapter ships in the codebase but is **experimental and untested** —
@@ -23,7 +23,7 @@ Both providers implement the `BankConnectorPort` interface: `initiateConnection`
 
 Since 1.1.0 the sync also ingests **transactions**, not just balances. After upserting balances, `SyncService` calls `BankConnectorPort.fetchTransactions(sessionId, externalAccountId, from)` for each Enable Banking account (`GET /accounts/{id}/transactions`, mapping creditor/debtor → `counterparty`, remittance → `description`). Transactions are deduplicated by `(account, externalId)`, persisted with `isManual=false`, then categorized by `CategorizationService.apply`. Ingestion is incremental on `lastSyncedAt`; the first attach pulls the maximum available window (≈90 days). This feeds the entire Budget module — see [budget.md](./budget.md).
 
-**Enable Banking** (`EnableBankingBankConnector`): Uses the PSD2 Bank Account Data API. Auth is JWT-based (RS256 signed with an RSA private key). Sessions are created via OAuth redirect. After the user authorizes, accounts are linked asynchronously and polled up to 3 times with 1.5-second delays (≤ 4.5 s total). If the session still has no accounts, the adapter returns an empty list rather than throwing — the requisition is left LINKED so the user can retry from the UI without losing the session id. The previous 24 s blocking poll caused 502 errors at the reverse proxy.
+**Enable Banking** (`EnableBankingBankConnector`): Uses the PSD2 Bank Account Data API. Auth is JWT-based (RS256 signed with an RSA private key). Sessions are created via OAuth redirect. After the user authorizes, Enable Banking populates the `session.accounts` list **asynchronously** — some ASPSPs take seconds, others hours (Boursorama). The adapter polls `GET /sessions/{id}` up to 8 times with 2-second delays (≤ 16 s total, configurable via `app.enablebanking.session-poll-attempts` / `session-poll-delay-ms`). If the session still has no accounts, it returns an empty list rather than throwing — the requisition is marked **FAILED** (preserving the session id) so the scheduler can retry the next day without going back through OAuth.
 
 **Powens** (`PowensBankConnector`) — ⚠ experimental, disabled in 1.0.0. Uses screen scraping via the Budget Insight API. Auth is an OAuth webview that handles bank selection and credential entry. The OAuth code is exchanged for a permanent access token. Gated behind `@ConditionalOnExpression` (so it only registers when `POWENS_CLIENT_ID` is set), but `@Primary` was removed for 1.0.0, so Enable Banking remains injected even when the bean is registered.
 
@@ -54,7 +54,11 @@ Picsou now handles this with a two-pronged strategy:
 
 1. **CREATED** -- `SyncService.initiateConnection()` calls the port and stores a `Requisition` with `authLink`.
 2. **LINKED** -- `SyncService.completeConnection()` exchanges the OAuth callback code, fetches balances, upserts accounts, and marks the requisition as LINKED.
-3. **FAILED** -- If the code exchange or balance fetch fails, the requisition is marked FAILED and can be retried via `retrySync()`.
+3. **FAILED** -- If the code exchange or balance fetch fails, OR if Enable Banking hasn't populated accounts yet after 16 s of polling, the requisition is marked FAILED. The session id is preserved so the scheduler can retry without OAuth.
+
+### Automatic retry of FAILED sessions
+
+`SchedulerService.dailyBankSync()` calls `SyncService.retryAllFailed(memberId)` (after `resyncAll`) for every member. It finds all FAILED requisitions and calls `retrySync()` for each — which re-polls the Enable Banking session. If accounts are now populated, the requisition transitions to LINKED and accounts are upserted. If not, it stays FAILED and is retried again the next day. Enable Banking sessions are valid for 90 days (`valid_until`), so there is ample time for banks that take hours to asynchronously populate accounts (observed: Boursorama ~4 h+).
 
 ### Account type detection
 
@@ -99,7 +103,8 @@ SyncController.complete() --> SyncService.completeConnection()
         |               AccountService.upsertSnapshot()
         |
         v
-SchedulerService.dailyBankSync() --> SyncService.resyncAll()
+SchedulerService.dailyBankSync() --> SyncService.resyncAll()   (LINKED only)
+                               --> SyncService.retryAllFailed() (FAILED: retry until LINKED or 90d expiry)
 ```
 
 ## Technical choices
