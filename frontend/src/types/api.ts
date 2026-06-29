@@ -383,6 +383,7 @@ export interface Transaction {
   amount: number
   type: string | null
   category: string | null
+  categoryId?: number | null
   nativeCurrency: string
   isManual: boolean
   txType: 'DEPOSIT' | 'WITHDRAWAL' | 'BUY' | 'SELL' | 'DIVIDEND' | 'FEE' | null
@@ -409,6 +410,7 @@ export interface TransactionRequest {
   quantity?: number
   pricePerUnit?: number
   currency?: string
+  categoryId?: number
 }
 
 // ─── Budget & Cashflow module (mirrors com.picsou.dto.*) ─────────────────────

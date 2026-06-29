@@ -349,6 +349,7 @@ export function AccountDetailPage() {
             quantity: editingTx.quantity ?? undefined,
             pricePerUnit: editingTx.pricePerUnit ?? undefined,
             currency: editingTx.nativeCurrency,
+            categoryId: editingTx.categoryId ?? undefined,
           }}
           onSubmit={async (data) => {
             await updateTxMutation.mutateAsync({ txId: editingTx.id, data })

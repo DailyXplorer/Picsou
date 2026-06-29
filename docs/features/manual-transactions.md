@@ -101,7 +101,7 @@ Bank-synced transactions (`isManual = false`) are read-only for amount, date, an
 `AddTransactionModal` is account-type-aware:
 
 **Cash accounts (CHECKING, SAVINGS, LEP, OTHER):**
-- Date, DEPOSIT/WITHDRAWAL toggle, Description, Amount (always positive — toggle sets sign)
+- Date, DEPOSIT/WITHDRAWAL toggle, Description, Amount (always positive — toggle sets sign), Category (optional dropdown — pre-filled from existing category when editing)
 
 **Investment accounts (PEA, COMPTE_TITRES, CRYPTO):**
 - Date, BUY/SELL toggle, **Ticker ou ISIN** (a ticker like `IWDA.AS` or a 12-char ISIN like `IE00B4L5Y983`), Name (auto-filled from existing holdings when the ticker matches; otherwise resolved from the ISIN backend-side), Quantity, Price per unit, Total (read-only)
