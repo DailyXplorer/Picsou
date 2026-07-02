@@ -46,6 +46,14 @@ services:
     networks:
       - picsou-net
 
+  revolut-auth:
+    build:
+      context: ./services/revolut-auth
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - picsou-net
+
   # bourso-auth sidecar disabled for 1.0.0 — integration is not finished.
   # Re-enable along with the BoursoBank UI entry points in the frontend
   # (setup wizard catalog, sync tab, admin integrations) when ready.

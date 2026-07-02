@@ -1,0 +1,9 @@
+# Secrets / session state captured during login — never commit
+revolut-storage.json
+*-creds*
+# capture_login.py dev-helper debug artifacts
+capture.log
+# Python
+.venv/
+__pycache__/
+*.pyc

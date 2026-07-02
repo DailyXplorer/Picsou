@@ -296,6 +296,11 @@ export interface BoursoSessionStatus {
   expiresAt: string | null
 }
 
+export interface RevolutSessionStatus {
+  isActive: boolean
+  expiresAt: string | null
+}
+
 export interface BoursoAuthInitResponse {
   processId: string | null
   mfaRequired: boolean

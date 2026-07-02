@@ -115,6 +115,11 @@ export const SetupStepTradeRepublic = lazy(() =>
     default: m.SetupStepTradeRepublic,
   }))
 )
+export const SetupStepRevolut = lazy(() =>
+  import('@/pages/setup/integrations/SetupStepRevolut').then((m) => ({
+    default: m.SetupStepRevolut,
+  }))
+)
 export const SetupStepFinary = lazy(() =>
   import('@/pages/setup/integrations/SetupStepFinary').then((m) => ({
     default: m.SetupStepFinary,

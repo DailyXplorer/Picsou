@@ -11,6 +11,7 @@ import com.picsou.model.FamilyMember;
 import com.picsou.model.Transaction;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.FamilyMemberRepository;
+import com.picsou.repository.RevolutSessionRepository;
 import com.picsou.repository.TransactionRepository;
 import com.picsou.service.budget.CategorizationService;
 import org.slf4j.Logger;
@@ -25,6 +26,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -75,17 +77,20 @@ public class RevolutPocketService {
     private final TransactionRepository transactionRepository;
     private final FamilyMemberRepository familyMemberRepository;
     private final CategorizationService categorizationService;
+    private final RevolutSessionRepository revolutSessionRepository;
 
     public RevolutPocketService(
         AccountRepository accountRepository,
         TransactionRepository transactionRepository,
         FamilyMemberRepository familyMemberRepository,
-        CategorizationService categorizationService
+        CategorizationService categorizationService,
+        RevolutSessionRepository revolutSessionRepository
     ) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.familyMemberRepository = familyMemberRepository;
         this.categorizationService = categorizationService;
+        this.revolutSessionRepository = revolutSessionRepository;
     }
 
     // ─── Detection ────────────────────────────────────────────────────────────
@@ -112,6 +117,13 @@ public class RevolutPocketService {
     public void processTransaction(Transaction walletTx, Long memberId) {
         Optional<String> maybeUuid = detect(walletTx.getDescription());
         if (maybeUuid.isEmpty()) {
+            return;
+        }
+        // A Revolut sidecar session gives us the real pocket/money-box objects directly
+        // (RevolutSyncService, provider="Revolut", parentAccountId set) -- this PSD2 heuristic
+        // reconstruction must stand down for this member, or every "To EUR MB:<uuid>" row would
+        // spawn a duplicate placeholder pocket alongside the real one. See docs/decisions/2026-06-28.
+        if (isSidecarSessionActive(memberId)) {
             return;
         }
         String pocketUuid = maybeUuid.get();
@@ -285,6 +297,17 @@ public class RevolutPocketService {
     }
 
     // ─── Private helpers ──────────────────────────────────────────────────────
+
+    /**
+     * True when this member has an active Revolut sidecar session. In that case the real
+     * pocket/money-box sub-accounts come from {@code RevolutSyncService} directly, and this
+     * heuristic PSD2-based reconstruction must not also run.
+     */
+    private boolean isSidecarSessionActive(Long memberId) {
+        return revolutSessionRepository.findByMemberId(memberId)
+            .map(s -> s.getExpiresAt() == null || s.getExpiresAt().isAfter(Instant.now()))
+            .orElse(false);
+    }
 
     /**
      * Find an existing pocket by uuid, or create one — unless the user previously deleted it.

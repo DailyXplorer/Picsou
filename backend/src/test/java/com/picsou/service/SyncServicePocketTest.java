@@ -8,6 +8,7 @@ import com.picsou.model.FamilyMember;
 import com.picsou.model.Transaction;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.FamilyMemberRepository;
+import com.picsou.repository.RevolutSessionRepository;
 import com.picsou.repository.TransactionRepository;
 import com.picsou.service.budget.CategorizationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,6 +48,7 @@ class SyncServicePocketTest {
     @Mock TransactionRepository transactionRepository;
     @Mock FamilyMemberRepository familyMemberRepository;
     @Mock CategorizationService categorizationService;
+    @Mock RevolutSessionRepository revolutSessionRepository;
 
     @InjectMocks RevolutPocketService pocketService;
 

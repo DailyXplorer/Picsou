@@ -6,6 +6,7 @@ import {
   cryptoWalletApi,
   finaryApi,
   boursoApi,
+  revolutApi,
 } from './api'
 import type {
   ExchangeType,
@@ -24,6 +25,7 @@ export const syncKeys = {
   institutions: (q: string) => [...syncKeys.all, 'institutions', q] as const,
   tr: () => [...syncKeys.all, 'tr'] as const,
   bourso: () => [...syncKeys.all, 'bourso'] as const,
+  revolut: () => [...syncKeys.all, 'revolut'] as const,
   exchanges: () => [...syncKeys.all, 'exchanges'] as const,
   wallets: () => [...syncKeys.all, 'wallets'] as const,
   finary: () => [...syncKeys.all, 'finary'] as const,
@@ -216,6 +218,57 @@ export function useSyncBourso() {
     mutationFn: () => boursoApi.sync(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.bourso() })
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Revolut (assisted enrolment — see docs/features/revolut-sidecar.md)
+// ---------------------------------------------------------------------------
+
+export function useRevolutSessionStatus() {
+  return useQuery({
+    queryKey: syncKeys.revolut(),
+    queryFn: revolutApi.getSessionStatus,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+}
+
+export function useSyncRevolut() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => revolutApi.sync(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.revolut() })
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+export function useClearRevolutSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => revolutApi.clearSession(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.revolut() })
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+// Consumed by the future noVNC embed once the interactive login view lands
+// (see the TODO(revolut) marker in RevolutTab.tsx / AddAccountModal.tsx).
+export function useCompleteRevolutEnrolment() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (storageState: Record<string, unknown>) => revolutApi.completeEnrolment(storageState),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.revolut() })
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },

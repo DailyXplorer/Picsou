@@ -626,6 +626,7 @@
     "exchangeConnected": "Exchange connecté !",
     "walletConnected": "Wallet suivi !",
     "trConnected": "Trade Republic connecté !",
+    "revolutConnected": "Revolut connecté !",
     "syncing": "Synchronisation en cours...",
     "syncingDesc": "Récupération de vos dernières transactions. Cela prend généralement quelques secondes.",
     "desc": {
@@ -633,6 +634,7 @@
       "exchanges": "Binance, Kraken...",
       "wallets": "Bitcoin, Ethereum, Solana...",
       "tr": "Trade Republic",
+      "revolut": "Connexion assistée à Revolut",
       "finary": "Importer depuis Finary",
       "manual": "Créer un compte manuellement"
     }
@@ -678,6 +680,17 @@
         "validationFailed": "Données invalides.",
         "unknownError": "Une erreur inattendue s'est produite."
       }
+    },
+    "revolut": {
+      "title": "Revolut",
+      "connect": "Connecter Revolut",
+      "sync": "Synchroniser",
+      "clearSession": "Déconnecter",
+      "noSession": "Aucune session active",
+      "sessionActive": "Session active",
+      "expiresAt": "Expire le",
+      "assistedNote": "La connexion Revolut se fait via une fenêtre de navigation sécurisée du serveur — étape interactive à finaliser.",
+      "enrolmentPending": "En attente de la connexion interactive côté serveur..."
     },
     "exchanges": {
       "title": "Exchanges",
@@ -753,8 +766,10 @@
       "noConnections": "Aucune connexion de synchronisation active",
       "lastSync": "Dernière sync",
       "openFinary": "Ouvrir la page Finary pour synchroniser",
+      "openRevolut": "Ouvrir la page Revolut pour se connecter",
       "trManualInfo": "Trade Republic est la seule banque qui nécessite une reconnexion manuelle. Vous devrez ressaisir votre numéro et PIN à chaque synchronisation.",
-      "trSlowWarning": "La connexion peut prendre quelques instants, c'est normal."
+      "trSlowWarning": "La connexion peut prendre quelques instants, c'est normal.",
+      "revolutManualInfo": "Revolut nécessite une connexion assistée via une fenêtre de navigation sécurisée du serveur. Cliquez sur l'icône pour ouvrir l'écran de connexion."
     },
     "bourso": {
       "title": "BoursoBank",
@@ -1175,6 +1190,10 @@
           "title": "Trade Republic",
           "description": "Synchronisez votre portefeuille Trade Republic avec vos identifiants. Vous les ajouterez au moment de créer le compte."
         },
+        "revolut": {
+          "title": "Revolut",
+          "description": "Synchronisez tous vos actifs Revolut (comptes, pockets, cartes) via une connexion assistée — une fenêtre sécurisée du serveur, à finaliser une seule fois."
+        },
         "finary": {
           "title": "Finary",
           "description": "Importez vos holdings et synchronisez avec votre compte Finary. Le TOTP est géré à l'ajout."
@@ -1286,6 +1305,14 @@
       "tip": "Une fois l'installation finie, allez dans Comptes → Ajouter un compte → Trade Republic.",
       "cta": "C'est compris",
       "skip": "Ne pas activer Trade Republic"
+    },
+    "revolut": {
+      "surtitle": "REVOLUT",
+      "title": "Revolut est prêt.",
+      "body": "Rien à configurer ici — la connexion se fait via une fenêtre de navigation sécurisée du serveur, à finaliser une seule fois au moment d'ajouter le compte dans Picsou.",
+      "tip": "Une fois l'installation finie, allez dans Comptes → Ajouter un compte → Revolut.",
+      "cta": "C'est compris",
+      "skip": "Ne pas activer Revolut"
     },
     "finary": {
       "surtitle": "FINARY",

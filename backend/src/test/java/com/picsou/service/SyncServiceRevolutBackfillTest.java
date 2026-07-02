@@ -10,6 +10,7 @@ import com.picsou.port.BankConnectorPort;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.FamilyMemberRepository;
 import com.picsou.repository.RequisitionRepository;
+import com.picsou.repository.RevolutSessionRepository;
 import com.picsou.repository.TransactionRepository;
 import com.picsou.service.budget.CategorizationService;
 import com.picsou.service.budget.RecurringDetectionService;
@@ -48,6 +49,7 @@ class SyncServiceRevolutBackfillTest {
     @Mock CategorizationService categorizationService;
     @Mock RecurringDetectionService recurringDetectionService;
     @Mock RevolutPocketService revolutPocketService;
+    @Mock RevolutSessionRepository revolutSessionRepository;
 
     @InjectMocks SyncService syncService;
 
@@ -122,7 +124,8 @@ class SyncServiceRevolutBackfillTest {
 
         // Should complete instantly with no further interactions
         new RevolutPocketService(
-            accountRepository, transactionRepository, familyMemberRepository, categorizationService
+            accountRepository, transactionRepository, familyMemberRepository, categorizationService,
+            revolutSessionRepository
         ).backfillForMember(MEMBER_ID);
 
         verify(transactionRepository, never()).findByAccountIdOrderByDateAsc(anyLong());

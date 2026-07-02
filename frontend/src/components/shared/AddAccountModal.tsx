@@ -21,6 +21,7 @@ import {
   useInitiateBankSync,
   useInitiateTrAuth,
   useCompleteTrAuth,
+  useRevolutSessionStatus,
   useAddCryptoExchange,
   useAddCryptoWallet,
   useFinaryConnectionStatus,
@@ -37,6 +38,7 @@ import {
   ArrowLeftRight,
   Wallet,
   Smartphone,
+  CreditCard,
   FileSpreadsheet,
   PenLine,
   ArrowRight,
@@ -61,7 +63,7 @@ interface AddAccountModalProps {
   onOpenChange: (open: boolean) => void
 }
 
-type WizardStep = 'selector' | 'banks' | 'exchanges' | 'wallets' | 'tr' | 'finary' | 'manual'
+type WizardStep = 'selector' | 'banks' | 'exchanges' | 'wallets' | 'tr' | 'revolut' | 'finary' | 'manual'
 
 /**
  * Masked variant of InputOTPSlot — replaces the typed character with a bullet
@@ -98,6 +100,7 @@ const SOURCES: { key: WizardStep; icon: typeof Landmark; labelKey: string; descK
   { key: 'exchanges', icon: ArrowLeftRight, labelKey: 'sync.exchanges.title', descKey: 'addAccount.desc.exchanges' },
   { key: 'wallets', icon: Wallet, labelKey: 'sync.wallets.title', descKey: 'addAccount.desc.wallets' },
   { key: 'tr', icon: Smartphone, labelKey: 'sync.tr.title', descKey: 'addAccount.desc.tr' },
+  { key: 'revolut', icon: CreditCard, labelKey: 'sync.revolut.title', descKey: 'addAccount.desc.revolut' },
   { key: 'finary', icon: FileSpreadsheet, labelKey: 'sync.finary.title', descKey: 'addAccount.desc.finary' },
   { key: 'manual', icon: PenLine, labelKey: 'addAccount.manual', descKey: 'addAccount.desc.manual' },
 ]
@@ -218,6 +221,7 @@ export function AddAccountModal({ open, onOpenChange }: AddAccountModalProps) {
               {step === 'exchanges' && <ExchangeWizard onDone={handleDone} onBack={() => setStep('selector')} />}
               {step === 'wallets' && <WalletWizard onDone={handleDone} onBack={() => setStep('selector')} />}
               {step === 'tr' && <TradeRepublicWizard onDone={handleDone} onBack={() => setStep('selector')} />}
+              {step === 'revolut' && <RevolutWizard onDone={handleDone} onBack={() => setStep('selector')} />}
               {step === 'finary' && <FinaryWizard onDone={handleDone} onBack={() => setStep('selector')} />}
             </>
         </DialogContent>
@@ -696,6 +700,48 @@ function TradeRepublicWizard({ onBack }: { onDone: () => void; onBack: () => voi
               {t('sync.tr.connect')}
             </Button>
           </form>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Wizard: Revolut (assisted enrolment — no phone/PIN form, see
+// docs/features/revolut-sidecar.md §3.5: login happens once in a server-side
+// sidecar browser, not here).
+// ---------------------------------------------------------------------------
+
+function RevolutWizard({ onBack }: { onDone: () => void; onBack: () => void }) {
+  const { t } = useTranslation()
+  const [enrolmentStarted, setEnrolmentStarted] = useState(false)
+  const { data: sessionStatus } = useRevolutSessionStatus()
+
+  if (sessionStatus?.isActive) {
+    return (
+      <>
+        <BackButton onClick={onBack} />
+        <SuccessState message={t('addAccount.revolutConnected')} />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <BackButton onClick={onBack} />
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">{t('sync.revolut.assistedNote')}</p>
+
+        {!enrolmentStarted ? (
+          <Button onClick={() => setEnrolmentStarted(true)} className="w-full">
+            <CreditCard className="size-4" />
+            {t('sync.revolut.connect')}
+          </Button>
+        ) : (
+          <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+            {/* TODO(revolut): embed noVNC interactive login here once the sidecar exposes a live view */}
+            {t('sync.revolut.enrolmentPending')}
+          </div>
         )}
       </div>
     </>

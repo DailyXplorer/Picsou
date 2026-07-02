@@ -125,4 +125,17 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         "WHERE member_id = :memberId AND provider = 'Trade Republic' AND deleted_at IS NOT NULL",
         nativeQuery = true)
     void restoreSoftDeletedTrAccounts(@Param("memberId") Long memberId);
+
+    /**
+     * Lifts soft-delete tombstones for all Revolut accounts of a member (wallets, pockets,
+     * vaults). Called on explicit re-enrolment ({@code RevolutSyncService.completeEnrolment})
+     * so the upcoming sync can find and update -- rather than skip -- previously-deleted
+     * accounts. Mirrors {@link #restoreSoftDeletedTrAccounts}.
+     */
+    @Modifying
+    @Query(value =
+        "UPDATE account SET deleted_at = NULL " +
+        "WHERE member_id = :memberId AND provider = 'Revolut' AND deleted_at IS NOT NULL",
+        nativeQuery = true)
+    void restoreSoftDeletedRevolutAccounts(@Param("memberId") Long memberId);
 }

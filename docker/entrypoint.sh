@@ -59,5 +59,6 @@ bootstrap_secret "postgres_password" "POSTGRES_PASSWORD"     "rand -base64 24"
 # single-line entrypoint.
 export SERVER_PORT=9090
 export TR_AUTH_URL=${TR_AUTH_URL:-http://127.0.0.1:8001}
+export REVOLUT_AUTH_URL=${REVOLUT_AUTH_URL:-http://127.0.0.1:8002}
 
 exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf

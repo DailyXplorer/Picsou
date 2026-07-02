@@ -13,6 +13,7 @@ import type {
   FinaryAutoSyncResponse,
   BoursoSessionStatus,
   BoursoAuthInitResponse,
+  RevolutSessionStatus,
 } from '@/types/api'
 
 // --- Bank Sync (Enable Banking) ---
@@ -151,6 +152,25 @@ export const boursoApi = {
 
   clearSession: () =>
     api.delete('/bourso/session'),
+}
+
+// --- Revolut ---
+// Assisted enrolment: login happens in a server-side sidecar browser (see
+// docs/features/revolut-sidecar.md), not a phone+PIN form like TR. `completeEnrolment`
+// is called once the interactive session captures a storageState blob.
+
+export const revolutApi = {
+  getSessionStatus: () =>
+    api.get<RevolutSessionStatus>('/revolut/status').then(r => r.data),
+
+  sync: () =>
+    api.post<Account[]>('/revolut/sync').then(r => r.data),
+
+  clearSession: () =>
+    api.delete('/revolut/session'),
+
+  completeEnrolment: (storageState: Record<string, unknown>) =>
+    api.post<void>('/revolut/enrolment/complete', { storageState }).then(r => r.data),
 }
 
 // --- Finary ---
