@@ -5,8 +5,10 @@ WORKDIR /app
 RUN groupadd -r revoauth && useradd -r -g revoauth -m -d /home/revoauth revoauth
 
 # System libraries for Camoufox's Firefox engine + Xvfb. POST /sync runs a headful
-# login (headless=False) when re-auth is needed, so the whole app is launched under
-# xvfb-run to give it a virtual display; the headless session-reuse path also works.
+# Firefox (headless=False) when re-auth is needed, so the server runs under a virtual
+# X display started by entrypoint.sh — we drive Xvfb directly (the xvfb-run wrapper
+# hangs on this trixie base and never exec's the server, and would need xauth; the
+# direct Xvfb launch needs neither xvfb-run nor xauth).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         xvfb \
         libgtk-3-0 libdbus-glib-1-2 libx11-xcb1 libxcb-shm0 libxcomposite1 \
@@ -31,9 +33,9 @@ USER revoauth
 # camoufox package dir, chowned above) as the runtime user so both are readable at runtime.
 RUN python -m camoufox fetch
 
-COPY --chown=revoauth:revoauth main.py .
+COPY --chown=revoauth:revoauth main.py entrypoint.sh ./
 
 ENV REVOLUT_PROFILES_DIR=/data/revolut-profiles
 EXPOSE 8002
 
-CMD ["xvfb-run", "-a", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["sh", "entrypoint.sh"]
