@@ -28,6 +28,13 @@ tokens in the Keychain, and gates access with Face ID.
 > The backend must expose `/oauth2/**` (added to the bundled nginx config) over HTTPS. For local
 > development against `http://…`, run the backend with `SECURE_COOKIES=false`.
 
+## Demo mode (no backend)
+
+Select the **`Picsou Demo`** scheme and Run. It boots straight into the dashboard backed by mock
+data — no server URL, no login, no Face ID. This mirrors the web app's `VITE_DEMO_MODE` build flag:
+the scheme defines the `DEMO` compilation condition, read by `AppConfig.isDemo`. Handy for
+screenshots, demos, and UI work.
+
 ## Layout
 
 ```

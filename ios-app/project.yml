@@ -6,6 +6,13 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
 
+# Debug/Release build the real app; Demo is a Debug variant that forces the mock data source
+# (mirrors the web's VITE_DEMO_MODE build flag). Build/run the "Picsou Demo" scheme to get it.
+configs:
+  Debug: debug
+  Release: release
+  Demo: debug
+
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -28,6 +35,10 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"        # iPhone
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
+      configs:
+        Demo:
+          # AppConfig.isDemo reads this via #if DEMO → boots straight into the mock dashboard.
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEMO"
 
   PicsouTests:
     type: bundle.unit-test
@@ -50,3 +61,11 @@ schemes:
       targets:
         - PicsouTests
       gatherCoverageData: false
+  Picsou Demo:
+    build:
+      targets:
+        Picsou: all
+    run:
+      config: Demo
+    archive:
+      config: Demo

@@ -21,6 +21,10 @@ final class AppState {
 
     private(set) var phase: Phase
 
+    /// True in the "Picsou Demo" build — server config, auth and Face ID are skipped, and the
+    /// dashboard reads mock data.
+    let isDemo: Bool
+
     let serverConfig: ServerConfig
     let tokenStore: TokenStoring
     let oauth: OAuthService
@@ -44,8 +48,11 @@ final class AppState {
         self.session = session
         self.oauth = OAuthService(serverConfig: serverConfig, session: session)
         self.api = APIClient(serverConfig: serverConfig, tokenStore: tokenStore, oauth: oauth, session: session)
+        self.isDemo = AppConfig.isDemo
 
-        if serverConfig.baseURL == nil {
+        if isDemo {
+            phase = .ready                 // straight into the mock dashboard
+        } else if serverConfig.baseURL == nil {
             phase = .unconfigured
         } else if tokenStore.load() == nil {
             phase = .loggedOut
@@ -57,6 +64,11 @@ final class AppState {
         api.onAuthenticationLost = { [weak self] in
             Task { @MainActor in self?.signOut() }
         }
+    }
+
+    /// The dashboard's data source: mock data in the demo build, the live API otherwise.
+    func makeDashboardDataSource() -> DashboardDataSource {
+        isDemo ? DemoDashboardDataSource() : LiveDashboardDataSource(api: api)
     }
 
     /// Validate and persist the instance URL, then advance out of `.unconfigured`.

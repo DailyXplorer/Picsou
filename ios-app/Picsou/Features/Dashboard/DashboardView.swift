@@ -20,17 +20,29 @@ struct DashboardView: View {
             .navigationTitle("Patrimoine")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Se déconnecter", role: .destructive) { appState.signOut() }
-                    } label: {
-                        Image(systemName: "person.crop.circle")
+                    if appState.isDemo {
+                        Text("Démo")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.tint.opacity(0.15), in: Capsule())
+                            .foregroundStyle(.tint)
+                    } else {
+                        Menu {
+                            Button("Se déconnecter", role: .destructive) { appState.signOut() }
+                        } label: {
+                            Image(systemName: "person.crop.circle")
+                        }
                     }
                 }
             }
         }
         .task {
             if vm == nil {
-                vm = DashboardViewModel(api: appState.api, onAuthExpired: { appState.signOut() })
+                vm = DashboardViewModel(
+                    dataSource: appState.makeDashboardDataSource(),
+                    onAuthExpired: { appState.signOut() }
+                )
             }
             if case .loaded = vm?.state {} else { await vm?.load() }
         }

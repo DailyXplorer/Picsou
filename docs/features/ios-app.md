@@ -46,6 +46,17 @@ with XcodeGen (not committed).
 - The dashboard reads a single `GET /api/dashboard?range=` and renders net worth + PnL, a Swift
   Charts area history chart and allocation donut, accounts/liabilities lists, and goal progress.
 
+### Demo mode
+
+Mirrors the web app's `VITE_DEMO_MODE`: a **build flag**, not a runtime toggle. The `Picsou Demo`
+scheme (a `Demo` build configuration) defines the `DEMO` compilation condition, read once by
+`AppConfig.isDemo`. In a demo build, `AppState` boots straight to `.ready` (no server, no auth, no
+Face ID) and `makeDashboardDataSource()` returns `DemoDashboardDataSource` — canned mock data
+(`DemoData`) with every section populated — instead of `LiveDashboardDataSource` (the API). The
+`DashboardDataSource` protocol is the only seam; the UI is identical, and a small "Démo" badge marks
+the mode. The demo source/mocks compile in all configs (so they're testable); only the boot decision
+is gated by `#if DEMO`.
+
 ### Flow
 
 ```
@@ -107,7 +118,7 @@ Backend (Mockito + AssertJ):
 
 iOS (XCTest, run on the simulator):
 - `PKCETests` (incl. the RFC 7636 S256 vector), `DashboardDecodingTests`, `APIClientTests`
-  (401→refresh→retry, proactive near-expiry refresh)
+  (401→refresh→retry, proactive near-expiry refresh), `DemoDashboardDataSourceTests`
 
 ## Links
 

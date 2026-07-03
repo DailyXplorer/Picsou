@@ -13,20 +13,17 @@ final class DashboardViewModel {
     private(set) var state: State = .loading
     private(set) var range: TimeRange = .year
 
-    private let api: APIClient
+    private let dataSource: DashboardDataSource
     private let onAuthExpired: () -> Void
 
-    init(api: APIClient, onAuthExpired: @escaping () -> Void) {
-        self.api = api
+    init(dataSource: DashboardDataSource, onAuthExpired: @escaping () -> Void) {
+        self.dataSource = dataSource
         self.onAuthExpired = onAuthExpired
     }
 
     func load() async {
         do {
-            let data: DashboardResponse = try await api.get(
-                "api/dashboard",
-                query: [URLQueryItem(name: "range", value: range.rawValue)]
-            )
+            let data = try await dataSource.fetch(range: range)
             state = .loaded(data)
         } catch {
             if (error as? APIError) == .unauthorized {
