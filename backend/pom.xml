@@ -62,6 +62,17 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
+        <!-- OAuth2 Authorization Server — issues Authorization Code + PKCE tokens to the
+             native iOS app. Unversioned: governed by the Boot 3.4.9 BOM (Spring Authorization
+             Server ~1.4.x, aligned with the pinned spring-security.version=6.4.10). Tokens are
+             HS256-signed with the same JWT_SECRET as the cookie flow, so the existing
+             resource-server filter validates them unchanged. See ADR
+             2026-07-03-oauth2-authorization-server-for-native-app.md -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-authorization-server</artifactId>
+        </dependency>
+
         <!-- AOP — powers @RequiresScope enforcement on MCP tool methods -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

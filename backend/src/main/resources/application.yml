@@ -111,6 +111,13 @@ app:
     secret: ${JWT_SECRET}
     access-token-expiry-minutes: 15
     refresh-token-expiry-days: 7
+  # OAuth2 authorization server — the native iOS app's public client (Authorization Code + PKCE).
+  # Tokens are HS256-signed with app.jwt.secret above, so no separate signing key is needed.
+  oauth:
+    client-id: ${OAUTH_IOS_CLIENT_ID:picsou-ios}
+    redirect-uri: ${OAUTH_IOS_REDIRECT_URI:picsou://callback}
+    access-token-ttl-minutes: ${OAUTH_ACCESS_TTL_MINUTES:15}
+    refresh-token-ttl-days: ${OAUTH_REFRESH_TTL_DAYS:30}
   user:
     username: ${APP_USERNAME:}
     password-hash: ${APP_PASSWORD_HASH:}

@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -33,9 +34,14 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:}")
     private String allowedOrigins;
 
+    // @Order(2): the catch-all API chain. The OAuth2 authorization-server chain
+    // (AuthorizationServerConfig, @Order(1)) matches /oauth2/** ahead of this one; every other
+    // request falls through to here. This chain is otherwise unchanged from the cookie-only design.
     @Bean
+    @Order(2)
     public SecurityFilterChain filterChain(HttpSecurity http,
                                            JwtUtil jwtUtil,
+                                           JwtTokenAuthenticator jwtTokenAuthenticator,
                                            AppUserRepository appUserRepository,
                                            SetupFilter setupFilter,
                                            PersistentSessionService persistentSessionService,
@@ -79,7 +85,7 @@ public class SecurityConfig {
             // active access cookie short-circuits and we don't pay the DB hit per
             // request — registration order below preserves that ordering.
             .addFilterBefore(setupFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterBefore(new JwtAuthenticationFilter(jwtUtil, appUserRepository), UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(new JwtAuthenticationFilter(jwtTokenAuthenticator), UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(
                 new PersistentTokenAuthFilter(persistentSessionService, appUserRepository, jwtUtil, authCookieWriter, mfaService),
                 UsernamePasswordAuthenticationFilter.class
