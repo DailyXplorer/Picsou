@@ -19,11 +19,16 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Persistent per-member session profiles live here (mount a volume in docker-compose).
-RUN mkdir -p /data/revolut-profiles && chown -R revoauth:revoauth /app /data/revolut-profiles
+# camoufox[geoip] writes GeoLite2-City.mmdb INTO its own package dir at fetch time, so that
+# dir must be owned by the runtime user too — otherwise `camoufox fetch` below (run as
+# revoauth) hits PermissionError writing into the root-owned site-packages.
+RUN mkdir -p /data/revolut-profiles \
+    && chown -R revoauth:revoauth /app /data/revolut-profiles \
+       "$(python -c 'import camoufox, os; print(os.path.dirname(os.path.abspath(camoufox.__file__)))')"
 USER revoauth
 
-# Download Camoufox's stealth Firefox + GeoIP DB as the runtime user (into ~/.cache/camoufox)
-# so the non-root user can read them at runtime.
+# Download Camoufox's stealth Firefox (into ~/.cache/camoufox) + the GeoIP DB (into the
+# camoufox package dir, chowned above) as the runtime user so both are readable at runtime.
 RUN python -m camoufox fetch
 
 COPY --chown=revoauth:revoauth main.py .
