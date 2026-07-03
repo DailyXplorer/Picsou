@@ -12,7 +12,6 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -34,40 +33,31 @@ public class RevolutController {
     }
 
     /**
-     * Receives the storageState captured by the sidecar's one-time assisted headful login
-     * (see docs/features/revolut-sidecar.md §3.5 -- the user logs in by hand in the sidecar's
-     * browser; Java never drives credentials). Stores it encrypted and fires a background sync.
+     * On-demand sync: blank phoneNumber/passcode falls back to remembered credentials. This call
+     * can block for several minutes while the sidecar waits for the user to approve a push
+     * notification on their phone -- see {@code RevolutSyncService}.
      */
-    @PostMapping("/enrolment/complete")
-    public ResponseEntity<?> completeEnrolment(
-        @RequestBody CompleteEnrolmentRequest req,
-        HttpServletRequest request
-    ) {
+    @PostMapping("/sync")
+    public ResponseEntity<?> sync(@RequestBody SyncRequest req, HttpServletRequest request) {
         if (!checkAuthRateLimit(request)) {
             ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.TOO_MANY_REQUESTS);
-            detail.setDetail("Too many enrolment attempts. Please wait before trying again.");
+            detail.setDetail("Too many sync attempts. Please wait before trying again.");
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(detail);
         }
-        return ResponseEntity.ok(
-            revolutService.completeEnrolment(req.storageState(), userContext.currentMemberId()));
+        return ResponseEntity.ok(revolutService.sync(
+            userContext.currentMemberId(), req.phoneNumber(), req.passcode(), req.remember()));
     }
 
-    /** Manual sync using the stored session. */
-    @PostMapping("/sync")
-    public List<AccountResponse> sync() {
-        return revolutService.sync(userContext.currentMemberId());
-    }
-
-    /** Session status: is there an active session, and when does it expire? */
+    /** Connection status: are credentials remembered, and when did we last sync? */
     @GetMapping("/status")
-    public RevolutSyncService.SessionStatusResponse getStatus() {
-        return revolutService.getSessionStatus(userContext.currentMemberId());
+    public RevolutSyncService.StatusResponse getStatus() {
+        return revolutService.getStatus(userContext.currentMemberId());
     }
 
-    /** Clear the stored session (forces re-enrolment). */
+    /** Forgets any remembered credentials (accounts already synced are left untouched). */
     @DeleteMapping("/session")
-    public ResponseEntity<Void> clearSession() {
-        revolutService.clearSession(userContext.currentMemberId());
+    public ResponseEntity<Void> disconnect() {
+        revolutService.disconnect(userContext.currentMemberId());
         return ResponseEntity.noContent().build();
     }
 
@@ -79,5 +69,5 @@ public class RevolutController {
         return bucket.tryConsume(1);
     }
 
-    record CompleteEnrolmentRequest(String storageState) {}
+    record SyncRequest(String phoneNumber, String passcode, boolean remember) {}
 }

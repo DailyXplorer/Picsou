@@ -53,6 +53,8 @@ services:
     restart: unless-stopped
     networks:
       - picsou-net
+    volumes:
+      - revolut_profiles:/data/revolut-profiles
 
   # bourso-auth sidecar disabled for 1.0.0 — integration is not finished.
   # Re-enable along with the BoursoBank UI entry points in the frontend
@@ -89,6 +91,7 @@ services:
 volumes:
   pgdata:
   ollama_models:
+  revolut_profiles:
 
 networks:
   picsou-net:

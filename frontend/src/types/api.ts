@@ -297,8 +297,9 @@ export interface BoursoSessionStatus {
 }
 
 export interface RevolutSessionStatus {
-  isActive: boolean
-  expiresAt: string | null
+  connected: boolean
+  remembered: boolean
+  lastSyncedAt: string | null
 }
 
 export interface BoursoAuthInitResponse {

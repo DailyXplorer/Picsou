@@ -45,6 +45,8 @@ services:
       context: ../services/revolut-auth
       dockerfile: Dockerfile
     restart: unless-stopped
+    volumes:
+      - revolut_profiles:/data/revolut-profiles
 
   db:
     image: postgres:16-alpine
@@ -74,3 +76,4 @@ volumes:
   pgdata:
   picsou_data:
   ollama_models:
+  revolut_profiles:

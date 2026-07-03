@@ -155,22 +155,20 @@ export const boursoApi = {
 }
 
 // --- Revolut ---
-// Assisted enrolment: login happens in a server-side sidecar browser (see
-// docs/features/revolut-sidecar.md), not a phone+PIN form like TR. `completeEnrolment`
-// is called once the interactive session captures a storageState blob.
+// On-demand phone+passcode sync: the POST below blocks for up to ~5 minutes while
+// the user approves a push notification in the Revolut app, hence the long
+// per-request timeout. phoneNumber/passcode may be omitted once credentials were
+// previously remembered (the server keeps them encrypted).
 
 export const revolutApi = {
   getSessionStatus: () =>
     api.get<RevolutSessionStatus>('/revolut/status').then(r => r.data),
 
-  sync: () =>
-    api.post<Account[]>('/revolut/sync').then(r => r.data),
+  sync: (body: { phoneNumber?: string; passcode?: string; remember?: boolean }) =>
+    api.post<Account[]>('/revolut/sync', body, { timeout: 330_000 }).then(r => r.data),
 
   clearSession: () =>
     api.delete('/revolut/session'),
-
-  completeEnrolment: (storageState: Record<string, unknown>) =>
-    api.post<void>('/revolut/enrolment/complete', { storageState }).then(r => r.data),
 }
 
 // --- Finary ---

@@ -26,7 +26,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -119,11 +118,11 @@ public class RevolutPocketService {
         if (maybeUuid.isEmpty()) {
             return;
         }
-        // A Revolut sidecar session gives us the real pocket/money-box objects directly
+        // The Revolut on-demand connector gives us the real pocket/money-box objects directly
         // (RevolutSyncService, provider="Revolut", parentAccountId set) -- this PSD2 heuristic
         // reconstruction must stand down for this member, or every "To EUR MB:<uuid>" row would
         // spawn a duplicate placeholder pocket alongside the real one. See docs/decisions/2026-06-28.
-        if (isSidecarSessionActive(memberId)) {
+        if (hasSidecarSynced(memberId)) {
             return;
         }
         String pocketUuid = maybeUuid.get();
@@ -299,13 +298,19 @@ public class RevolutPocketService {
     // ─── Private helpers ──────────────────────────────────────────────────────
 
     /**
-     * True when this member has an active Revolut sidecar session. In that case the real
-     * pocket/money-box sub-accounts come from {@code RevolutSyncService} directly, and this
+     * True when the member has completed at least one on-demand sidecar sync
+     * ({@code RevolutSyncService.sync}, which always upserts a {@code RevolutSession} row and
+     * sets {@code lastSyncedAt} on success -- regardless of whether credentials were remembered).
+     * In that case the real pocket/money-box sub-accounts come from there directly, and this
      * heuristic PSD2-based reconstruction must not also run.
+     *
+     * <p>Deliberately NOT based on the presence of {@code provider='Revolut'} accounts: those can
+     * also come from Enable Banking alone (no sidecar involved), in which case this PSD2
+     * reconstruction is still the only source of real pocket data and must keep running.
      */
-    private boolean isSidecarSessionActive(Long memberId) {
+    private boolean hasSidecarSynced(Long memberId) {
         return revolutSessionRepository.findByMemberId(memberId)
-            .map(s -> s.getExpiresAt() == null || s.getExpiresAt().isAfter(Instant.now()))
+            .map(s -> s.getLastSyncedAt() != null)
             .orElse(false);
     }
 

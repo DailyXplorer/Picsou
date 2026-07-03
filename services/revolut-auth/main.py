@@ -1,42 +1,46 @@
 """
 Revolut Auth Sidecar
 --------------------
-Owns a logged-in Revolut web session (app.revolut.com, "personal" surface —
+Owns a logged-in Revolut web session (app.revolut.com, "personal" surface --
 Phase 1 of docs/features/revolut-sidecar.md) and exposes a minimal HTTP API
 consumed by the Spring backend.
 
-Auth model (see design doc §3 for the recon that established this):
-  - The access/session token lives in an httpOnly cookie — never JS-visible.
-  - Every request also needs `x-device-id` (= the `revo_device_id` cookie,
-    NOT httpOnly, a stable per-device UUID) + `x-browser-application:
-    WEB_CLIENT` + `x-client-version: 100.0`. Cookie alone -> 401.
-  - Access tokens live ~4 min; `PUT /api/retail/token` mints a fresh one
-    using the httpOnly refresh cookie.
-  - Login itself (phone + passcode + mobile approval) is not automatable
-    and is deliberately NOT attempted here — see /enrolment/start.
+Why Camoufox (stealth Firefox) and not plain Playwright Chromium:
+  Revolut's anti-bot fingerprints and blocks a vanilla Playwright Chromium
+  (captcha loops, "Mauvais code d'accès"), but accepts a real Firefox engine
+  (the user's own Firefox-based browser logs in fine). Camoufox spoofs the
+  fingerprint at the C++ level (0% bot-detection) and drives Playwright.
 
-Two flows:
-  POST /enrolment/start  → headful, human-in-the-loop login capture.
-                           Returns { storageState } once the user finishes
-                           logging in by hand in the visible browser window.
-  POST /accounts         → headless recurring sync. Takes a previously
-                           captured storageState, refreshes the token, and
-                           harvests accounts/transactions.
+Session model -- a PERSISTENT Camoufox profile per member (user_data_dir under
+REVOLUT_PROFILES_DIR), reused across enrolment and every sync. Reusing the same
+profile keeps the browser fingerprint AND cookies stable, which is what keeps the
+session alive: replaying from fresh per-sync instances (random fingerprint each
+time) gets the session invalidated by Revolut. The profile IS the stored session;
+Java only tracks metadata (active / expiresAt). See docs §3.5.
 
-All requests replay at the Playwright network layer (real fetch() calls
-made from inside the page, below the app's JS) rather than reconstructing
-headers out-of-band — see design doc §3.4 for why hooking window.fetch or
-rebuilding headers from scratch does not work here.
+Auth model (recon, docs §3): retail API = httpOnly session cookie (in the profile)
++ header x-device-id (= the revo_device_id cookie) + x-browser-application:
+WEB_CLIENT + x-client-version. Access token ~4 min, refreshed via PUT
+/api/retail/token.
+
+Endpoints:
+  POST /enrolment  {phoneNumber, passcode, memberId} -> automated login (Camoufox
+                   fills phone+passcode; the user approves the push on their phone),
+                   session captured into the member's persistent profile.
+  POST /accounts   {memberId} -> headless sync from the member's profile: refresh
+                   token, harvest wallets/pockets/money-boxes/IBANs/transactions.
 """
 
-import json
+import asyncio
 import logging
+import os
+import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
+from camoufox.async_api import AsyncCamoufox
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from playwright.async_api import Page, async_playwright
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
@@ -46,61 +50,53 @@ app = FastAPI()
 
 APP_URL = "https://app.revolut.com/"
 HOME_URL = "https://app.revolut.com/home"
-UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
 
-# Generous window for the human to complete phone + passcode + mobile
-# approval / device enrolment by hand (see capture_login.py, from which this
-# value is inherited).
-ENROLMENT_WAIT_S = 420
-ENROLMENT_POLL_MS = 3000
+PROFILES_ROOT = os.environ.get("REVOLUT_PROFILES_DIR", "/data/revolut-profiles")
 
-# Hard cap on transaction pages fetched per pocket — a safety net against an
-# unexpected pagination shape looping forever, not a expected normal path.
+ENROLMENT_APPROVE_WAIT_S = 300
+POLL_MS = 3000
 MAX_TRANSACTION_PAGES = 20
 TRANSACTION_WINDOW_DAYS = 90
 
-
-# ─── Helpers: storageState / device id ───────────────────────────────────────
-
-def _parse_storage_state(value: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
-    if isinstance(value, str):
-        return json.loads(value)
-    return value
+NOISE_POCKET_TYPES = {"MERCHANT", "REVX_FIAT"}
+FIAT_FALLBACK = {"EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD", "SEK", "NOK", "DKK",
+                 "PLN", "CZK", "HUF", "RON", "BGN", "TRY", "ZAR", "SGD", "HKD", "NZD",
+                 "MXN", "ILS", "AED", "THB"}
 
 
-def _extract_device_id(storage_state: Dict[str, Any]) -> Optional[str]:
-    """`revo_device_id` is a plain (non-httpOnly) cookie — present in
-    storageState like any other and readable from document.cookie in-page.
-    We read it from the Python side so we don't depend on the exact cookie
-    domain/path lining up with whatever page happens to be loaded."""
-    for cookie in storage_state.get("cookies", []):
-        if cookie.get("name") == "revo_device_id":
-            return cookie.get("value")
-    return None
+def _profile_dir(member_id: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_-]", "", str(member_id)) or "default"
+    path = os.path.join(PROFILES_ROOT, safe)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
-async def _read_device_id_from_page(page: Page) -> Optional[str]:
-    """Fallback for the enrolment flow, where we don't have a storageState
-    yet — read the cookie straight from the live page once it's been set."""
+def _has_profile(member_id: str) -> bool:
+    path = os.path.join(PROFILES_ROOT, re.sub(r"[^A-Za-z0-9_-]", "", str(member_id)) or "default")
+    return os.path.isdir(path) and bool(os.listdir(path))
+
+
+def _camoufox(member_id: str, headless: bool):
+    """A persistent Camoufox context bound to the member's profile dir. os=linux +
+    geoip keep the fingerprint consistent with the host; humanize adds human-like
+    cursor motion. Camoufox manages UA/navigator/canvas/WebGL itself."""
+    return AsyncCamoufox(headless=headless, humanize=True, os="linux", geoip=True,
+                         persistent_context=True, user_data_dir=_profile_dir(member_id))
+
+
+# ─── Auth / device id ─────────────────────────────────────────────────────────
+
+async def _device_id(ctx) -> str:
     try:
-        return await page.evaluate(
-            """() => {
-                const c = document.cookie.split(';').map(s => s.trim())
-                          .find(s => s.startsWith('revo_device_id='));
-                return c ? c.split('=').slice(1).join('=') : null;
-            }"""
-        )
+        for c in await ctx.cookies():
+            if c.get("name") == "revo_device_id":
+                return c.get("value") or ""
     except Exception:  # noqa: BLE001
-        return None
+        pass
+    return ""
 
 
 def _pick(d: Optional[Dict[str, Any]], *keys: str, default: Any = None) -> Any:
-    """Try several candidate key names in order. The exact Revolut JSON field
-    names below are best-effort from the design-doc recon (endpoint paths and
-    high-level semantics were confirmed live; the precise field spelling of
-    nested objects was not dumped) — this keeps the mapping tolerant instead
-    of silently defaulting on a near-miss key."""
     if not isinstance(d, dict):
         return default
     for k in keys:
@@ -116,218 +112,229 @@ def _to_number(value: Any) -> float:
         return 0.0
 
 
-def _ms_to_date(ms: Any) -> str:
+def _minor_to_major(value: Any) -> float:
+    """Revolut balances are integer MINOR units (cents): 12345 == 123.45."""
     try:
-        return datetime.fromtimestamp(float(ms) / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
-    except (TypeError, ValueError, OSError):
-        return ""
+        return float(value) / 100.0
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def session_expired() -> JSONResponse:
-    """Exact-shape 401 the backend expects. NOTE: we deliberately do not use
-    FastAPI's HTTPException here — it wraps `detail` in an envelope
-    (`{"detail": {...}}`), which would break the flat `{"error": ...}`
-    contract the Java side parses. Returning a JSONResponse directly gives
-    us the exact body."""
+    """Flat 401 the backend parses (not FastAPI's HTTPException, which wraps `detail`)."""
     return JSONResponse(status_code=401, content={"error": "SESSION_EXPIRED"})
 
 
-# ─── Helpers: authenticated fetch from inside the page ──────────────────────
+# ─── In-page authenticated fetch (below the app's JS, per docs §3.4) ────────────
 
 _JS_FETCH = """
 async ({ path, method, deviceId, params }) => {
     try {
         const url = new URL(path, window.location.origin);
-        if (params) {
-            for (const [k, v] of Object.entries(params)) {
-                if (v !== undefined && v !== null) url.searchParams.set(k, v);
-            }
+        if (params) for (const [k, v] of Object.entries(params)) {
+            if (v !== undefined && v !== null) url.searchParams.set(k, v);
         }
         const r = await fetch(url.toString(), {
-            method,
-            credentials: 'include',
-            headers: {
-                'x-device-id': deviceId || '',
-                'x-browser-application': 'WEB_CLIENT',
-                'x-client-version': '100.0',
-            },
+            method, credentials: 'include',
+            headers: { 'x-device-id': deviceId || '', 'x-browser-application': 'WEB_CLIENT',
+                       'x-client-version': '100.0' },
         });
-        let data = null;
-        try { data = await r.json(); } catch (e) { data = null; }
+        let data = null; try { data = await r.json(); } catch (e) { data = null; }
         return { status: r.status, data };
-    } catch (e) {
-        return { status: 0, data: null, error: String(e) };
-    }
+    } catch (e) { return { status: 0, data: null, error: String(e) }; }
 }
 """
 
 
-async def api_call(page: Page, path: str, device_id: Optional[str],
-                    method: str = "GET", params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Authenticated fetch executed in-page (below the app's JS, per design
-    doc §3.4). Never raises — endpoint failures are reported via status=0/4xx
-    so callers can skip-and-continue per the sidecar's defensive-harvest
-    contract."""
+async def api_call(page, path, device_id, method="GET", params=None) -> Dict[str, Any]:
+    for attempt in range(3):
+        try:
+            return await page.evaluate(_JS_FETCH, {"path": path, "method": method,
+                                                    "deviceId": device_id, "params": params or {}})
+        except Exception as e:  # noqa: BLE001
+            msg = str(e).lower()
+            if attempt < 2 and ("context was destroyed" in msg or "execution context" in msg
+                                or "navigation" in msg):
+                await page.wait_for_timeout(1500)
+                continue
+            log.warning("api_call failed for %s %s: %s", method, path, e)
+            return {"status": 0, "data": None}
+    return {"status": 0, "data": None}
+
+
+async def refresh_access_token(page, device_id) -> int:
+    return (await api_call(page, "/api/retail/token", device_id, method="PUT")).get("status", 0)
+
+
+async def _settle(page) -> None:
+    """Let the SPA finish its SSO re-check / routing before we fire in-page fetches."""
     try:
-        return await page.evaluate(_JS_FETCH, {"path": path, "method": method,
-                                                 "deviceId": device_id, "params": params or {}})
-    except Exception as e:  # noqa: BLE001
-        log.warning("api_call failed for %s %s: %s", method, path, e)
-        return {"status": 0, "data": None}
+        await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
+        await page.wait_for_load_state("networkidle", timeout=15000)
+    except Exception:  # noqa: BLE001
+        await page.wait_for_timeout(3000)
+    await page.wait_for_timeout(1500)
 
 
-async def refresh_access_token(page: Page, device_id: Optional[str]) -> int:
-    resp = await api_call(page, "/api/retail/token", device_id, method="PUT")
-    return resp.get("status", 0)
+# ─── Harvest ────────────────────────────────────────────────────────────────
 
-
-# ─── Harvest: wallets/pockets, money boxes, IBANs, transactions ─────────────
-
-async def _fetch_wallets(page: Page, device_id: Optional[str]) -> List[Tuple[Optional[str], List[Dict[str, Any]]]]:
-    """Returns (walletId, pockets[]) pairs. Tries the singular "current
-    wallet" endpoint first (the common single-wallet case); falls back to the
-    plural listing for accounts with more than one wallet."""
-    resp = await api_call(page, "/api/retail/user/current/wallet", device_id)
-    if resp.get("status") == 200 and isinstance(resp.get("data"), dict) and resp["data"].get("pockets"):
-        w = resp["data"]
-        return [(_pick(w, "id", "walletId"), w.get("pockets") or [])]
-
-    resp = await api_call(page, "/api/retail/wallets", device_id)
+async def _fetch_wallets(page, device_id) -> List[Tuple[Optional[str], List[Dict[str, Any]]]]:
+    """/api/retail/wallets is a dict keyed by account type -- {"PERSONAL": [wallet,...],
+    "PERSONAL_JOINT": [...], ...} -- each wallet has a `pockets` list. Prefer it (covers
+    joint accounts); fall back to the singular /user/current/wallet."""
     out: List[Tuple[Optional[str], List[Dict[str, Any]]]] = []
-    if resp.get("status") == 200 and resp.get("data"):
-        data = resp["data"]
-        wallets = data if isinstance(data, list) else data.get("wallets", [])
-        for w in wallets or []:
-            out.append((_pick(w, "id", "walletId"), w.get("pockets") or []))
+    resp = await api_call(page, "/api/retail/wallets", device_id)
+    if resp.get("status") == 200 and isinstance(resp.get("data"), dict):
+        for group in resp["data"].values():
+            if isinstance(group, list):
+                for w in group:
+                    out.append((_pick(w, "id", "walletId"),
+                                (w.get("pockets") or []) + (w.get("sharedPockets") or [])))
     if not out:
-        log.warning("no wallet found (both /user/current/wallet and /wallets came back empty)")
+        resp = await api_call(page, "/api/retail/user/current/wallet", device_id)
+        if resp.get("status") == 200 and isinstance(resp.get("data"), dict) and resp["data"].get("pockets"):
+            out.append((_pick(resp["data"], "id", "walletId"), resp["data"].get("pockets") or []))
+    if not out:
+        log.warning("no wallet found")
     return out
 
 
-async def _fetch_money_boxes(page: Page, device_id: Optional[str]) -> List[Dict[str, Any]]:
-    seen_ids: set = set()
-    boxes: List[Dict[str, Any]] = []
+async def _fetch_money_boxes(page, device_id) -> List[Dict[str, Any]]:
+    seen, boxes = set(), []
     for params in ({"accountType": "PERSONAL"}, {"accountType": "PERSONAL_JOINT"}, None):
         resp = await api_call(page, "/api/retail/user/current/money-boxes", device_id, params=params)
         if resp.get("status") != 200 or not resp.get("data"):
             continue
         data = resp["data"]
-        items = data if isinstance(data, list) else data.get("moneyBoxes", [])
-        for mb in items or []:
+        for mb in (data if isinstance(data, list) else data.get("moneyBoxes", [])) or []:
             mb_id = _pick(mb, "id")
-            if not mb_id or mb_id in seen_ids:
-                continue
-            seen_ids.add(mb_id)
-            boxes.append(mb)
+            if mb_id and mb_id not in seen:
+                seen.add(mb_id)
+                boxes.append(mb)
     return boxes
 
 
-async def _fetch_iban(page: Page, device_id: Optional[str], wallet_id: str, currency: str) -> Optional[str]:
+async def _fetch_fiat_currencies(page, device_id) -> set:
+    resp = await api_call(page, "/api/retail/currencies", device_id, params={"type": "fiat"})
+    codes: set = set()
+    if resp.get("status") == 200 and resp.get("data"):
+        data = resp["data"]
+        items = data if isinstance(data, list) else (list(data.values()) if isinstance(data, dict) else [])
+        for it in items:
+            if isinstance(it, str):
+                codes.add(it)
+            elif isinstance(it, dict):
+                c = _pick(it, "code", "currency", "isoCode", "id")
+                if isinstance(c, str):
+                    codes.add(c)
+    return codes or set(FIAT_FALLBACK)
+
+
+async def _fetch_iban(page, device_id, wallet_id, currency) -> Optional[str]:
     resp = await api_call(page, "/api/retail/bank-accounts/account-details", device_id, params={
-        "currency": currency, "pocketType": "CURRENT", "locale": "fr-FR", "walletId": wallet_id,
-    })
+        "currency": currency, "pocketType": "CURRENT", "locale": "fr-FR", "walletId": wallet_id})
     if resp.get("status") == 200 and isinstance(resp.get("data"), dict):
         return _pick(resp["data"], "iban", "IBAN")
     return None
 
 
-async def _fetch_transactions(page: Page, device_id: Optional[str], pocket_id: str) -> List[Dict[str, Any]]:
+async def _fetch_transactions(page, device_id, pocket_id) -> List[Dict[str, Any]]:
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    cutoff_ms = now_ms - TRANSACTION_WINDOW_DAYS * 24 * 3600 * 1000
-    out: List[Dict[str, Any]] = []
-    seen_ids: set = set()
-    cursor = now_ms
-
+    cutoff = now_ms - TRANSACTION_WINDOW_DAYS * 24 * 3600 * 1000
+    out, seen, cursor = [], set(), now_ms
     for _ in range(MAX_TRANSACTION_PAGES):
         resp = await api_call(page, "/api/retail/user/current/transactions/last", device_id,
-                               params={"internalPocketId": pocket_id, "to": cursor})
+                              params={"internalPocketId": pocket_id, "to": cursor})
         if resp.get("status") != 200 or not resp.get("data"):
             break
         data = resp["data"]
         batch = data if isinstance(data, list) else data.get("transactions", [])
         if not batch:
             break
-
-        new_count = 0
-        oldest_ts = cursor
+        new_count, oldest = 0, cursor
         for t in batch:
             tid = _pick(t, "id")
-            if not tid or tid in seen_ids:
+            if not tid or tid in seen:
                 continue
-            seen_ids.add(tid)
+            seen.add(tid)
             new_count += 1
             ts = _pick(t, "completedDate", "startedDate", default=0)
-            if ts and ts < oldest_ts:
-                oldest_ts = ts
-            if ts and ts < cutoff_ms:
-                continue  # outside the sync window, but still consumed for pagination
+            if ts and ts < oldest:
+                oldest = ts
+            if ts and ts < cutoff:
+                continue
             merchant = _pick(t, "merchant", default={}) or {}
-            counterparty = _pick(t, "counterparty", default={}) or {}
             out.append({
                 "externalId": tid,
-                "date": _ms_to_date(ts),
+                "date": datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d") if ts else "",
                 "description": _pick(t, "description") or _pick(merchant, "name") or "",
-                "amount": _to_number(_pick(t, "amount", default=0)),
-                "counterparty": _pick(merchant, "name") or _pick(counterparty, "name"),
+                "amount": _minor_to_major(_pick(t, "amount", default=0)),
+                "counterparty": _pick(merchant, "name"),
             })
-
-        if new_count == 0 or oldest_ts <= cutoff_ms or oldest_ts >= cursor:
+        if new_count == 0 or oldest <= cutoff or oldest >= cursor:
             break
-        cursor = oldest_ts
-
+        cursor = oldest
     return out
 
 
-async def harvest_accounts(page: Page, device_id: Optional[str]) -> Dict[str, Any]:
+async def harvest_accounts(page, device_id) -> Dict[str, Any]:
     accounts: List[Dict[str, Any]] = []
 
-    wallets = await _fetch_wallets(page, device_id)
-    for wallet_id, pockets in wallets:
-        for pocket in pockets:
-            pocket_id = _pick(pocket, "id")
-            if not pocket_id:
-                continue
-            accounts.append({
-                "externalId": pocket_id,
-                "name": _pick(pocket, "name", "type", "pocketType", default="Revolut"),
-                "type": "CHECKING",
-                "iban": None,
-                "balance": _to_number(_pick(pocket, "balance", "amount", default=0)),
-                "currency": _pick(pocket, "currency", "currencyCode", default="EUR"),
-                "parentExternalId": wallet_id if wallet_id and wallet_id != pocket_id else None,
-                "transactions": [],
-            })
-
+    # Money-boxes (vaults) first -- record their pocket ids so those pockets are not
+    # also surfaced as current accounts (a vault would otherwise appear twice).
+    mb_pocket_ids: set = set()
     for mb in await _fetch_money_boxes(page, device_id):
         mb_id = _pick(mb, "id")
         if not mb_id:
             continue
+        mb_pocket = _pick(mb, "pocket", default={})
+        if isinstance(mb_pocket, dict) and _pick(mb_pocket, "id"):
+            mb_pocket_ids.add(_pick(mb_pocket, "id"))
+        bal = _pick(mb, "balance", default={})  # nested {"amount": cents, "currency": "EUR"}
+        balance = _minor_to_major(_pick(bal, "amount", default=0)) if isinstance(bal, dict) else _minor_to_major(bal)
+        currency = _pick(bal, "currency") if isinstance(bal, dict) else None
         accounts.append({
-            "externalId": mb_id,
-            "name": _pick(mb, "name", default="Vault"),
-            "type": "SAVINGS",
-            "iban": None,
-            "balance": _to_number(_pick(mb, "balance", "amount", default=0)),
-            "currency": _pick(mb, "currency", "currencyCode", default="EUR"),
-            "parentExternalId": _pick(mb, "accountId", "walletId", "podId"),
-            "transactions": [],
+            "externalId": mb_id, "name": _pick(mb, "name", default="Vault"), "type": "SAVINGS",
+            "iban": None, "balance": balance,
+            "currency": currency or _pick(mb, "currency", "currencyCode", default="EUR"),
+            "parentExternalId": _pick(mb, "accountId", "walletId", "podId"), "transactions": [],
         })
 
-    # IBANs: one lookup per (walletId, currency) pair among CHECKING accounts.
-    iban_cache: Dict[Tuple[str, str], Optional[str]] = {}
+    fiat = await _fetch_fiat_currencies(page, device_id)
+
+    # Current-account pockets: keep only real fiat CURRENT pockets; drop closed ones,
+    # money-box pockets (dedup), MERCHANT/REVX_FIAT sleeves, and non-fiat (crypto) pockets.
+    wallets = await _fetch_wallets(page, device_id)
     for wallet_id, pockets in wallets:
+        for pocket in pockets:
+            pid = _pick(pocket, "id")
+            ptype = _pick(pocket, "type", default="")
+            currency = _pick(pocket, "currency", "currencyCode", default="EUR")
+            if (not pid or pocket.get("closed") or pid in mb_pocket_ids
+                    or ptype in NOISE_POCKET_TYPES or currency not in fiat):
+                continue
+            accounts.append({
+                "externalId": pid, "name": _pick(pocket, "name", "type", default="Revolut"),
+                "type": "CHECKING", "iban": None,
+                "balance": _minor_to_major(_pick(pocket, "balance", "amount", default=0)),
+                "currency": currency,
+                "parentExternalId": wallet_id if wallet_id and wallet_id != pid else None,
+                "transactions": [],
+            })
+
+    # IBANs per (walletId, currency) among CHECKING accounts.
+    iban_cache: Dict[Tuple[str, str], Optional[str]] = {}
+    for wallet_id, _ in wallets:
         if not wallet_id:
             continue
-        currencies = {a["currency"] for a in accounts if a["type"] == "CHECKING"}
-        for ccy in currencies:
+        for ccy in {a["currency"] for a in accounts if a["type"] == "CHECKING"}:
             key = (wallet_id, ccy)
             if key not in iban_cache:
                 iban_cache[key] = await _fetch_iban(page, device_id, wallet_id, ccy)
-            iban = iban_cache[key]
-            if iban:
+            if iban_cache[key]:
                 for acc in accounts:
                     if acc["type"] == "CHECKING" and acc["currency"] == ccy and not acc["iban"]:
-                        acc["iban"] = iban
+                        acc["iban"] = iban_cache[key]
 
     for acc in accounts:
         if acc["type"] == "CHECKING":
@@ -336,108 +343,135 @@ async def harvest_accounts(page: Page, device_id: Optional[str]) -> Dict[str, An
     return {"accounts": accounts}
 
 
+# ─── Automated login (enrolment) ───────────────────────────────────────────────
+
+async def _logged_in(page) -> bool:
+    try:
+        return await page.evaluate(
+            """async () => {
+                const c = document.cookie.split(';').map(s=>s.trim())
+                          .find(s=>s.startsWith('revo_device_id='));
+                const dev = c ? c.split('=').slice(1).join('=') : '';
+                const r = await fetch('/api/retail/token/info', {credentials:'include',
+                  headers:{'x-device-id':dev,'x-browser-application':'WEB_CLIENT','x-client-version':'100.0'}});
+                return r.status === 200;
+            }""")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+async def _click_continue(page) -> None:
+    for name in ("Continuer", "Continue"):
+        btn = page.get_by_role("button", name=name)
+        if await btn.count():
+            for _ in range(25):
+                try:
+                    if await btn.first.is_enabled():
+                        await btn.first.click()
+                        return
+                except Exception:  # noqa: BLE001
+                    pass
+                await page.wait_for_timeout(300)
+    await page.keyboard.press("Enter")
+
+
+async def _fill_phone(page, phone: str) -> None:
+    num = phone.strip().replace(" ", "")
+    for pfx in ("+33", "0033"):
+        if num.startswith(pfx):
+            num = num[len(pfx):]
+    if num.startswith("0"):
+        num = num[1:]
+    tel = page.locator("input[name='phoneNumber']").first
+    if not await tel.count():
+        tel = page.locator("input[inputmode='tel'], input[type='tel']").first
+    await tel.click()
+    await tel.fill("")
+    await tel.type(num, delay=70)
+    await _click_continue(page)
+    await page.wait_for_timeout(5000)
+
+
+async def _fill_passcode(page, passcode: str) -> None:
+    boxes = page.get_by_role("textbox")
+    if await boxes.count() >= 6:
+        await boxes.first.click()
+        await page.keyboard.type(passcode, delay=120)  # 6-digit passcode auto-submits; no click
+        return
+    for sel in ("input[type='password']", "input[inputmode='numeric']"):
+        loc = page.locator(sel)
+        if await loc.count():
+            await loc.first.fill(passcode)
+            await page.keyboard.press("Enter")
+            return
+
+
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
-class AccountsRequest(BaseModel):
-    storageState: Union[str, Dict[str, Any]]
+class SyncRequest(BaseModel):
+    phoneNumber: str
+    passcode: str
+    memberId: str
 
 
-@app.post("/accounts")
-async def get_accounts(req: AccountsRequest):
-    storage_state = _parse_storage_state(req.storageState)
-    device_id = _extract_device_id(storage_state)
-    if not device_id:
-        log.warning("no revo_device_id cookie in storageState — treating session as dead")
-        return session_expired()
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
-        try:
-            context = await browser.new_context(
-                storage_state=storage_state, user_agent=UA, locale="fr-FR", timezone_id="Europe/Paris",
-            )
-            await context.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', { get: () => undefined })"
-            )
-            page = await context.new_page()
-
-            try:
-                await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
-            except Exception:  # noqa: BLE001
-                await page.wait_for_timeout(3000)
-
-            refresh_status = await refresh_access_token(page, device_id)
-            if refresh_status == 401:
-                log.info("token refresh returned 401 — session expired")
-                return session_expired()
-            if refresh_status not in (200, 201):
-                log.warning("token refresh returned unexpected status %s — proceeding anyway", refresh_status)
-
-            info_resp = await api_call(page, "/api/retail/token/info", device_id)
-            if info_resp.get("status") == 401:
-                log.info("token/info returned 401 — session expired")
-                return session_expired()
-
-            result = await harvest_accounts(page, device_id)
-            log.info("harvested %d accounts", len(result["accounts"]))
-            return result
-        finally:
-            await browser.close()
+async def _harvest_from_profile(member_id: str) -> Optional[Dict[str, Any]]:
+    """Sync from an existing profile session WITHOUT logging in (headless). Returns the
+    accounts if the session is still alive, or None if it's dead/absent -- in which case
+    the caller performs a fresh login. This is what makes repeated syncs within a session's
+    lifetime need no mobile approval, and lets a future keep-alive make daily sync free."""
+    if not _has_profile(member_id):
+        return None
+    async with _camoufox(member_id, headless=True) as ctx:
+        page = await ctx.new_page()
+        await _settle(page)
+        device_id = await _device_id(ctx)
+        if not device_id:
+            return None
+        if await refresh_access_token(page, device_id) == 401:
+            return None
+        if (await api_call(page, "/api/retail/token/info", device_id)).get("status") == 401:
+            return None
+        return await harvest_accounts(page, device_id)
 
 
-@app.post("/enrolment/start")
-async def enrolment_start():
-    """
-    One-time ASSISTED enrolment for a NEW Revolut device/session.
+@app.post("/sync")
+async def sync(req: SyncRequest):
+    """On-demand sync. First tries to reuse a still-live profile session (no login, no
+    mobile approval). If the session is dead/absent, does an automated login (Camoufox
+    fills phone+passcode; the user approves the push on their phone), then harvests.
+    Credentials are used for this call only; the sidecar never stores them (Java decides
+    whether to remember them, encrypted)."""
+    reused = await _harvest_from_profile(req.memberId)
+    if reused is not None:
+        log.info("synced %d accounts (reused session) for member %s",
+                 len(reused["accounts"]), req.memberId)
+        return reused
 
-    Revolut login (phone + passcode + mobile-app approval) is not
-    automatable and must not be — see design doc §3.5: aggressive automated
-    login attempts get web-channel rate-limited. So this launches a HEADFUL
-    Chromium window (headless=False) and waits for a human to complete the
-    login by hand; no credentials are read or typed by this code.
+    async with _camoufox(req.memberId, headless=False) as ctx:  # headful login (Xvfb in the image)
+        page = await ctx.new_page()
+        await page.goto(APP_URL, wait_until="domcontentloaded", timeout=45000)
+        await page.wait_for_timeout(3000)
+        if "passcode" not in page.url:
+            await _fill_phone(page, req.phoneNumber)
+        if "passcode" in page.url or await page.get_by_role("textbox").count() >= 6:
+            await _fill_passcode(page, req.passcode)
 
-    Deployment note: headless=False needs a display. The container image
-    installs Xvfb and wraps its entrypoint in `xvfb-run` so this call does
-    not crash for lack of a DISPLAY, but merely having a virtual display is
-    not the same as a human being able to *see and click* the window — that
-    requires a VNC bridge (e.g. x11vnc + noVNC) exposed alongside Xvfb. That
-    bridge is a documented follow-up (see design doc §4.1), not implemented
-    here. Until it exists, run capture_login.py on a host with a real
-    display and pass the resulting storageState to /accounts directly, or
-    call this endpoint from an environment that already has one.
-    """
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False, args=["--no-sandbox", "--disable-dev-shm-usage"])
-        try:
-            context = await browser.new_context(user_agent=UA, locale="fr-FR", timezone_id="Europe/Paris")
-            await context.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', { get: () => undefined })"
-            )
-            page = await context.new_page()
-            try:
-                await page.goto(APP_URL, wait_until="domcontentloaded", timeout=30000)
-            except Exception:  # noqa: BLE001
-                await page.wait_for_timeout(3000)
+        log.info("login: waiting up to %ss for mobile approval", ENROLMENT_APPROVE_WAIT_S)
+        approved = False
+        for _ in range(ENROLMENT_APPROVE_WAIT_S * 1000 // POLL_MS):
+            if await _logged_in(page):
+                approved = True
+                break
+            await page.wait_for_timeout(POLL_MS)
+        if not approved:
+            return JSONResponse(status_code=408, content={"error": "APPROVAL_TIMEOUT"})
 
-            log.info("enrolment: waiting up to %ss for the user to log in by hand", ENROLMENT_WAIT_S)
-            device_id = None
-            for _ in range(ENROLMENT_WAIT_S * 1000 // ENROLMENT_POLL_MS):
-                device_id = await _read_device_id_from_page(page)
-                if device_id:
-                    info_resp = await api_call(page, "/api/retail/token/info", device_id)
-                    if info_resp.get("status") == 200:
-                        break
-                await page.wait_for_timeout(ENROLMENT_POLL_MS)
-            else:
-                log.warning("enrolment timed out — user did not complete login in time")
-                return JSONResponse(status_code=408, content={"error": "ENROLMENT_TIMEOUT"})
-
-            storage_state = await context.storage_state()
-            log.info("enrolment complete — storageState captured (%d cookies)",
-                      len(storage_state.get("cookies", [])))
-            return {"storageState": storage_state}
-        finally:
-            await browser.close()
+        device_id = await _device_id(ctx)
+        await _settle(page)
+        result = await harvest_accounts(page, device_id)
+        log.info("synced %d accounts (fresh login) for member %s",
+                 len(result["accounts"]), req.memberId)
+        return result
 
 
 @app.get("/health")

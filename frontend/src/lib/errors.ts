@@ -66,6 +66,12 @@ export function getErrorDetail(err: unknown): string | undefined {
   return typeof detail === 'string' ? detail : undefined
 }
 
+/** True for a client-side axios timeout (ECONNABORTED) or an explicit 408 from the backend. */
+export function isTimeoutError(err: unknown): boolean {
+  if (getErrorStatus(err) === 408) return true
+  return (err as { code?: string })?.code === 'ECONNABORTED'
+}
+
 // formatApiError only ever calls t with a single key argument, so we type it as
 // such. A looser `(key, fallback?: string)` signature would reject the real
 // i18next TFunction, whose second positional arg is an options object / default

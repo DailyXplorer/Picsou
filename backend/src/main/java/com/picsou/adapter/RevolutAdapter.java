@@ -21,17 +21,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Adapter for the revolut-auth Python sidecar (see docs/features/revolut-sidecar.md §4).
+ * Adapter for the revolut-auth Python sidecar (see docs/features/revolut-sidecar.md).
  *
- * The sidecar is stateless after auth (like BoursoAdapter): Java hands back the encrypted-at-rest
- * {@code storageState} blob on every call, the sidecar restores the Playwright browser context,
- * refreshes the access token, and harvests the retail API. No token refresh logic lives here --
- * the sidecar owns that internally.
+ * On-demand model: a single {@code POST /sync} call either reuses a still-live per-member browser
+ * profile (no login) or performs a fresh automated login (mobile push approval) before harvesting.
+ * The reactive timeout below must comfortably exceed the sidecar's own ~300s approval-wait budget.
  */
 @Component
 public class RevolutAdapter implements RevolutPort {
 
     private static final Logger log = LoggerFactory.getLogger(RevolutAdapter.class);
+
+    private static final Duration SYNC_TIMEOUT = Duration.ofSeconds(330);
 
     private final WebClient sidecarClient;
 
@@ -44,26 +45,33 @@ public class RevolutAdapter implements RevolutPort {
     }
 
     @Override
-    public List<RevolutAccountData> fetchAccounts(String storageState) {
-        log.info("Fetching Revolut accounts via revolut-auth sidecar");
+    public List<RevolutAccountData> sync(String phoneNumber, String passcode, Long memberId) {
+        log.info("Requesting Revolut sync via revolut-auth sidecar for member {}", memberId);
 
         JsonNode response = sidecarClient.post()
-            .uri("/accounts")
+            .uri("/sync")
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(Map.of("storageState", storageState))
+            .bodyValue(Map.of(
+                "phoneNumber", phoneNumber,
+                "passcode", passcode,
+                "memberId", String.valueOf(memberId)))
             .retrieve()
             .bodyToMono(JsonNode.class)
             .onErrorResume(WebClientResponseException.class, ex -> {
                 if (ex.getStatusCode().value() == 401) {
-                    log.warn("revolut-auth sidecar reports session expired (401)");
+                    log.warn("revolut-auth sidecar reports session expired (401) for member {}", memberId);
                     return Mono.error(new SyncException("SESSION_EXPIRED"));
                 }
-                log.error("revolut-auth sidecar /accounts failed ({}) : {}",
+                if (ex.getStatusCode().value() == 408) {
+                    log.warn("revolut-auth sidecar reports approval timeout (408) for member {}", memberId);
+                    return Mono.error(new SyncException("APPROVAL_TIMEOUT"));
+                }
+                log.error("revolut-auth sidecar /sync failed ({}) : {}",
                     ex.getStatusCode(), ex.getResponseBodyAsString());
                 return Mono.error(new SyncException(
-                    "Failed to fetch Revolut accounts. Please try again later."));
+                    "Failed to sync Revolut accounts. Please try again later."));
             })
-            .timeout(Duration.ofSeconds(60)) // headless browser + network harvest takes time
+            .timeout(SYNC_TIMEOUT)
             .blockOptional()
             .orElseThrow(() -> new SyncException("No response from the Revolut service. Please try again later."));
 
@@ -93,7 +101,7 @@ public class RevolutAdapter implements RevolutPort {
                 externalId, name, type, iban, balance, currency, parentExternalId, txns));
         }
 
-        log.info("Revolut accounts fetched: {} account(s)", accounts.size());
+        log.info("Revolut sync complete: {} account(s) for member {}", accounts.size(), memberId);
         return accounts;
     }
 

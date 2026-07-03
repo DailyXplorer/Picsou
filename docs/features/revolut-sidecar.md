@@ -85,6 +85,36 @@ A Task-0 spike drove the login with Playwright (headless and headful-under-Xvfb)
   The sidecar's Docker image therefore needs a headful path for enrolment (X server / Xvfb or a
   host-run helper) in addition to the headless sync path.
 
+### 3.6 Breakthrough & final model — Camoufox + on-demand (2026-07-03)
+
+The assumptions in §3.5 were partly wrong. What we then established end-to-end against the real account:
+
+- **Vanilla Playwright Chromium is the blocker, not the account.** Revolut's anti-bot fingerprints and
+  blocks a plain Playwright Chromium (captcha loops, `"Mauvais code d'accès"`), but the user's own
+  Firefox-based browser logs in fine. Fix: **Camoufox** (stealth Firefox, C++-level fingerprint spoof).
+  With Camoufox the login is **fully automated** (auto-fill phone + passcode; the user only approves
+  the push on their phone) — no assisted/noVNC window needed. Camoufox 0.4.11 requires
+  `playwright==1.55.0` (1.60+ breaks its Juggler protocol).
+- **Session = a PERSISTENT Camoufox profile per member** (`user_data_dir` reused across launches).
+  Reusing the same profile keeps fingerprint + cookies stable; replaying from fresh per-launch
+  instances (random fingerprint) gets the session invalidated.
+- **Data mapping validated + fixed** against the real account: `/api/retail/wallets` is a dict keyed
+  by account type (not a list); balances are integer minor units (÷100); money-box balance is nested
+  `balance.amount`+`balance.currency`; money-box pockets are deduped out of the current-account list;
+  non-fiat (crypto)/MERCHANT/REVX_FIAT pockets are filtered.
+- **Session longevity is short and not yet cleanly measured.** Even with active keep-alive the session
+  died in ~6 min — but this was measured after ~10 rapid logins in one day, which very likely got the
+  account flagged (a fresh morning session lived 30+ min). True TTL must be measured after a ~24 h
+  cool-down. **Decision: ship ON-DEMAND sync now** — `POST /sync {phoneNumber, passcode, memberId}`
+  reuses a still-live profile session (no approval) or does a fresh login (mobile approval) then
+  harvests immediately. Daily unattended auto-sync stays gated until the true TTL is known (if long,
+  a keep-alive loop makes it free; the sidecar's session-reuse path already benefits automatically).
+- **Credentials are the user's choice**: the sync form offers "remember (AES-GCM encrypted)" vs
+  re-enter each time. The sidecar never stores credentials; Java does, only if the user opts in.
+
+Working dev helpers (gitignored) live in `services/revolut-auth/`: `capture_login.py`,
+`auto_login.py`, `validate_*.py`, `keepalive_test.py`.
+
 ## 4. Architecture
 
 Sibling of `services/tr-auth/`. New service `services/revolut-auth/` (Python + FastAPI + Playwright

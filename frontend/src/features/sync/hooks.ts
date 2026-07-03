@@ -225,10 +225,10 @@ export function useSyncBourso() {
 }
 
 // ---------------------------------------------------------------------------
-// Revolut (assisted enrolment — see docs/features/revolut-sidecar.md)
+// Revolut (on-demand phone+passcode sync)
 // ---------------------------------------------------------------------------
 
-export function useRevolutSessionStatus() {
+export function useRevolutStatus() {
   return useQuery({
     queryKey: syncKeys.revolut(),
     queryFn: revolutApi.getSessionStatus,
@@ -240,7 +240,8 @@ export function useRevolutSessionStatus() {
 export function useSyncRevolut() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => revolutApi.sync(),
+    mutationFn: (body?: { phoneNumber?: string; passcode?: string; remember?: boolean }) =>
+      revolutApi.sync(body ?? {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.revolut() })
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
@@ -249,24 +250,10 @@ export function useSyncRevolut() {
   })
 }
 
-export function useClearRevolutSession() {
+export function useForgetRevolut() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => revolutApi.clearSession(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: syncKeys.revolut() })
-      queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-    },
-  })
-}
-
-// Consumed by the future noVNC embed once the interactive login view lands
-// (see the TODO(revolut) marker in RevolutTab.tsx / AddAccountModal.tsx).
-export function useCompleteRevolutEnrolment() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (storageState: Record<string, unknown>) => revolutApi.completeEnrolment(storageState),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.revolut() })
       queryClient.invalidateQueries({ queryKey: ['accounts'] })

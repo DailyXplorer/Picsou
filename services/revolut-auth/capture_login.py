@@ -1,23 +1,29 @@
 """
-Revolut ASSISTED login capture — runs in the sidecar's Playwright env, but HEADFUL
-on your GUI. You perform the whole login by hand in the window that appears (phone
-number, passcode, mobile approval — a real new-device enrolment).
+Revolut ASSISTED login capture — using Camoufox (stealth Firefox).
 
-On success it writes the session to revolut-storage.json. The sidecar reuses that
-headless for recurring sync (cookie + x-device-id + PUT /token — already proven).
+Vanilla Playwright Chromium gets fingerprinted as automation and challenged by
+Revolut's anti-bot (captcha loops, "Mauvais code d'accès"). The user's real
+Firefox-based browser (Zen) logs in with zero friction, so we drive a stealth
+*Firefox* instead: Camoufox spoofs the fingerprint at the C++ level (0% bot-
+detection) and yields a standard Playwright browser object.
 
-No credentials are read by this script; you type everything in the browser window.
+You perform the whole login by hand in the window that appears (phone number,
+passcode, mobile approval). On success the session is written to
+revolut-storage.json; the sidecar reuses it (same engine → consistent
+fingerprint). No credentials are read by this script.
 """
 
 import asyncio
 import sys
 
-from playwright.async_api import async_playwright
+from camoufox.async_api import AsyncCamoufox
 
 APP = "https://app.revolut.com/"
-UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
 STORAGE = "revolut-storage.json"
+# A PERSISTENT Camoufox profile: reused (same user_data_dir) by every sync so the
+# browser fingerprint AND cookies stay consistent across launches -- Revolut kills a
+# session whose device fingerprint keeps changing between replays.
+PROFILE_DIR = "revolut-profile"
 WAIT_S = 420  # generous — take your time with the mobile approval / device enrolment
 
 
@@ -32,6 +38,7 @@ def log(msg: str) -> None:
 
 
 async def logged_in(page) -> bool:
+    """200 from token/info (cookie + x-device-id) means the session is live."""
     try:
         return await page.evaluate(
             """async () => {
@@ -55,16 +62,14 @@ async def main() -> int:
         open("capture.log", "w").close()
     except Exception:  # noqa: BLE001
         pass
-    log("launching HEADFUL Chromium — a window should appear on your screen")
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=False, args=["--no-sandbox", "--disable-dev-shm-usage"])
-        context = await browser.new_context(user_agent=UA, locale="fr-FR",
-                                            timezone_id="Europe/Paris")
-        await context.add_init_script(
-            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
-        page = await context.new_page()
-        await page.goto(APP, wait_until="domcontentloaded", timeout=30000)
+    log("launching Camoufox (stealth Firefox), headful — a window should appear on your screen")
+    # os="linux" + geoip keeps the fingerprint consistent with the host; humanize adds
+    # human-like cursor motion. Camoufox manages UA / navigator / canvas / WebGL itself,
+    # so we set no user_agent and inject no webdriver patch.
+    async with AsyncCamoufox(headless=False, humanize=True, os="linux", geoip=True,
+                             persistent_context=True, user_data_dir=PROFILE_DIR) as ctx:
+        page = await ctx.new_page()
+        await page.goto(APP, wait_until="domcontentloaded", timeout=45000)
         log("=> LOG IN BY HAND in the window: phone number, passcode, approve on your phone.")
         log(f"waiting up to {WAIT_S}s for you to reach your dashboard...")
         for _ in range(WAIT_S // 3):
@@ -72,12 +77,10 @@ async def main() -> int:
                 break
             await page.wait_for_timeout(3000)
         if await logged_in(page):
-            await context.storage_state(path=STORAGE)
+            await page.context.storage_state(path=STORAGE)
             log(f"GO: logged in. Session saved to {STORAGE} (secret — gitignored).")
-            await browser.close()
             return 0
         log("NO-GO: not logged in within the window. Re-run and take your time.")
-        await browser.close()
         return 1
 
 

@@ -7,21 +7,18 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * Abstraction over the revolut-auth sidecar (Python + FastAPI + Playwright), which owns a
- * logged-in {@code app.revolut.com} browser session and harvests the retail API at the
- * Playwright network layer -- below the app's own JS, which cannot be hooked (see
- * docs/features/revolut-sidecar.md §3.4).
+ * Abstraction over the revolut-auth sidecar (Python + FastAPI + Camoufox/Playwright), which owns
+ * a per-member persistent browser profile and harvests the retail API at the Playwright network
+ * layer -- below the app's own JS, which cannot be hooked (see docs/features/revolut-sidecar.md).
  *
- * <p>Unlike {@link TradeRepublicPort}/BoursoPort, there is no {@code initiateAuth}/{@code completeAuth}
- * here: enrolment is a one-time ASSISTED headful login performed by the user directly in the
- * sidecar's browser (spec §3.5) -- Java never drives it. Java only receives the resulting
- * {@code storageState} blob via the controller's {@code /enrolment/complete} endpoint and hands
- * it back to the sidecar on every subsequent sync.
+ * <p>On-demand model: there is no Java-held session/credential blob between calls. Every
+ * {@link #sync} call hands the phone+passcode straight to the sidecar, which either reuses a
+ * still-live per-member browser profile (no login, no approval) or performs a fresh automated
+ * login (the user approves a push notification on their phone) before harvesting. Java may
+ * optionally persist the credentials (encrypted) so the scheduler can replay this same call
+ * unattended -- see {@code RevolutSyncService}.
  */
 public interface RevolutPort {
-
-    /** The Playwright storageState blob (cookies incl. httpOnly session/device binding). */
-    record RevolutSession(String storageState) {}
 
     record RevolutTxn(
         String externalId,
@@ -44,15 +41,18 @@ public interface RevolutPort {
     ) {}
 
     /**
-     * Restores the browser context from {@code storageState}, refreshes the ~4-min access token
-     * (sidecar-internal {@code PUT /api/retail/token}), and harvests wallets + pockets +
-     * money-boxes + IBAN + transactions. Returns a flat list; pockets/vaults carry
+     * Triggers an on-demand sync for this member. The sidecar first tries to reuse a still-live
+     * browser profile session (no login, no approval); if it is dead or absent it performs an
+     * automated login with {@code phoneNumber}/{@code passcode} (the user approves a push
+     * notification on their phone), then harvests wallets + pockets + money-boxes + IBAN +
+     * transactions. Returns a flat list; pockets/vaults carry
      * {@link RevolutAccountData#parentExternalId()} pointing at their wallet.
      *
-     * @param storageState the decrypted Playwright storageState JSON
+     * <p>This call can block for several minutes while waiting for mobile approval.
+     *
      * @throws com.picsou.exception.SyncException with message {@code "SESSION_EXPIRED"} when the
-     *         sidecar reports the session is no longer valid (401 / {@code /logged-out}) --
-     *         the caller must clear the stored session and let Enable Banking cover the gap.
+     *         sidecar reports the credentials/session are no longer valid (HTTP 401), or
+     *         {@code "APPROVAL_TIMEOUT"} when the mobile push was never approved in time (HTTP 408).
      */
-    List<RevolutAccountData> fetchAccounts(String storageState);
+    List<RevolutAccountData> sync(String phoneNumber, String passcode, Long memberId);
 }

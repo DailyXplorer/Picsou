@@ -634,7 +634,7 @@
       "exchanges": "Binance, Kraken...",
       "wallets": "Bitcoin, Ethereum, Solana...",
       "tr": "Trade Republic",
-      "revolut": "Connexion assistée à Revolut",
+      "revolut": "Téléphone + code, synchro à la demande",
       "finary": "Importer depuis Finary",
       "manual": "Créer un compte manuellement"
     }
@@ -683,14 +683,17 @@
     },
     "revolut": {
       "title": "Revolut",
-      "connect": "Connecter Revolut",
-      "sync": "Synchroniser",
-      "clearSession": "Déconnecter",
-      "noSession": "Aucune session active",
-      "sessionActive": "Session active",
-      "expiresAt": "Expire le",
-      "assistedNote": "La connexion Revolut se fait via une fenêtre de navigation sécurisée du serveur — étape interactive à finaliser.",
-      "enrolmentPending": "En attente de la connexion interactive côté serveur..."
+      "phone": "Numéro de téléphone",
+      "passcode": "Code d'accès",
+      "remember": "Mémoriser mes identifiants (chiffrés)",
+      "sync": "Synchroniser Revolut",
+      "syncing": "Synchronisation en cours...",
+      "approveOnPhone": "Approuve la connexion sur ton app Revolut…",
+      "connected": "Connecté",
+      "forget": "Oublier les identifiants",
+      "lastSync": "Dernière synchro",
+      "approvalTimeout": "Approbation non reçue. Réessaie.",
+      "notConnected": "Non connecté"
     },
     "exchanges": {
       "title": "Exchanges",
@@ -769,7 +772,7 @@
       "openRevolut": "Ouvrir la page Revolut pour se connecter",
       "trManualInfo": "Trade Republic est la seule banque qui nécessite une reconnexion manuelle. Vous devrez ressaisir votre numéro et PIN à chaque synchronisation.",
       "trSlowWarning": "La connexion peut prendre quelques instants, c'est normal.",
-      "revolutManualInfo": "Revolut nécessite une connexion assistée via une fenêtre de navigation sécurisée du serveur. Cliquez sur l'icône pour ouvrir l'écran de connexion."
+      "revolutManualInfo": "Revolut nécessite une approbation sur votre téléphone. Cliquez sur l'icône pour saisir vos identifiants."
     },
     "bourso": {
       "title": "BoursoBank",
@@ -1192,7 +1195,7 @@
         },
         "revolut": {
           "title": "Revolut",
-          "description": "Synchronisez tous vos actifs Revolut (comptes, pockets, cartes) via une connexion assistée — une fenêtre sécurisée du serveur, à finaliser une seule fois."
+          "description": "Synchronisez tous vos actifs Revolut (comptes, pockets, vaults) avec votre numéro + code d'accès et une approbation sur votre mobile."
         },
         "finary": {
           "title": "Finary",
@@ -1309,7 +1312,7 @@
     "revolut": {
       "surtitle": "REVOLUT",
       "title": "Revolut est prêt.",
-      "body": "Rien à configurer ici — la connexion se fait via une fenêtre de navigation sécurisée du serveur, à finaliser une seule fois au moment d'ajouter le compte dans Picsou.",
+      "body": "Rien à configurer ici — tu connecteras Revolut avec ton numéro et ton code d'accès, puis une approbation depuis ton app mobile, au moment d'ajouter le compte.",
       "tip": "Une fois l'installation finie, allez dans Comptes → Ajouter un compte → Revolut.",
       "cta": "C'est compris",
       "skip": "Ne pas activer Revolut"

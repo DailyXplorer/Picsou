@@ -634,7 +634,7 @@
       "exchanges": "Binance, Kraken...",
       "wallets": "Bitcoin, Ethereum, Solana...",
       "tr": "Trade Republic",
-      "revolut": "Assisted Revolut connection",
+      "revolut": "Phone + passcode, on-demand sync",
       "finary": "Import from Finary",
       "manual": "Create an account manually"
     }
@@ -683,14 +683,17 @@
     },
     "revolut": {
       "title": "Revolut",
-      "connect": "Connect Revolut",
-      "sync": "Synchronize",
-      "clearSession": "Disconnect",
-      "noSession": "No active session",
-      "sessionActive": "Active session",
-      "expiresAt": "Expires on",
-      "assistedNote": "Revolut connection happens through a secure server-side browser window — an interactive step still needs to be finalized.",
-      "enrolmentPending": "Waiting for the interactive server-side login..."
+      "phone": "Phone number",
+      "passcode": "Passcode",
+      "remember": "Remember my credentials (encrypted)",
+      "sync": "Sync Revolut",
+      "syncing": "Syncing...",
+      "approveOnPhone": "Approve the connection in your Revolut app…",
+      "connected": "Connected",
+      "forget": "Forget credentials",
+      "lastSync": "Last sync",
+      "approvalTimeout": "Approval not received. Try again.",
+      "notConnected": "Not connected"
     },
     "exchanges": {
       "title": "Exchanges",
@@ -769,7 +772,7 @@
       "openRevolut": "Open the Revolut page to connect",
       "trManualInfo": "Trade Republic is the only bank that requires manual re-authentication. You will need to re-enter your phone number and PIN each time you sync.",
       "trSlowWarning": "Connection may take a few moments, this is normal.",
-      "revolutManualInfo": "Revolut requires an assisted connection through a secure server-side browser window. Click the icon to open the connection screen."
+      "revolutManualInfo": "Revolut requires approval on your phone. Click the icon to enter your credentials."
     },
     "bourso": {
       "title": "BoursoBank",
@@ -1192,7 +1195,7 @@
         },
         "revolut": {
           "title": "Revolut",
-          "description": "Sync all your Revolut assets (accounts, pockets, cards) via an assisted connection — a secure server-side window, to finalize once."
+          "description": "Sync all your Revolut assets (accounts, pockets, vaults) with your phone number + passcode and an approval on your mobile."
         },
         "finary": {
           "title": "Finary",
@@ -1309,7 +1312,7 @@
     "revolut": {
       "surtitle": "REVOLUT",
       "title": "Revolut is ready to go.",
-      "body": "There's nothing to configure here — the connection happens through a secure server-side browser window, to finalize once when you add the account from Picsou.",
+      "body": "Nothing to configure here — you'll connect Revolut with your phone number and passcode, then an approval from your mobile app, when you add the account.",
       "tip": "Head to Accounts → Add account → Revolut once setup is done.",
       "cta": "Got it",
       "skip": "Don't enable Revolut"

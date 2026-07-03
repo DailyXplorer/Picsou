@@ -25,18 +25,20 @@ public class RevolutSession extends AuditableEntity {
     private FamilyMember member;
 
     /**
-     * Playwright storageState blob (cookies incl. httpOnly session/refresh + revo_device_id
-     * binding), encrypted at rest by the service layer via {@code CryptoEncryption} -- never
-     * stored in plain text, mirroring TradeRepublicSession/BoursoSession.
+     * Phone + passcode, serialized as JSON ({@code {"phone":...,"passcode":...}}) and encrypted
+     * at rest via {@code CryptoEncryption} -- present only because the member opted in via
+     * {@link #rememberCredentials}. Never stored in plain text, mirroring
+     * TradeRepublicSession/BoursoSession. A row only exists for a member who chose to remember;
+     * see {@code RevolutSyncService}.
      */
-    @Column(name = "storage_state", nullable = false, columnDefinition = "TEXT")
-    private String storageState;
+    @Column(name = "credentials_enc", length = 2000)
+    private String credentialsEnc;
 
-    /**
-     * Refresh-cookie lifetime is unknown (httpOnly, not measurable ahead of time -- see
-     * docs/features/revolut-sidecar.md §3.2/§9). Set conservatively by the service;
-     * resyncIfSessionActive no-ops past this rather than looping retries.
-     */
-    @Column(name = "expires_at")
-    private Instant expiresAt;
+    /** Whether the member opted to have credentials remembered for unattended daily resync. */
+    @Column(name = "remember_credentials", nullable = false)
+    private boolean rememberCredentials;
+
+    /** Set after every successful sync (manual or scheduled); informational only. */
+    @Column(name = "last_synced_at")
+    private Instant lastSyncedAt;
 }
