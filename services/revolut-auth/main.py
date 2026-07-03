@@ -64,15 +64,22 @@ FIAT_FALLBACK = {"EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD", "SEK", "NOK", 
                  "MXN", "ILS", "AED", "THB"}
 
 
+def _profile_key(member_id: str) -> str:
+    """Canonical per-member key, used for BOTH the profile dir and the sync lock so the
+    lock always guards the exact profile it protects. Raw ids that sanitize to the same
+    dir (e.g. "1" and "1!") MUST collapse to one key, or two syncs would take different
+    locks yet share one Firefox profile -- the collision the lock exists to prevent."""
+    return re.sub(r"[^A-Za-z0-9_-]", "", str(member_id)) or "default"
+
+
 def _profile_dir(member_id: str) -> str:
-    safe = re.sub(r"[^A-Za-z0-9_-]", "", str(member_id)) or "default"
-    path = os.path.join(PROFILES_ROOT, safe)
+    path = os.path.join(PROFILES_ROOT, _profile_key(member_id))
     os.makedirs(path, exist_ok=True)
     return path
 
 
 def _has_profile(member_id: str) -> bool:
-    path = os.path.join(PROFILES_ROOT, re.sub(r"[^A-Za-z0-9_-]", "", str(member_id)) or "default")
+    path = os.path.join(PROFILES_ROOT, _profile_key(member_id))
     return os.path.isdir(path) and bool(os.listdir(path))
 
 
@@ -443,10 +450,11 @@ _member_locks: Dict[str, asyncio.Lock] = {}
 
 
 def _member_lock(member_id: str) -> asyncio.Lock:
-    lock = _member_locks.get(member_id)
+    key = _profile_key(member_id)  # SAME key as the profile dir -- guard the resource, not the raw id
+    lock = _member_locks.get(key)
     if lock is None:
         lock = asyncio.Lock()  # safe to create lazily: no await between get and set
-        _member_locks[member_id] = lock
+        _member_locks[key] = lock
     return lock
 
 

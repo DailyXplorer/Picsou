@@ -68,6 +68,20 @@ async def test_concurrent_sync_for_same_member_fast_fails_409():
         main._member_locks.clear()
 
 
+async def test_lock_keyed_on_sanitized_profile_key():
+    """The sync lock must key on the SAME canonical key as the profile dir. Raw ids that
+    sanitize to the same profile (e.g. "1" and "1!") must share one lock, else two syncs
+    would take different locks yet collide on one Firefox profile."""
+    main._member_locks.clear()
+    try:
+        assert main._profile_key("1") == main._profile_key("1!") == "1"
+        assert main._member_lock("1") is main._member_lock("1!"), "same profile must share a lock"
+        assert main._member_lock("1") is main._member_lock("1"), "same id must reuse its lock"
+        assert main._member_lock("1") is not main._member_lock("2"), "distinct profiles must differ"
+    finally:
+        main._member_locks.clear()
+
+
 async def test_clear_stale_locks_removes_lock_files():
     """Stale `lock` (a symlink) and `.parentlock` in a profile dir must be removed, the
     profile dir itself kept, and a second call on a clean dir must be a no-op."""
@@ -95,6 +109,7 @@ async def test_clear_stale_locks_removes_lock_files():
 async def _run():
     tests = [
         test_concurrent_sync_for_same_member_fast_fails_409,
+        test_lock_keyed_on_sanitized_profile_key,
         test_clear_stale_locks_removes_lock_files,
     ]
     failures = 0
