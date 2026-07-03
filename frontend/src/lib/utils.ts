@@ -143,3 +143,14 @@ export function safeRedirect(redirect: string | null, fallback = '/'): string {
   if (!redirect || !redirect.startsWith('/')) return fallback
   return redirect
 }
+
+/**
+ * True when a post-login redirect target is the backend OAuth2 authorize endpoint, which is
+ * server-handled (not a client-side SPA route) and must be reached via a full-page navigation so
+ * the native app's Authorization Code + PKCE flow can resume. A `/oauth2/` prefix is inherently a
+ * same-origin absolute path — it cannot be a protocol-relative (`//host`) or absolute-URL open
+ * redirect — so this doubles as the open-redirect guard for the full-navigation path.
+ */
+export function isOAuthAuthorizeRedirect(redirect: string): boolean {
+  return redirect.startsWith('/oauth2/')
+}
