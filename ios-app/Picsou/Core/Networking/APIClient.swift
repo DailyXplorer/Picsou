@@ -5,14 +5,14 @@ import Foundation
 /// ultimately fails.
 final class APIClient: @unchecked Sendable {
     private let serverConfig: ServerConfig
-    private let tokenStore: TokenStore
+    private let tokenStore: TokenStoring
     private let refresher: TokenRefresher
     private let session: URLSession
 
     /// Invoked (possibly off the main actor) when a request can no longer be authenticated.
     var onAuthenticationLost: (@Sendable () -> Void)?
 
-    init(serverConfig: ServerConfig, tokenStore: TokenStore, oauth: OAuthService, session: URLSession = .shared) {
+    init(serverConfig: ServerConfig, tokenStore: TokenStoring, oauth: OAuthService, session: URLSession = .shared) {
         self.serverConfig = serverConfig
         self.tokenStore = tokenStore
         self.session = session
@@ -85,10 +85,10 @@ final class APIClient: @unchecked Sendable {
 /// Serializes refresh so concurrent 401s trigger a single token refresh (single-flight).
 actor TokenRefresher {
     private let oauth: OAuthService
-    private let tokenStore: TokenStore
+    private let tokenStore: TokenStoring
     private var inFlight: Task<TokenSet, Error>?
 
-    init(oauth: OAuthService, tokenStore: TokenStore) {
+    init(oauth: OAuthService, tokenStore: TokenStoring) {
         self.oauth = oauth
         self.tokenStore = tokenStore
     }

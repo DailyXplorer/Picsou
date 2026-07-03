@@ -22,7 +22,7 @@ final class AppState {
     private(set) var phase: Phase
 
     let serverConfig: ServerConfig
-    let tokenStore: TokenStore
+    let tokenStore: TokenStoring
     let oauth: OAuthService
     let api: APIClient
 
@@ -34,7 +34,7 @@ final class AppState {
 
     init(
         serverConfig: ServerConfig = ServerConfig(),
-        tokenStore: TokenStore = TokenStore(),
+        tokenStore: TokenStoring = TokenStore(),
         biometric: BiometricGate = BiometricGate(),
         session: URLSession = .shared
     ) {

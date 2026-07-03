@@ -7,9 +7,17 @@ struct TokenSet: Codable, Equatable {
     var accessTokenExpiry: Date
 }
 
+/// Storage for the current `TokenSet`. Abstracted so the API layer can be tested with an in-memory
+/// double instead of the Keychain (which needs a signed host).
+protocol TokenStoring: Sendable {
+    func load() -> TokenSet?
+    func save(_ tokens: TokenSet)
+    func clear()
+}
+
 /// Keychain-backed storage for the current `TokenSet`. Thread-safe: the API layer may read tokens
 /// off the main actor while the UI writes them.
-final class TokenStore: @unchecked Sendable {
+final class TokenStore: TokenStoring, @unchecked Sendable {
     private let keychain: Keychain
     private let key = "oauth.tokens"
     private let lock = NSLock()

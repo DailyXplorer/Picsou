@@ -2,8 +2,10 @@ import Foundation
 
 /// Stores and validates the self-hosted instance URL entered on first launch.
 final class ServerConfig: @unchecked Sendable {
+    static let baseURLDefaultsKey = "picsou.instanceBaseURL"
+
     private let defaults: UserDefaults
-    private let key = "picsou.instanceBaseURL"
+    private let key = ServerConfig.baseURLDefaultsKey
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
