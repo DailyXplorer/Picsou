@@ -6,6 +6,7 @@ import com.picsou.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -15,6 +16,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -137,5 +139,46 @@ class DashboardServiceLiabilityTest {
         assertThat(result.liabilities()).hasSize(1);
         assertThat(result.liabilities().get(0).monthlyPayment()).isNull();
         assertThat(result.totalMonthlyPayment()).isNull();
+    }
+
+    /**
+     * Regression guard for the history double-count fix: a pocket sub-account's balance is already
+     * folded into its parent wallet (see the skip a few lines above in getDashboard/buildDistribution),
+     * so it must not also be counted a second time via HistoryService -- which sums whatever account
+     * ids it's given with no parentAccountId filtering of its own.
+     */
+    @Test
+    void dashboard_excludesPocketChildAccounts_fromHistoryAccountIds() {
+        Account wallet = new Account();
+        wallet.setId(20L);
+        wallet.setName("Revolut EUR");
+        wallet.setType(AccountType.CHECKING);
+        wallet.setCurrentBalance(new BigDecimal("500"));
+        wallet.setCurrency("EUR");
+        wallet.setColor("#6366f1");
+
+        Account pocket = new Account();
+        pocket.setId(21L);
+        pocket.setName("Pocket");
+        pocket.setType(AccountType.CHECKING);
+        pocket.setCurrentBalance(new BigDecimal("50"));
+        pocket.setCurrency("EUR");
+        pocket.setColor("#6366f1");
+        pocket.setParentAccountId(20L);
+
+        when(accountRepository.findAllByMemberIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(wallet, pocket));
+        when(holdingRepository.findByAccount_Id(20L)).thenReturn(List.of());
+        when(holdingRepository.findByAccount_Id(21L)).thenReturn(List.of());
+        when(priceService.toEur(any(), any(), any())).thenAnswer(inv -> inv.getArgument(0));
+        when(debtRepository.findByAccountIdIn(List.of())).thenReturn(List.of());
+        when(historyService.buildHistory(any(), any(Integer.class), any())).thenReturn(List.of());
+        when(goalRepository.findAllByMemberIdOrderByCreatedAtAsc(1L)).thenReturn(List.of());
+
+        dashboardService.getDashboard(1L, null);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Long>> idsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(historyService).buildHistory(idsCaptor.capture(), any(Integer.class), any());
+        assertThat(idsCaptor.getValue()).containsExactly(20L);
     }
 }

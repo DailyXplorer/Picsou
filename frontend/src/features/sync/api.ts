@@ -14,6 +14,7 @@ import type {
   BoursoSessionStatus,
   BoursoAuthInitResponse,
   RevolutSessionStatus,
+  SyncProgress,
 } from '@/types/api'
 
 // --- Bank Sync (Enable Banking) ---
@@ -75,6 +76,11 @@ export const trApi = {
 
   sync: () =>
     api.post<Account[]>('/tr/sync').then(r => r.data),
+
+  // Not wired up on the backend yet (Increment 2 of the sync-progress work) — harmless
+  // to add the client fn now, `useSyncProgress('tr', …)` simply won't be enabled until then.
+  getSyncProgress: () =>
+    api.get<SyncProgress>('/tr/sync/progress').then(r => r.data),
 
   getSessionStatus: () =>
     api
@@ -155,17 +161,25 @@ export const boursoApi = {
 }
 
 // --- Revolut ---
-// On-demand phone+passcode sync: the POST below blocks for up to ~5 minutes while
-// the user approves a push notification in the Revolut app, hence the long
-// per-request timeout. phoneNumber/passcode may be omitted once credentials were
-// previously remembered (the server keeps them encrypted).
+// On-demand phone+passcode sync: discovery (login + harvest, up to ~5 minutes waiting
+// on the mobile approval) now runs as a 202 background job reported via getSyncProgress
+// (no more long per-request timeout — that's what used to 504 behind nginx's 60s proxy
+// timeout). phoneNumber/passcode may be omitted once credentials were previously
+// remembered. `remember` is no longer sent at discovery time: it only takes effect once
+// the user confirms which discovered accounts to import.
 
 export const revolutApi = {
   getSessionStatus: () =>
     api.get<RevolutSessionStatus>('/revolut/status').then(r => r.data),
 
-  sync: (body: { phoneNumber?: string; passcode?: string; remember?: boolean }) =>
-    api.post<Account[]>('/revolut/sync', body, { timeout: 330_000 }).then(r => r.data),
+  startSync: (body: { phoneNumber?: string; passcode?: string }) =>
+    api.post<SyncProgress>('/revolut/sync', body).then(r => r.data),
+
+  getSyncProgress: () =>
+    api.get<SyncProgress>('/revolut/sync/progress').then(r => r.data),
+
+  confirmSync: (selectedExternalIds: string[], remember: boolean, voluntary: boolean) =>
+    api.post<void>('/revolut/sync/confirm', { selectedExternalIds, remember, voluntary }).then(r => r.data),
 
   clearSession: () =>
     api.delete('/revolut/session'),

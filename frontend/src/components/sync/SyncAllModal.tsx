@@ -53,7 +53,6 @@ import {
   useSyncBourso,
   useInitiateBoursoAuth,
   useCompleteBoursoAuth,
-  useSyncRevolut,
 } from '@/features/sync/hooks'
 import { useAccounts } from '@/features/accounts/hooks'
 import { formatTimeAgo } from '@/lib/utils'
@@ -141,7 +140,6 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
   const syncBoursoMutation   = useSyncBourso()
   const initiateBoursoMutation = useInitiateBoursoAuth()
   const completeBoursoMutation = useCompleteBoursoAuth()
-  const syncRevolutMutation  = useSyncRevolut()
 
   // Track syncing state per connection
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set())
@@ -318,12 +316,14 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
         })
         break
       case 'revolut':
-        syncRevolutMutation.mutate(undefined, {
-          onSettled: () => setSyncingIds(prev => {
-            const next = new Set(prev)
-            next.delete(connection.id)
-            return next
-          }),
+        // Revolut's on-demand flow is discover → pick accounts → confirm, which lives in the
+        // dedicated tab; SyncAll routes there rather than blind-importing everything.
+        navigate('/sync?tab=revolut')
+        onOpenChange(false)
+        setSyncingIds(prev => {
+          const next = new Set(prev)
+          next.delete(connection.id)
+          return next
         })
         break
       case 'finary':
@@ -345,7 +345,6 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
     syncWalletMutation,
     syncTrMutation,
     syncBoursoMutation,
-    syncRevolutMutation,
     navigate,
     onOpenChange,
   ])

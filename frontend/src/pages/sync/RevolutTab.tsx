@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -6,9 +6,16 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { RefreshCw, LogOut, Smartphone, Lock, Loader2, AlertTriangle } from 'lucide-react'
-import { useRevolutStatus, useSyncRevolut, useForgetRevolut } from '@/features/sync/hooks'
-import { formatApiError, isTimeoutError } from '@/lib/errors'
+import { RefreshCw, LogOut, Smartphone, Lock, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import {
+  useRevolutStatus,
+  useForgetRevolut,
+  useStartRevolutSync,
+  useSyncProgress,
+  useConfirmRevolutSync,
+} from '@/features/sync/hooks'
+import { revolutPhaseLabel } from '@/features/sync/revolut-phase'
+import { formatApiError } from '@/lib/errors'
 import { formatDateTime } from '@/lib/utils'
 
 export function RevolutTab() {
@@ -17,39 +24,74 @@ export function RevolutTab() {
   const [passcode, setPasscode] = useState('')
   const [remember, setRemember] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  // Whether a discovery job is currently running (from the moment the 202 comes back
+  // to the running → done transition detected below) — gates both the poll and the UI.
+  const [isSyncing, setIsSyncing] = useState(false)
+  // Brief success card once the auto-confirm below has persisted the discovery;
+  // cleared as soon as the next sync starts.
+  const [justSynced, setJustSynced] = useState(false)
 
   const { data: status, isLoading: statusLoading } = useRevolutStatus()
-  const syncMutation = useSyncRevolut()
+  const startSync = useStartRevolutSync()
+  const progress = useSyncProgress('revolut', isSyncing)
+  const confirmSync = useConfirmRevolutSync()
   const forgetMutation = useForgetRevolut()
 
   const remembered = status?.remembered ?? false
-  const isSyncing = syncMutation.isPending
+  // Covers the brief round-trip before the 202 response flips isSyncing to true, plus
+  // the auto-confirm that follows discovery.
+  const busy = isSyncing || startSync.isPending || confirmSync.isPending
 
-  function formatSyncError(err: unknown): string {
-    if (isTimeoutError(err)) return t('sync.revolut.approvalTimeout')
-    return formatApiError(err, t)
+  // Detect the running → done transition (mirrors CategorizeTab's AI-job pattern) to stop
+  // polling and surface a discovery error. This tab is pure auto-sync — no selection step —
+  // so a successful discovery immediately persists everything found: refreshes accounts
+  // already imported and auto-adds any new pocket/vault.
+  const prevRunningRef = useRef<boolean | undefined>(undefined)
+  useEffect(() => {
+    const running = progress.data?.running
+    if (prevRunningRef.current === true && running === false) {
+      setIsSyncing(false)
+      const data = progress.data
+      if (data?.error) {
+        setErrorMsg(data.error)
+      } else if (data && data.discovered.length > 0) {
+        confirmSync.mutate(
+          { selectedExternalIds: data.discovered.map((d) => d.externalId), remember, voluntary: false },
+          {
+            onSuccess: () => {
+              setPhoneNumber('')
+              setPasscode('')
+              setJustSynced(true)
+            },
+            onError: (err) => setErrorMsg(formatApiError(err, t)),
+          },
+        )
+      } else {
+        setJustSynced(true)
+      }
+    }
+    prevRunningRef.current = running
+    // progress.data/confirmSync/remember/t are read through the running dep on purpose
+    // (see CategorizeTab) — confirmSync in particular is a fresh object every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progress.data?.running])
+
+  function startDiscovery(body: { phoneNumber?: string; passcode?: string }) {
+    setErrorMsg(null)
+    setJustSynced(false)
+    startSync.mutate(body, {
+      onSuccess: () => setIsSyncing(true),
+      onError: (err) => setErrorMsg(formatApiError(err, t)),
+    })
   }
 
   function handleQuickSync() {
-    setErrorMsg(null)
-    syncMutation.mutate(undefined, {
-      onError: (err) => setErrorMsg(formatSyncError(err)),
-    })
+    startDiscovery({})
   }
 
   function handleFormSync(e: React.FormEvent) {
     e.preventDefault()
-    setErrorMsg(null)
-    syncMutation.mutate(
-      { phoneNumber, passcode, remember },
-      {
-        onSuccess: () => {
-          setPhoneNumber('')
-          setPasscode('')
-        },
-        onError: (err) => setErrorMsg(formatSyncError(err)),
-      },
-    )
+    startDiscovery({ phoneNumber, passcode })
   }
 
   function handleForget() {
@@ -97,24 +139,45 @@ export function RevolutTab() {
         </Card>
       )}
 
-      {/* Waiting for mobile approval — the sync call blocks up to ~5min server-side */}
+      {/* Live phase — the discovery job runs in the background; poll and render its
+          current phase (checking session → logging in → mobile approval countdown →
+          harvesting accounts) instead of a single static spinner. */}
       {isSyncing && (
         <Card size="sm">
           <CardContent className="flex items-center gap-3 py-4">
             <Loader2 className="size-5 animate-spin text-muted-foreground shrink-0" />
-            <p className="text-sm text-muted-foreground">{t('sync.revolut.approveOnPhone')}</p>
+            <p className="text-sm text-muted-foreground">{revolutPhaseLabel(t, progress.data)}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Discovery done: auto-persisting the refresh + any new pocket, no selection step here. */}
+      {confirmSync.isPending && (
+        <Card size="sm">
+          <CardContent className="flex items-center gap-3 py-4">
+            <Loader2 className="size-5 animate-spin text-muted-foreground shrink-0" />
+            <p className="text-sm text-muted-foreground">{t('sync.revolut.selection.importing')}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {justSynced && !busy && !errorMsg && (
+        <Card size="sm" className="border-green-500/30">
+          <CardContent className="flex items-center gap-3 py-4">
+            <CheckCircle2 className="size-5 text-green-500 shrink-0" />
+            <p className="text-sm text-muted-foreground">{t('sync.revolut.syncSuccess')}</p>
           </CardContent>
         </Card>
       )}
 
       {remembered ? (
         <div className="flex flex-wrap gap-3">
-          <Button onClick={handleQuickSync} disabled={isSyncing}>
-            {isSyncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-            {isSyncing ? t('sync.revolut.syncing') : t('sync.revolut.sync')}
+          <Button onClick={handleQuickSync} disabled={busy}>
+            {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+            {busy ? t('sync.revolut.syncing') : t('sync.revolut.sync')}
           </Button>
 
-          <Button variant="destructive" onClick={handleForget} disabled={isSyncing || forgetMutation.isPending}>
+          <Button variant="destructive" onClick={handleForget} disabled={busy || forgetMutation.isPending}>
             <LogOut />
             {t('sync.revolut.forget')}
           </Button>
@@ -134,7 +197,7 @@ export function RevolutTab() {
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value)}
                   required
-                  disabled={isSyncing}
+                  disabled={busy}
                   placeholder="+33..."
                 />
               </div>
@@ -152,7 +215,7 @@ export function RevolutTab() {
                   value={passcode}
                   onChange={(e) => setPasscode(e.target.value)}
                   required
-                  disabled={isSyncing}
+                  disabled={busy}
                 />
               </div>
 
@@ -160,14 +223,14 @@ export function RevolutTab() {
                 <Checkbox
                   checked={remember}
                   onCheckedChange={(checked) => setRemember(checked === true)}
-                  disabled={isSyncing}
+                  disabled={busy}
                 />
                 <span className="text-sm text-muted-foreground">{t('sync.revolut.remember')}</span>
               </label>
 
-              <Button type="submit" disabled={isSyncing} className="w-full">
-                {isSyncing && <Loader2 className="size-4 animate-spin" />}
-                {isSyncing ? t('sync.revolut.syncing') : t('sync.revolut.sync')}
+              <Button type="submit" disabled={busy} className="w-full">
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                {busy ? t('sync.revolut.syncing') : t('sync.revolut.sync')}
               </Button>
             </CardContent>
           </Card>

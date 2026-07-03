@@ -591,6 +591,39 @@ export interface AiJobStatus {
   error: string | null
 }
 
+/**
+ * A pocket/vault/wallet found during a Revolut discovery pass, held server-side until
+ * confirmed. `type` mirrors `AccountType` but Revolut only ever discovers checking/savings.
+ * `parentExternalId` groups pockets/vaults under their parent wallet.
+ */
+export interface DiscoveredRevolutAccount {
+  externalId: string
+  name: string
+  type: 'CHECKING' | 'SAVINGS'
+  currency: string
+  balance: number
+  parentExternalId: string | null
+  alreadyImported: boolean
+  transactionCount: number
+}
+
+/**
+ * Live progress of a background bank sync job (Revolut now, Trade Republic later).
+ * `phase` is a provider-specific string (see `RevolutSyncPhase` on the backend) — the
+ * frontend maps it to an i18n key. `discovered` is only populated once `done` for a
+ * Revolut sync that requires account selection; empty otherwise.
+ */
+export interface SyncProgress {
+  running: boolean
+  phase: string | null
+  elapsedSeconds: number | null
+  remainingSeconds: number | null
+  accountsFound: number | null
+  done: boolean
+  error: string | null
+  discovered: DiscoveredRevolutAccount[]
+}
+
 export interface CashflowBucket {
   start: string
   end: string

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.picsou.config.CryptoEncryption;
 import com.picsou.dto.AccountResponse;
+import com.picsou.dto.DiscoveredRevolutAccount;
 import com.picsou.exception.ResourceNotFoundException;
 import com.picsou.exception.SyncException;
 import com.picsou.model.Account;
@@ -18,19 +19,26 @@ import com.picsou.repository.FamilyMemberRepository;
 import com.picsou.repository.RevolutSessionRepository;
 import com.picsou.repository.TransactionRepository;
 import com.picsou.service.budget.CategorizationService;
+import com.picsou.service.sync.SyncProgressService;
+import com.picsou.service.sync.SyncProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * Orchestrates the Revolut sidecar connector in its on-demand model: every {@link #sync} call
@@ -47,9 +55,17 @@ import java.util.Optional;
  * {@code SyncService.upsertAccount}). Per the sidecar's rate-limit rule, auto-sync
  * ({@link #resyncIfSessionActive}) must never loop or retry aggressively -- a failure is logged
  * and swallowed, leaving Enable Banking to carry the gap until the next scheduled attempt.
+ *
+ * <p><b>Manual on-demand sync</b> ({@link #sync}) stays fully synchronous for the scheduler and
+ * existing callers. The controller's manual path instead runs {@link #discover} in the
+ * background (harvest only, no DB writes) and {@link #confirmSync} to persist only the accounts
+ * the member selected -- see {@link SyncProgressService} for the in-memory hand-off between the
+ * two. Both routes funnel through {@link #harvest} (sidecar call) and {@link #persistSelected}
+ * (the actual upsert loop, scoped to a short {@link TransactionTemplate} transaction instead of
+ * the previous class-level one, which used to hold a DB connection open for the sidecar's whole
+ * up-to-330s call).
  */
 @Service
-@Transactional
 public class RevolutSyncService {
 
     private static final Logger log = LoggerFactory.getLogger(RevolutSyncService.class);
@@ -63,6 +79,11 @@ public class RevolutSyncService {
     private final CategorizationService    categorizationService;
     private final CryptoEncryption         encryption;
     private final ObjectMapper             objectMapper;
+    private final TransactionTemplate      txTemplate;
+    private final SyncProgressService      progressService;
+
+    /** Phone/passcode used for the pending discovery, held for confirmSync's remember opt-in. */
+    private final ConcurrentHashMap<Long, Credentials> pendingCredentials = new ConcurrentHashMap<>();
 
     public RevolutSyncService(
         RevolutPort revolutPort,
@@ -73,7 +94,9 @@ public class RevolutSyncService {
         AccountService accountService,
         CategorizationService categorizationService,
         CryptoEncryption encryption,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        TransactionTemplate txTemplate,
+        SyncProgressService progressService
     ) {
         this.revolutPort         = revolutPort;
         this.sessionRepository   = sessionRepository;
@@ -84,6 +107,8 @@ public class RevolutSyncService {
         this.categorizationService = categorizationService;
         this.encryption           = encryption;
         this.objectMapper         = objectMapper;
+        this.txTemplate           = txTemplate;
+        this.progressService      = progressService;
     }
 
     // ─── Sync ───────────────────────────────────────────────────────────────────
@@ -97,74 +122,195 @@ public class RevolutSyncService {
      * remembered credentials for this member are forgotten.
      */
     public List<AccountResponse> sync(Long memberId, String phoneNumber, String passcode, boolean remember) {
-        String phone = phoneNumber;
-        String code = passcode;
         boolean explicitCredentials = !isBlank(phoneNumber) && !isBlank(passcode);
-        if (!explicitCredentials) {
-            Credentials stored = loadStoredCredentials(memberId)
-                .orElseThrow(() -> new SyncException(
-                    "No saved Revolut credentials. Please enter your phone number and passcode."));
-            phone = stored.phone();
-            code = stored.passcode();
-        } else {
-            // Voluntary reconnect: the user explicitly typed phone+passcode (a fresh-login moment,
-            // mirroring TradeRepublicSyncService.completeAuth) -- lift tombstones before syncing so
-            // upsertAccount updates rather than silently skips previously-deleted accounts. Scheduled
-            // resyncs (stored credentials, explicitCredentials=false) must NOT hit this branch: the
-            // user's past delete intent still stands there. See
-            // docs/lessons/soft-delete-resurrection-guard-voluntary-reconnect.md.
-            accountRepository.restoreSoftDeletedRevolutAccounts(memberId);
+        Credentials creds = resolveCredentials(memberId, phoneNumber, passcode);
+
+        List<RevolutAccountData> harvested;
+        try {
+            harvested = harvest(creds.phone(), creds.passcode(), memberId);
+        } catch (SyncException e) {
+            throw new SyncException(friendly(e.getMessage()));
         }
 
-        List<AccountResponse> responses = doSync(phone, code, memberId);
-
-        applyPostSyncSessionState(memberId, phone, code, remember);
-
+        // Persist ALL harvested accounts (unattended/scheduler path keeps its auto-import-everything
+        // behavior). The DB writes run in a short transaction rather than the previous class-level
+        // one, which used to hold a connection open for the sidecar's whole up-to-330s call.
+        Set<String> all = harvested.stream().map(RevolutAccountData::externalId).collect(Collectors.toSet());
+        List<AccountResponse> responses = new ArrayList<>();
+        txTemplate.executeWithoutResult(status -> {
+            if (explicitCredentials) {
+                // Voluntary reconnect: the user explicitly typed phone+passcode (a fresh-login moment,
+                // mirroring TradeRepublicSyncService.completeAuth) -- lift tombstones so upsertAccount
+                // updates rather than silently skips previously-deleted accounts. Scheduled resyncs
+                // (stored credentials) must NOT hit this branch: the user's past delete intent still
+                // stands. See docs/lessons/soft-delete-resurrection-guard-voluntary-reconnect.md.
+                accountRepository.restoreSoftDeletedRevolutAccounts(memberId);
+            }
+            responses.addAll(persistSelected(harvested, all, memberId));
+            applyPostSyncSessionState(memberId, creds.phone(), creds.passcode(), remember);
+        });
         return responses;
     }
 
-    private List<AccountResponse> doSync(String phoneNumber, String passcode, Long memberId) {
+    // ─── Manual on-demand flow: discover (background) → confirmSync (persist selection) ──────────
+
+    /**
+     * Background discovery for the manual on-demand flow (run on {@code revolutSyncExecutor} by
+     * {@code RevolutController}). Harvests via the sidecar with NO DB writes, builds the selection
+     * preview, and hands the raw result to {@link SyncProgressService} for {@link #confirmSync}.
+     * Reports terminal state (done/error) into the progress registry and never throws -- the sidecar
+     * phases stream live via the adapter's poll side-channel while {@link #harvest} blocks.
+     */
+    public void discover(Long memberId, String phoneNumber, String passcode) {
         try {
-            List<RevolutAccountData> accounts = revolutPort.sync(phoneNumber, passcode, memberId);
-
-            // Parents (wallets/vaults -- no parentExternalId) must be upserted before their pocket
-            // children so a child's parentAccountId can resolve to the already-persisted parent's
-            // Picsou account id.
-            List<RevolutAccountData> ordered = accounts.stream()
-                .sorted(Comparator.comparing(a -> a.parentExternalId() != null))
-                .toList();
-
-            CategorizationService.CategorizationContext ctx = categorizationService.loadContext(memberId);
-            Map<String, Long> accountIdByExternalId = new HashMap<>();
-            List<AccountResponse> responses = new ArrayList<>();
-            for (RevolutAccountData data : ordered) {
-                Long parentId = data.parentExternalId() != null
-                    ? accountIdByExternalId.get(data.parentExternalId())
-                    : null;
-                upsertAccount(data, memberId, parentId, ctx).ifPresent(resp -> {
-                    accountIdByExternalId.put(data.externalId(), resp.id());
-                    responses.add(resp);
-                });
-            }
-            log.info("Revolut sync complete: {} accounts updated", responses.size());
-            return responses;
+            Credentials creds = resolveCredentials(memberId, phoneNumber, passcode);
+            List<RevolutAccountData> harvested = harvest(creds.phone(), creds.passcode(), memberId);
+            pendingCredentials.put(memberId, creds);
+            progressService.setDiscovered(memberId, SyncProvider.REVOLUT,
+                buildPreview(harvested, memberId), harvested);
+            progressService.accountsFound(memberId, SyncProvider.REVOLUT, harvested.size());
+            progressService.done(memberId, SyncProvider.REVOLUT);
         } catch (SyncException e) {
-            if ("SESSION_EXPIRED".equals(e.getMessage())) {
-                throw new SyncException(
-                    "Your Revolut session has expired. Please reconnect with your phone number and passcode.");
-            }
-            if ("APPROVAL_TIMEOUT".equals(e.getMessage())) {
-                throw new SyncException(
-                    "The mobile approval was not confirmed in time. Please try again and approve the " +
-                        "push notification on your phone.");
-            }
-            if ("SYNC_IN_PROGRESS".equals(e.getMessage())) {
-                throw new SyncException(
-                    "A Revolut sync is already running for this account. Please wait for it to finish " +
-                        "before starting another.");
-            }
-            throw e;
+            progressService.error(memberId, SyncProvider.REVOLUT, friendly(e.getMessage()));
+        } catch (Exception e) {
+            log.warn("Revolut discovery failed for member {}: {}", memberId, e.getMessage());
+            progressService.error(memberId, SyncProvider.REVOLUT,
+                "Failed to sync Revolut accounts. Please try again later.");
         }
+    }
+
+    /**
+     * Persists the subset of a completed discovery the member selected. Additive: deselecting an
+     * account never deletes it here -- deletion only happens explicitly via the trash icon
+     * ({@code AccountService.delete}). {@code voluntary} distinguishes an explicit Add-account
+     * re-selection (lifts the soft-delete tombstone for each selected account, so re-adding a
+     * previously-deleted account resurrects it) from an auto-sync confirm (tombstones are left
+     * alone -- {@link #upsertAccount} already skips soft-deleted accounts, so a trash-delete stays
+     * respected). {@code remember} (moved here from discovery, since it only matters once something
+     * is actually persisted) stores the captured credentials iff true. Fails clearly if the
+     * discovery expired (e.g. a backend restart between discovery and confirm) rather than silently
+     * no-op-ing.
+     */
+    public List<AccountResponse> confirmSync(
+            Long memberId, List<String> selectedExternalIds, boolean remember, boolean voluntary) {
+        List<RevolutAccountData> discovered = progressService.takePendingDiscovery(memberId);
+        if (discovered.isEmpty()) {
+            throw new SyncException(
+                "No Revolut accounts are pending import. Please run a sync again before importing.");
+        }
+        Set<String> selected = new HashSet<>(selectedExternalIds != null ? selectedExternalIds : List.of());
+        Credentials creds = pendingCredentials.remove(memberId);
+
+        List<AccountResponse> responses = new ArrayList<>();
+        txTemplate.executeWithoutResult(status -> {
+            if (voluntary) {
+                // Per-account tombstone lift: only the accounts the member explicitly selected may be
+                // resurrected -- a precise version of sync()'s blanket per-provider restore.
+                for (RevolutAccountData data : discovered) {
+                    if (selected.contains(data.externalId())) {
+                        accountRepository.restoreSoftDeletedRevolutAccount(memberId, data.externalId(), data.iban());
+                    }
+                }
+            }
+            responses.addAll(persistSelected(discovered, selected, memberId));
+            applyPostSyncSessionState(memberId,
+                creds != null ? creds.phone() : null,
+                creds != null ? creds.passcode() : null,
+                remember && creds != null);
+        });
+        return responses;
+    }
+
+    // ─── Shared harvest / persist ───────────────────────────────────────────────
+
+    /** Sidecar call only -- no DB writes. Live phases are streamed by the adapter's poll side-channel. */
+    private List<RevolutAccountData> harvest(String phone, String passcode, Long memberId) {
+        return revolutPort.sync(phone, passcode, memberId);
+    }
+
+    /**
+     * Upserts the selected accounts only (parents first, so a pocket's parentAccountId resolves to
+     * its already-persisted wallet). Additive: deselecting an account here never deletes it --
+     * deletion only happens explicitly via the trash icon ({@code AccountService.delete}). Lifting
+     * tombstones for selected accounts is the caller's job (blanket in {@link #sync}, per-account in
+     * {@link #confirmSync} when {@code voluntary}). Must run inside a transaction -- callers wrap it
+     * in {@link #txTemplate}.
+     */
+    private List<AccountResponse> persistSelected(List<RevolutAccountData> discovered,
+                                                  Set<String> selectedExternalIds, Long memberId) {
+        CategorizationService.CategorizationContext ctx = categorizationService.loadContext(memberId);
+
+        List<RevolutAccountData> chosen = discovered.stream()
+            .filter(d -> selectedExternalIds.contains(d.externalId()))
+            .sorted(Comparator.comparing(a -> a.parentExternalId() != null))
+            .toList();
+
+        Map<String, Long> accountIdByExternalId = new HashMap<>();
+        List<AccountResponse> responses = new ArrayList<>();
+        for (RevolutAccountData data : chosen) {
+            Long parentId = data.parentExternalId() != null
+                ? accountIdByExternalId.get(data.parentExternalId())
+                : null;
+            upsertAccount(data, memberId, parentId, ctx).ifPresent(resp -> {
+                accountIdByExternalId.put(data.externalId(), resp.id());
+                responses.add(resp);
+            });
+        }
+
+        log.info("Revolut sync complete: {} accounts updated", responses.size());
+        return responses;
+    }
+
+    // ─── Discovery helpers ──────────────────────────────────────────────────────
+
+    private Credentials resolveCredentials(Long memberId, String phoneNumber, String passcode) {
+        if (!isBlank(phoneNumber) && !isBlank(passcode)) {
+            return new Credentials(phoneNumber, passcode);
+        }
+        return loadStoredCredentials(memberId)
+            .orElseThrow(() -> new SyncException(
+                "No saved Revolut credentials. Please enter your phone number and passcode."));
+    }
+
+    private List<DiscoveredRevolutAccount> buildPreview(List<RevolutAccountData> harvested, Long memberId) {
+        List<DiscoveredRevolutAccount> preview = new ArrayList<>();
+        for (RevolutAccountData d : harvested) {
+            boolean imported = findActiveAccount(d, memberId).isPresent();
+            int txCount = d.txns() != null ? d.txns().size() : 0;
+            preview.add(new DiscoveredRevolutAccount(
+                d.externalId(), d.name(), d.type().name(), d.currency(), d.balance(),
+                d.parentExternalId(), imported, txCount));
+        }
+        return preview;
+    }
+
+    private Optional<Account> findActiveAccount(RevolutAccountData data, Long memberId) {
+        Optional<Account> existing = Optional.empty();
+        if (data.iban() != null) {
+            existing = accountRepository.findByIbanAndMemberId(data.iban(), memberId);
+        }
+        if (existing.isEmpty()) {
+            existing = accountRepository.findByExternalAccountIdAndMemberId(data.externalId(), memberId);
+        }
+        return existing;
+    }
+
+    /** Maps a sidecar error code to a user-facing sentence; passes through anything already a message. */
+    private String friendly(String code) {
+        if (code == null) {
+            return "Failed to sync Revolut accounts. Please try again later.";
+        }
+        return switch (code) {
+            case "SESSION_EXPIRED" ->
+                "Your Revolut session has expired. Please reconnect with your phone number and passcode.";
+            case "APPROVAL_TIMEOUT" ->
+                "The mobile approval was not confirmed in time. Please try again and approve the " +
+                    "push notification on your phone.";
+            case "SYNC_IN_PROGRESS" ->
+                "A Revolut sync is already running for this account. Please wait for it to finish " +
+                    "before starting another.";
+            default -> code;
+        };
     }
 
     // ─── Status / disconnect ─────────────────────────────────────────────────────
@@ -292,13 +438,7 @@ public class RevolutSyncService {
     private Optional<AccountResponse> upsertAccount(
             RevolutAccountData data, Long memberId, Long parentAccountId,
             CategorizationService.CategorizationContext ctx) {
-        Optional<Account> existing = Optional.empty();
-        if (data.iban() != null) {
-            existing = accountRepository.findByIbanAndMemberId(data.iban(), memberId);
-        }
-        if (existing.isEmpty()) {
-            existing = accountRepository.findByExternalAccountIdAndMemberId(data.externalId(), memberId);
-        }
+        Optional<Account> existing = findActiveAccount(data, memberId);
 
         if (existing.isEmpty()) {
             boolean softDeleted = (data.iban() != null

@@ -1,4 +1,4 @@
-import { useContext, useState, useRef } from 'react'
+import { useContext, useState, useRef, useEffect } from 'react'
 import { OTPInputContext } from 'input-otp'
 import { useTranslation } from 'react-i18next'
 import {
@@ -22,7 +22,9 @@ import {
   useInitiateTrAuth,
   useCompleteTrAuth,
   useRevolutStatus,
-  useSyncRevolut,
+  useStartRevolutSync,
+  useSyncProgress,
+  useConfirmRevolutSync,
   useAddCryptoExchange,
   useAddCryptoWallet,
   useFinaryConnectionStatus,
@@ -34,6 +36,8 @@ import {
   useCheckFinaryTotp,
 } from '@/features/sync/hooks'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
+import { RevolutSelectionCard } from '@/components/sync/RevolutSelectionCard'
+import { revolutPhaseLabel } from '@/features/sync/revolut-phase'
 import {
   Landmark,
   ArrowLeftRight,
@@ -56,7 +60,7 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
-import { formatApiError, isTimeoutError } from '@/lib/errors'
+import { formatApiError } from '@/lib/errors'
 import type { ExchangeType, ChainType, AccountRequest, FinaryPreviewResponse, FinaryAccountMapping, FinaryMappingAction, FinaryImportResultResponse, AccountType } from '@/types/api'
 
 // ---------------------------------------------------------------------------
@@ -715,55 +719,81 @@ function TradeRepublicWizard({ onBack }: { onDone: () => void; onBack: () => voi
 // Wizard: Revolut (on-demand phone+passcode sync — mirrors TradeRepublicWizard)
 // ---------------------------------------------------------------------------
 
-function RevolutWizard({ onBack }: { onDone: () => void; onBack: () => void }) {
+function RevolutWizard({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
   const { t } = useTranslation()
   const [phoneNumber, setPhoneNumber] = useState('')
   const [passcode, setPasscode] = useState('')
   const [remember, setRemember] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [synced, setSynced] = useState(false)
+  // Whether a discovery job is currently running — gates both the poll and the UI (mirrors RevolutTab).
+  const [isSyncing, setIsSyncing] = useState(false)
+  // Set once a discovery completes successfully; distinguishes a fresh mount (no result yet,
+  // possibly stale cached progress from an earlier discovery elsewhere) from an actual result.
+  const [resultReady, setResultReady] = useState(false)
 
   const { data: status } = useRevolutStatus()
-  const syncMutation = useSyncRevolut()
+  const startSync = useStartRevolutSync()
+  const progress = useSyncProgress('revolut', isSyncing)
+  const confirmSync = useConfirmRevolutSync()
 
   const remembered = status?.remembered ?? false
-  const isSyncing = syncMutation.isPending
+  const busy = isSyncing || startSync.isPending
 
-  function formatSyncError(err: unknown): string {
-    if (isTimeoutError(err)) return t('sync.revolut.approvalTimeout')
-    return formatApiError(err, t)
+  // Detect the running → done transition (mirrors RevolutTab) to stop polling and reveal
+  // the selection step once discovery is over.
+  const prevRunningRef = useRef<boolean | undefined>(undefined)
+  useEffect(() => {
+    const running = progress.data?.running
+    if (prevRunningRef.current === true && running === false) {
+      setIsSyncing(false)
+      if (progress.data?.error) {
+        setErrorMsg(progress.data.error)
+      } else {
+        setResultReady(true)
+      }
+    }
+    prevRunningRef.current = running
+    // progress.data is read through the running dep on purpose (see RevolutTab).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progress.data?.running])
+
+  function startDiscovery(body: { phoneNumber?: string; passcode?: string }) {
+    setErrorMsg(null)
+    setResultReady(false)
+    startSync.mutate(body, {
+      onSuccess: () => setIsSyncing(true),
+      onError: (err: unknown) => setErrorMsg(formatApiError(err, t)),
+    })
   }
 
   function handleQuickSync() {
-    setErrorMsg(null)
-    syncMutation.mutate(undefined, {
-      onSuccess: () => setSynced(true),
-      onError: (err) => setErrorMsg(formatSyncError(err)),
-    })
+    startDiscovery({})
   }
 
   function handleFormSync(e: React.FormEvent) {
     e.preventDefault()
     if (!phoneNumber || passcode.length !== 6) return
-    setErrorMsg(null)
-    syncMutation.mutate(
-      { phoneNumber, passcode, remember },
+    startDiscovery({ phoneNumber, passcode })
+  }
+
+  function handleConfirm(selectedExternalIds: string[]) {
+    confirmSync.mutate(
+      { selectedExternalIds, remember, voluntary: true },
       {
-        onSuccess: () => {
-          setPhoneNumber('')
-          setPasscode('')
-          setSynced(true)
-        },
-        onError: (err) => setErrorMsg(formatSyncError(err)),
+        onSuccess: onDone,
+        onError: (err: unknown) => setErrorMsg(formatApiError(err, t)),
       },
     )
   }
 
-  if (synced) {
+  // Add-account is purely additive: only offer accounts not already imported.
+  const newAccounts = (progress.data?.discovered ?? []).filter((d) => !d.alreadyImported)
+
+  if (resultReady && newAccounts.length === 0) {
     return (
       <>
         <BackButton onClick={onBack} />
-        <SuccessState message={t('addAccount.revolutConnected')} />
+        <SuccessState message={t('sync.revolut.selection.allImported')} />
       </>
     )
   }
@@ -783,62 +813,72 @@ function RevolutWizard({ onBack }: { onDone: () => void; onBack: () => void }) {
         {isSyncing && (
           <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin shrink-0" />
-            {t('sync.revolut.approveOnPhone')}
+            {revolutPhaseLabel(t, progress.data)}
           </div>
         )}
 
-        {remembered ? (
-          <Button onClick={handleQuickSync} disabled={isSyncing} className="w-full">
-            {isSyncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-            {isSyncing ? t('sync.revolut.syncing') : t('sync.revolut.sync')}
-          </Button>
-        ) : (
-          <form onSubmit={handleFormSync} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="revolut-phone">
-                <Smartphone className="size-4 inline-block mr-1" />
-                {t('sync.revolut.phone')}
-              </Label>
-              <Input
-                id="revolut-phone"
-                type="tel"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                required
-                disabled={isSyncing}
-                placeholder="+33..."
-                autoFocus
-              />
-            </div>
+        {resultReady && newAccounts.length > 0 && (
+          <RevolutSelectionCard
+            discovered={newAccounts}
+            confirming={confirmSync.isPending}
+            onConfirm={handleConfirm}
+          />
+        )}
 
-            <div className="space-y-2">
-              <Label htmlFor="revolut-passcode">
-                <Lock className="size-4 inline-block mr-1" />
-                {t('sync.revolut.passcode')}
-              </Label>
-              <InputOTP maxLength={6} value={passcode} onChange={setPasscode} disabled={isSyncing}>
-                <InputOTPGroup>
-                  {[0, 1, 2, 3, 4, 5].map((i) => (
-                    <MaskedOTPSlot key={i} index={i} />
-                  ))}
-                </InputOTPGroup>
-              </InputOTP>
-            </div>
-
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Checkbox
-                checked={remember}
-                onCheckedChange={(checked) => setRemember(checked === true)}
-                disabled={isSyncing}
-              />
-              <span className="text-sm text-muted-foreground">{t('sync.revolut.remember')}</span>
-            </label>
-
-            <Button type="submit" disabled={isSyncing} className="w-full">
-              {isSyncing && <Loader2 className="size-4 animate-spin" />}
-              {isSyncing ? t('sync.revolut.syncing') : t('sync.revolut.sync')}
+        {!resultReady && (
+          remembered ? (
+            <Button onClick={handleQuickSync} disabled={busy} className="w-full">
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              {busy ? t('sync.revolut.syncing') : t('sync.revolut.sync')}
             </Button>
-          </form>
+          ) : (
+            <form onSubmit={handleFormSync} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="revolut-phone">
+                  <Smartphone className="size-4 inline-block mr-1" />
+                  {t('sync.revolut.phone')}
+                </Label>
+                <Input
+                  id="revolut-phone"
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  required
+                  disabled={busy}
+                  placeholder="+33..."
+                  autoFocus
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="revolut-passcode">
+                  <Lock className="size-4 inline-block mr-1" />
+                  {t('sync.revolut.passcode')}
+                </Label>
+                <InputOTP maxLength={6} value={passcode} onChange={setPasscode} disabled={busy}>
+                  <InputOTPGroup>
+                    {[0, 1, 2, 3, 4, 5].map((i) => (
+                      <MaskedOTPSlot key={i} index={i} />
+                    ))}
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={remember}
+                  onCheckedChange={(checked) => setRemember(checked === true)}
+                  disabled={busy}
+                />
+                <span className="text-sm text-muted-foreground">{t('sync.revolut.remember')}</span>
+              </label>
+
+              <Button type="submit" disabled={busy} className="w-full">
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                {busy ? t('sync.revolut.syncing') : t('sync.revolut.sync')}
+              </Button>
+            </form>
+          )
         )}
       </div>
     </>

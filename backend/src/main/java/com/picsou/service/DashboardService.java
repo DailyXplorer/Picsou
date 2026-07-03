@@ -118,8 +118,13 @@ public class DashboardService {
         log.info("getDashboard: totalAssets={}, totalLiabilities={}, totalNetWorth={}, totalInvested={}, pnl={}",
             totalAssets, totalLiabilities, totalNetWorth, totalInvested, totalNetWorth.subtract(totalInvested));
 
-        // Build history using shared HistoryService
-        List<Long> allAccountIds = accounts.stream().map(Account::getId).toList();
+        // Build history using shared HistoryService. Pocket sub-accounts are excluded -- same reason
+        // as the skip above: their balance is already counted in the parent wallet, and HistoryService
+        // sums whatever account ids it's given with no parentAccountId filtering of its own.
+        List<Long> allAccountIds = accounts.stream()
+            .filter(a -> a.getParentAccountId() == null)
+            .map(Account::getId)
+            .toList();
         int months = switch (range != null ? range : "1Y") {
             case "7D", "1M" -> 1;
             case "3M" -> 3;
