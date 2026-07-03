@@ -59,7 +59,7 @@ import java.util.UUID;
  *   <li><b>Reuse the web login.</b> {@link CookieBridgeAuthenticationFilter} authenticates the
  *       authorize request from the existing {@code access_token} cookie; when it is absent the
  *       {@link #spaLoginRedirectEntryPoint()} bounces the in-app browser to the SPA login
- *       ({@code /login?returnTo=…}), which runs the untouched password + TOTP + Remember-Me flow.</li>
+ *       ({@code /login?redirect=…}), which runs the untouched password + TOTP + Remember-Me flow.</li>
  * </ul>
  *
  * @see <a href="file:../../../../../../docs/decisions/2026-07-03-oauth2-authorization-server-for-native-app.md">ADR</a>
@@ -170,9 +170,9 @@ public class AuthorizationServerConfig {
 
     /**
      * Redirect unauthenticated authorize requests to the existing SPA login, carrying the original
-     * authorize URL so the SPA can bounce back after login. Relative path → resolves against the
-     * user's own instance host (works behind nginx). The SPA validates {@code returnTo} is a
-     * same-origin path before navigating (open-redirect guard).
+     * authorize URL in the SPA's established {@code redirect} query param so it can bounce back after
+     * login. Relative path → resolves against the user's own instance host (works behind nginx). The
+     * SPA only performs a full-page navigation back to a {@code /oauth2/} target (open-redirect guard).
      */
     private AuthenticationEntryPoint spaLoginRedirectEntryPoint() {
         return (HttpServletRequest request, HttpServletResponse response, AuthenticationException ex) -> {
@@ -180,8 +180,8 @@ public class AuthorizationServerConfig {
             if (request.getQueryString() != null) {
                 target = target + "?" + request.getQueryString();
             }
-            String returnTo = URLEncoder.encode(target, StandardCharsets.UTF_8);
-            response.sendRedirect("/login?returnTo=" + returnTo);
+            String redirect = URLEncoder.encode(target, StandardCharsets.UTF_8);
+            response.sendRedirect("/login?redirect=" + redirect);
         };
     }
 }

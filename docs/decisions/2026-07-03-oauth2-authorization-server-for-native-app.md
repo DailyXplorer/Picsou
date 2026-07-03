@@ -44,8 +44,8 @@ the **Keychain**.
 - **The existing web login is reused inside the OAuth flow.** A `CookieBridgeAuthenticationFilter`
   authenticates the authorize request from the existing `access_token` cookie; when it is absent, an
   `AuthenticationEntryPoint` redirects the in-app browser (`ASWebAuthenticationSession`) to the SPA
-  login (`/login?returnTo=…`), which runs the untouched password + TOTP + Remember-Me flow and
-  bounces back. **No new login UI, no session-based MFA rebuild.**
+  login (`/login?redirect=…`, reusing the SPA's established redirect param), which runs the untouched
+  password + TOTP + Remember-Me flow and bounces back. **No new login UI, no session-based MFA rebuild.**
 
 ## Alternatives considered
 
@@ -120,8 +120,8 @@ manage, and the `tv` token-version revocation still works across both web and ap
   the shared authenticator); `application.yml` (`app.oauth.*`).
 - **No schema change** (in-memory client/authorization service). No web-flow behavior change.
 - **Infra**: `location /oauth2/` added to `docker/nginx.conf` and `frontend/nginx.conf`.
-- **Frontend**: the SPA login route honors a same-origin `returnTo` (open-redirect guarded) so the
-  authorize flow can resume after login.
+- **Frontend**: the SPA login/MFA pages full-navigate to a `/oauth2/` `redirect` target (rather than
+  a client-side route change), open-redirect guarded, so the authorize flow can resume after login.
 - Full design in [`docs/features/ios-app.md`](../features/ios-app.md).
 
 ## Supersedes
