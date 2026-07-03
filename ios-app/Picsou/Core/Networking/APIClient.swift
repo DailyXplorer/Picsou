@@ -1,0 +1,111 @@
+import Foundation
+
+/// Thin JSON client for the Picsou REST API. Injects the Bearer access token, refreshes it once on a
+/// 401 (and proactively when it's about to expire), and asks `AppState` to sign out when refresh
+/// ultimately fails.
+final class APIClient: @unchecked Sendable {
+    private let serverConfig: ServerConfig
+    private let tokenStore: TokenStore
+    private let refresher: TokenRefresher
+    private let session: URLSession
+
+    /// Invoked (possibly off the main actor) when a request can no longer be authenticated.
+    var onAuthenticationLost: (@Sendable () -> Void)?
+
+    init(serverConfig: ServerConfig, tokenStore: TokenStore, oauth: OAuthService, session: URLSession = .shared) {
+        self.serverConfig = serverConfig
+        self.tokenStore = tokenStore
+        self.session = session
+        self.refresher = TokenRefresher(oauth: oauth, tokenStore: tokenStore)
+    }
+
+    func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
+        let data = try await requestData(path: path, query: query)
+        do {
+            return try JSONDecoder.picsou.decode(T.self, from: data)
+        } catch {
+            throw APIError.decoding(String(describing: error))
+        }
+    }
+
+    private func requestData(path: String, query: [URLQueryItem]) async throws -> Data {
+        guard let base = serverConfig.baseURL else { throw APIError.notConfigured }
+        guard var comps = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false) else {
+            throw APIError.invalidURL
+        }
+        if !query.isEmpty { comps.queryItems = query }
+        guard let url = comps.url else { throw APIError.invalidURL }
+
+        do {
+            let token = try await validAccessToken()
+            let (data, response) = try await send(url: url, bearer: token)
+            if (response as? HTTPURLResponse)?.statusCode == 401 {
+                // Expired/rejected token — refresh once and retry.
+                let fresh = try await refresher.forceRefresh()
+                let (retryData, retryResponse) = try await send(url: url, bearer: fresh.accessToken)
+                return try validate(retryData, retryResponse)
+            }
+            return try validate(data, response)
+        } catch let error as APIError {
+            if case .unauthorized = error { onAuthenticationLost?() }
+            throw error
+        }
+    }
+
+    private func send(url: URL, bearer: String) async throws -> (Data, URLResponse) {
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            return try await session.data(for: request)
+        } catch {
+            throw APIError.network(error.localizedDescription)
+        }
+    }
+
+    private func validate(_ data: Data, _ response: URLResponse) throws -> Data {
+        guard let http = response as? HTTPURLResponse else { throw APIError.network("No HTTP response") }
+        switch http.statusCode {
+        case 200...299: return data
+        case 401: throw APIError.unauthorized
+        default: throw APIError.http(status: http.statusCode, body: String(data: data, encoding: .utf8))
+        }
+    }
+
+    /// A non-expired access token, refreshing proactively when within 60s of expiry.
+    private func validAccessToken() async throws -> String {
+        guard let tokens = tokenStore.load() else { throw APIError.unauthorized }
+        if tokens.accessTokenExpiry.timeIntervalSinceNow > 60 {
+            return tokens.accessToken
+        }
+        return try await refresher.forceRefresh().accessToken
+    }
+}
+
+/// Serializes refresh so concurrent 401s trigger a single token refresh (single-flight).
+actor TokenRefresher {
+    private let oauth: OAuthService
+    private let tokenStore: TokenStore
+    private var inFlight: Task<TokenSet, Error>?
+
+    init(oauth: OAuthService, tokenStore: TokenStore) {
+        self.oauth = oauth
+        self.tokenStore = tokenStore
+    }
+
+    func forceRefresh() async throws -> TokenSet {
+        if let inFlight { return try await inFlight.value }
+
+        let task = Task { [oauth, tokenStore] () throws -> TokenSet in
+            guard let refreshToken = tokenStore.load()?.refreshToken, !refreshToken.isEmpty else {
+                throw APIError.unauthorized
+            }
+            let fresh = try await oauth.refresh(refreshToken)
+            tokenStore.save(fresh)
+            return fresh
+        }
+        inFlight = task
+        defer { inFlight = nil }
+        return try await task.value
+    }
+}
