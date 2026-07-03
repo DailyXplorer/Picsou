@@ -28,6 +28,10 @@ jobs:
             image: ${{ github.repository }}/tr-auth
             context: services/tr-auth
             dockerfile: services/tr-auth/Dockerfile
+          - name: revolut-auth
+            image: ${{ github.repository }}/revolut-auth
+            context: services/revolut-auth
+            dockerfile: services/revolut-auth/Dockerfile
 
     steps:
       - name: Checkout
