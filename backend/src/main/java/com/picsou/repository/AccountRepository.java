@@ -138,4 +138,23 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         "WHERE member_id = :memberId AND provider = 'Revolut' AND deleted_at IS NOT NULL",
         nativeQuery = true)
     void restoreSoftDeletedRevolutAccounts(@Param("memberId") Long memberId);
+
+    /**
+     * Lifts the soft-delete tombstone for a single Revolut account (by external id or, if
+     * present, IBAN), mirroring the OR key used by the existence checks above. Used by the
+     * manual sync + selection confirm path ({@code RevolutSyncService.confirmSync}) to restore
+     * only the accounts the member explicitly selected, rather than the blanket per-provider
+     * restore in {@link #restoreSoftDeletedRevolutAccounts} used on full reconnect.
+     */
+    @Modifying
+    @Query(value =
+        "UPDATE account SET deleted_at = NULL " +
+        "WHERE member_id = :memberId AND provider = 'Revolut' AND deleted_at IS NOT NULL " +
+        "AND (external_account_id = :externalId OR (:iban IS NOT NULL AND iban = :iban))",
+        nativeQuery = true)
+    void restoreSoftDeletedRevolutAccount(
+        @Param("memberId") Long memberId,
+        @Param("externalId") String externalId,
+        @Param("iban") String iban
+    );
 }

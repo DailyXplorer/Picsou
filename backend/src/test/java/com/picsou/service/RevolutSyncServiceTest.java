@@ -3,6 +3,7 @@ package com.picsou.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.picsou.config.CryptoEncryption;
 import com.picsou.dto.AccountResponse;
+import com.picsou.dto.DiscoveredRevolutAccount;
 import com.picsou.exception.SyncException;
 import com.picsou.model.Account;
 import com.picsou.model.AccountType;
@@ -17,6 +18,9 @@ import com.picsou.repository.FamilyMemberRepository;
 import com.picsou.repository.RevolutSessionRepository;
 import com.picsou.repository.TransactionRepository;
 import com.picsou.service.budget.CategorizationService;
+import com.picsou.service.sync.SyncProgressService;
+import com.picsou.service.sync.SyncProvider;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +28,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -39,6 +44,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -63,6 +69,8 @@ class RevolutSyncServiceTest {
     @Mock CategorizationService categorizationService;
     @Mock CryptoEncryption encryption;
     @Spy ObjectMapper objectMapper = new ObjectMapper();
+    @Mock TransactionTemplate txTemplate;
+    @Mock SyncProgressService progressService;
 
     @InjectMocks RevolutSyncService service;
 
@@ -70,6 +78,20 @@ class RevolutSyncServiceTest {
     private static final String IBAN = "FR7630006000011234567890189";
     private static final String PHONE = "+33612345678";
     private static final String PASSCODE = "123456";
+
+    /**
+     * {@code sync}/{@code confirmSync} wrap their DB writes in {@code txTemplate.executeWithoutResult};
+     * the mocked template is a no-op unless we make it actually invoke its callback, or every test
+     * that asserts on repository writes would silently see none happen.
+     */
+    @BeforeEach
+    void runTxTemplateCallbacks() {
+        lenient().doAnswer(inv -> {
+            java.util.function.Consumer<org.springframework.transaction.TransactionStatus> cb = inv.getArgument(0);
+            cb.accept(null);
+            return null;
+        }).when(txTemplate).executeWithoutResult(any());
+    }
 
     private static BigDecimal bd(String v) { return new BigDecimal(v); }
 
@@ -430,5 +452,122 @@ class RevolutSyncServiceTest {
         when(revolutPort.sync(PHONE, PASSCODE, MEMBER_ID)).thenThrow(new SyncException("APPROVAL_TIMEOUT"));
 
         assertThatCode(() -> service.resyncIfSessionActive(MEMBER_ID)).doesNotThrowAnyException();
+    }
+
+    // ─── Manual on-demand flow: discover (no writes) → confirmSync (persist selection) ──────────
+
+    /**
+     * {@code discover} must harvest via the sidecar with NO DB writes, build the selection preview
+     * (alreadyImported=false when neither IBAN nor externalId match an existing account), report it
+     * through {@link SyncProgressService#setDiscovered}, and terminate with {@code done} -- never
+     * {@code error} -- on the happy path.
+     */
+    @Test
+    void discover_harvestsAndReportsPreviewAndDone() {
+        RevolutAccountData wallet = new RevolutAccountData(
+            "wallet-9", "Revolut EUR", AccountType.CHECKING, IBAN, bd("300.00"), "EUR", null, List.of());
+        when(revolutPort.sync(PHONE, PASSCODE, MEMBER_ID)).thenReturn(List.of(wallet));
+        when(accountRepository.findByIbanAndMemberId(IBAN, MEMBER_ID)).thenReturn(Optional.empty());
+        when(accountRepository.findByExternalAccountIdAndMemberId("wallet-9", MEMBER_ID)).thenReturn(Optional.empty());
+
+        service.discover(MEMBER_ID, PHONE, PASSCODE);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<DiscoveredRevolutAccount>> previewCaptor = ArgumentCaptor.forClass(List.class);
+        verify(progressService).setDiscovered(eq(MEMBER_ID), eq(SyncProvider.REVOLUT), previewCaptor.capture(), any());
+        List<DiscoveredRevolutAccount> preview = previewCaptor.getValue();
+        assertThat(preview).hasSize(1);
+        assertThat(preview.get(0).externalId()).isEqualTo("wallet-9");
+        assertThat(preview.get(0).alreadyImported()).isFalse();
+
+        verify(progressService).done(MEMBER_ID, SyncProvider.REVOLUT);
+        verify(progressService, never()).error(anyLong(), any(), anyString());
+    }
+
+    /**
+     * {@code confirmSync} upserts only the selected subset of a completed discovery (parent-first,
+     * per-account tombstone lift when {@code voluntary}). Additive: a deselected account that was
+     * already imported is left untouched -- it is never soft-deleted here, only via the trash icon
+     * ({@code AccountService.delete}).
+     */
+    @Test
+    void confirmSync_additive_deselectedImportedAccountIsNeverDeleted() {
+        when(categorizationService.loadContext(MEMBER_ID))
+            .thenReturn(new CategorizationService.CategorizationContext(List.of(), Map.of()));
+
+        RevolutAccountData walletA = new RevolutAccountData(
+            "wallet-A", "Revolut EUR A", AccountType.CHECKING, null, bd("100.00"), "EUR", null, List.of());
+        RevolutAccountData walletB = new RevolutAccountData(
+            "wallet-B", "Revolut EUR B", AccountType.CHECKING, null, bd("200.00"), "EUR", null, List.of());
+        when(progressService.takePendingDiscovery(MEMBER_ID)).thenReturn(List.of(walletA, walletB));
+
+        when(accountRepository.findByExternalAccountIdAndMemberId("wallet-A", MEMBER_ID)).thenReturn(Optional.empty());
+        when(accountRepository.existsSoftDeletedByExternalAccountIdAndMemberId("wallet-A", MEMBER_ID)).thenReturn(false);
+        when(familyMemberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member()));
+        stubSaveAssignsIncrementingIds(new AtomicLong(800));
+        stubToResponseMirrorsAccount();
+
+        service.confirmSync(MEMBER_ID, List.of("wallet-A"), false, true);
+
+        verify(accountRepository).restoreSoftDeletedRevolutAccount(MEMBER_ID, "wallet-A", null);
+
+        ArgumentCaptor<Account> captor = ArgumentCaptor.forClass(Account.class);
+        verify(accountRepository).save(captor.capture());
+        assertThat(captor.getValue().getExternalAccountId()).isEqualTo("wallet-A");
+
+        // wallet-B was deselected but is left alone -- additive flows never delete on deselect.
+        verify(accountService, never()).delete(anyLong(), anyLong());
+    }
+
+    /** {@code voluntary=true} (explicit Add-account re-selection) lifts the tombstone for each selected account. */
+    @Test
+    void confirmSync_voluntaryTrue_liftsTombstoneForSelected() {
+        when(categorizationService.loadContext(MEMBER_ID))
+            .thenReturn(new CategorizationService.CategorizationContext(List.of(), Map.of()));
+
+        RevolutAccountData wallet = new RevolutAccountData(
+            "wallet-C", "Revolut EUR C", AccountType.CHECKING, null, bd("50.00"), "EUR", null, List.of());
+        when(progressService.takePendingDiscovery(MEMBER_ID)).thenReturn(List.of(wallet));
+
+        when(accountRepository.findByExternalAccountIdAndMemberId("wallet-C", MEMBER_ID)).thenReturn(Optional.empty());
+        when(accountRepository.existsSoftDeletedByExternalAccountIdAndMemberId("wallet-C", MEMBER_ID)).thenReturn(false);
+        when(familyMemberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member()));
+        stubSaveAssignsIncrementingIds(new AtomicLong(810));
+        stubToResponseMirrorsAccount();
+
+        service.confirmSync(MEMBER_ID, List.of("wallet-C"), false, true);
+
+        verify(accountRepository).restoreSoftDeletedRevolutAccount(MEMBER_ID, "wallet-C", null);
+    }
+
+    /** {@code voluntary=false} (auto-sync confirm) never lifts tombstones -- a trash-delete stays respected. */
+    @Test
+    void confirmSync_voluntaryFalse_doesNotLiftTombstone() {
+        when(categorizationService.loadContext(MEMBER_ID))
+            .thenReturn(new CategorizationService.CategorizationContext(List.of(), Map.of()));
+
+        RevolutAccountData wallet = new RevolutAccountData(
+            "wallet-D", "Revolut EUR D", AccountType.CHECKING, null, bd("50.00"), "EUR", null, List.of());
+        when(progressService.takePendingDiscovery(MEMBER_ID)).thenReturn(List.of(wallet));
+
+        when(accountRepository.findByExternalAccountIdAndMemberId("wallet-D", MEMBER_ID)).thenReturn(Optional.empty());
+        when(accountRepository.existsSoftDeletedByExternalAccountIdAndMemberId("wallet-D", MEMBER_ID)).thenReturn(false);
+        when(familyMemberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member()));
+        stubSaveAssignsIncrementingIds(new AtomicLong(820));
+        stubToResponseMirrorsAccount();
+
+        service.confirmSync(MEMBER_ID, List.of("wallet-D"), false, false);
+
+        verify(accountRepository, never()).restoreSoftDeletedRevolutAccount(anyLong(), anyString(), any());
+    }
+
+    /** A confirm with nothing pending (e.g. a backend restart between discovery and confirm) fails clearly. */
+    @Test
+    void confirmSync_noPendingDiscovery_throwsClearError() {
+        when(progressService.takePendingDiscovery(MEMBER_ID)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.confirmSync(MEMBER_ID, List.of("x"), false, false))
+            .isInstanceOf(SyncException.class)
+            .hasMessageContaining("pending import");
     }
 }

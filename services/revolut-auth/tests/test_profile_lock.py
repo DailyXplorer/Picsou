@@ -106,11 +106,29 @@ async def test_clear_stale_locks_removes_lock_files():
             main.PROFILES_ROOT = original_root
 
 
+async def test_progress_endpoint_reads_back_last_phase():
+    """GET /progress/{member_id} must read back the last phase written by _set_progress
+    (including extra kwargs like remainingSeconds), and return {"phase": None} for a
+    member id with no recorded progress."""
+    main._progress.clear()
+    try:
+        main._set_progress("1", "AWAITING_APPROVAL", remainingSeconds=255)
+
+        result = await main.progress("1")
+        assert result["phase"] == "AWAITING_APPROVAL", result
+        assert result["remainingSeconds"] == 255, result
+
+        assert await main.progress("999") == {"phase": None}
+    finally:
+        main._progress.clear()
+
+
 async def _run():
     tests = [
         test_concurrent_sync_for_same_member_fast_fails_409,
         test_lock_keyed_on_sanitized_profile_key,
         test_clear_stale_locks_removes_lock_files,
+        test_progress_endpoint_reads_back_last_phase,
     ]
     failures = 0
     for t in tests:

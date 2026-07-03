@@ -35,8 +35,10 @@ import asyncio
 import logging
 import os
 import re
+import time
+from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from camoufox.async_api import AsyncCamoufox
 from fastapi import FastAPI
@@ -311,7 +313,58 @@ async def _fetch_transactions(page, device_id, pocket_id) -> List[Dict[str, Any]
     return out
 
 
-async def harvest_accounts(page, device_id) -> Dict[str, Any]:
+def _with_wallet_parents(accounts: List[Dict[str, Any]], wallet_currencies: Dict[str, str],
+                          ibans: Dict[str, Optional[str]]) -> List[Dict[str, Any]]:
+    """Revolut never hands out an account object for the wallet itself -- only its pockets
+    and money-boxes -- so without this step every pocket/vault surfaces as its own
+    top-level account instead of nesting under one wallet. Synthesizes that missing
+    parent (one per entry in `wallet_currencies`) and re-parents same-currency children
+    under it. Pure / no I/O so it's unit-testable without a live `page`; harvest_accounts
+    does the awaiting (each wallet's dominant currency + IBAN) before calling this.
+
+    A child only nests if its currency matches the wallet's dominant currency (Python does
+    no FX conversion): a different-currency pocket/vault is re-parented to top-level
+    instead of being silently folded in and losing its balance. A parentExternalId that
+    doesn't match any known wallet at all (money-boxes report theirs via a looser
+    accountId/walletId/podId fallback -- see harvest_accounts) is equally untrusted and
+    demoted to top-level, with a warning.
+
+    The parent's balance is set to the sum of its same-currency children's balances --
+    REQUIRED because the backend/dashboard excludes children from net-worth and counts
+    only the parent (see Account.java)."""
+    existing_ids = {a["externalId"] for a in accounts}
+    sums: Dict[str, float] = {wallet_id: 0.0 for wallet_id in wallet_currencies}
+    out: List[Dict[str, Any]] = []
+    for acc in accounts:
+        wallet_id = acc.get("parentExternalId")
+        if wallet_id is not None:
+            acc = dict(acc)
+            if wallet_id not in wallet_currencies:
+                log.warning("account %s has unresolvable parent %s -- keeping it top-level",
+                            acc["externalId"], wallet_id)
+                acc["parentExternalId"] = None
+            elif acc["currency"] != wallet_currencies[wallet_id]:
+                acc["parentExternalId"] = None
+            else:
+                sums[wallet_id] += acc["balance"]
+        out.append(acc)
+    for wallet_id, ccy in wallet_currencies.items():
+        if wallet_id in existing_ids:
+            # Revolut sometimes hands a pocket the same id as its own wallet (the pocket
+            # loop below already refuses to self-parent it); don't emit a second account
+            # under that externalId on top of it.
+            log.warning("wallet %s already has an account with that externalId -- "
+                        "skipping its synthetic parent", wallet_id)
+            continue
+        out.append({
+            "externalId": wallet_id, "name": "Revolut", "type": "CHECKING",
+            "iban": ibans.get(wallet_id), "balance": sums[wallet_id], "currency": ccy,
+            "parentExternalId": None, "transactions": [],
+        })
+    return out
+
+
+async def harvest_accounts(page, device_id, on_progress: Optional[Callable[[int], None]] = None) -> Dict[str, Any]:
     accounts: List[Dict[str, Any]] = []
 
     # Money-boxes (vaults) first -- record their pocket ids so those pockets are not
@@ -333,12 +386,17 @@ async def harvest_accounts(page, device_id) -> Dict[str, Any]:
             "currency": currency or _pick(mb, "currency", "currencyCode", default="EUR"),
             "parentExternalId": _pick(mb, "accountId", "walletId", "podId"), "transactions": [],
         })
+    if on_progress:
+        on_progress(len(accounts))
 
     fiat = await _fetch_fiat_currencies(page, device_id)
 
     # Current-account pockets: keep only real fiat CURRENT pockets; drop closed ones,
     # money-box pockets (dedup), MERCHANT/REVX_FIAT sleeves, and non-fiat (crypto) pockets.
+    # `current_ccy` records each wallet's CURRENT-typed pocket currency -- its "home"
+    # currency, and the one its IBAN is issued in (see _with_wallet_parents).
     wallets = await _fetch_wallets(page, device_id)
+    current_ccy: Dict[str, str] = {}
     for wallet_id, pockets in wallets:
         for pocket in pockets:
             pid = _pick(pocket, "id")
@@ -355,24 +413,34 @@ async def harvest_accounts(page, device_id) -> Dict[str, Any]:
                 "parentExternalId": wallet_id if wallet_id and wallet_id != pid else None,
                 "transactions": [],
             })
+            if wallet_id and ptype == "CURRENT":
+                current_ccy[wallet_id] = currency
+    if on_progress:
+        on_progress(len(accounts))
 
-    # IBANs per (walletId, currency) among CHECKING accounts.
-    iban_cache: Dict[Tuple[str, str], Optional[str]] = {}
-    for wallet_id, _ in wallets:
-        if not wallet_id:
-            continue
-        for ccy in {a["currency"] for a in accounts if a["type"] == "CHECKING"}:
-            key = (wallet_id, ccy)
-            if key not in iban_cache:
-                iban_cache[key] = await _fetch_iban(page, device_id, wallet_id, ccy)
-            if iban_cache[key]:
-                for acc in accounts:
-                    if acc["type"] == "CHECKING" and acc["currency"] == ccy and not acc["iban"]:
-                        acc["iban"] = iban_cache[key]
+    # Each wallet's dominant currency: its CURRENT pocket's currency, or (no CURRENT
+    # pocket found) whichever currency is most common among its own children. One IBAN
+    # fetch per wallet, in that currency only -- not the old N x M loop over every
+    # currency seen anywhere among CHECKING accounts.
+    wallet_ids = {wallet_id for wallet_id, _ in wallets if wallet_id}
+    wallet_currencies: Dict[str, str] = {}
+    for wallet_id in wallet_ids:
+        if wallet_id in current_ccy:
+            wallet_currencies[wallet_id] = current_ccy[wallet_id]
+        else:
+            siblings = [a["currency"] for a in accounts if a["parentExternalId"] == wallet_id]
+            wallet_currencies[wallet_id] = Counter(siblings).most_common(1)[0][0] if siblings else "EUR"
+    ibans: Dict[str, Optional[str]] = {}
+    for wallet_id, ccy in wallet_currencies.items():
+        ibans[wallet_id] = await _fetch_iban(page, device_id, wallet_id, ccy)
+
+    accounts = _with_wallet_parents(accounts, wallet_currencies, ibans)
 
     for acc in accounts:
-        if acc["type"] == "CHECKING":
+        if acc["type"] == "CHECKING" and acc["externalId"] not in wallet_ids:
             acc["transactions"] = await _fetch_transactions(page, device_id, acc["externalId"])
+            if on_progress:
+                on_progress(len(accounts))
 
     return {"accounts": accounts}
 
@@ -448,6 +516,18 @@ async def _fill_passcode(page, passcode: str) -> None:
 # uvicorn worker (one event loop), so an in-process asyncio.Lock per member suffices.
 _member_locks: Dict[str, asyncio.Lock] = {}
 
+# Live sync progress, keyed identically to _member_locks (_profile_key(member_id)). Read by
+# GET /progress/{member_id} so the backend can poll phase/countdown/accounts-found while the
+# blocking POST /sync call is in flight -- same single-uvicorn-worker/single-event-loop safety
+# rationale as _member_locks (plain dict, no lock needed). Overwritten (not deleted) each time a
+# sync starts, and never cleared on completion: the backend polls it, so a lingering last phase
+# is harmless and any stale state is replaced the moment a new sync starts.
+_progress: Dict[str, dict] = {}
+
+
+def _set_progress(member_id: str, phase: str, **extra: Any) -> None:
+    _progress[_profile_key(member_id)] = {"phase": phase, "updatedAt": time.time(), **extra}
+
 
 def _member_lock(member_id: str) -> asyncio.Lock:
     key = _profile_key(member_id)  # SAME key as the profile dir -- guard the resource, not the raw id
@@ -488,7 +568,9 @@ async def _harvest_from_profile(member_id: str) -> Optional[Dict[str, Any]]:
             return None
         if (await api_call(page, "/api/retail/token/info", device_id)).get("status") == 401:
             return None
-        return await harvest_accounts(page, device_id)
+        _set_progress(member_id, "HARVESTING")
+        return await harvest_accounts(
+            page, device_id, on_progress=lambda n: _set_progress(member_id, "HARVESTING", accountsFound=n))
 
 
 @app.post("/sync")
@@ -509,12 +591,14 @@ async def sync(req: SyncRequest):
         return sync_in_progress()
 
     async with lock:
+        _set_progress(req.memberId, "CHECKING_SESSION")
         reused = await _harvest_from_profile(req.memberId)
         if reused is not None:
             log.info("synced %d accounts (reused session) for member %s",
                      len(reused["accounts"]), req.memberId)
             return reused
 
+        _set_progress(req.memberId, "LOGGING_IN")
         async with _camoufox(req.memberId, headless=False) as ctx:  # headful login (Xvfb in the image)
             page = await ctx.new_page()
             await page.goto(APP_URL, wait_until="domcontentloaded", timeout=45000)
@@ -526,7 +610,10 @@ async def sync(req: SyncRequest):
 
             log.info("login: waiting up to %ss for mobile approval", ENROLMENT_APPROVE_WAIT_S)
             approved = False
-            for _ in range(ENROLMENT_APPROVE_WAIT_S * 1000 // POLL_MS):
+            for i in range(ENROLMENT_APPROVE_WAIT_S * 1000 // POLL_MS):
+                _set_progress(req.memberId, "AWAITING_APPROVAL",
+                              elapsedSeconds=i * POLL_MS // 1000,
+                              remainingSeconds=ENROLMENT_APPROVE_WAIT_S - i * POLL_MS // 1000)
                 if await _logged_in(page):
                     approved = True
                     break
@@ -536,10 +623,18 @@ async def sync(req: SyncRequest):
 
             device_id = await _device_id(ctx)
             await _settle(page)
-            result = await harvest_accounts(page, device_id)
+            _set_progress(req.memberId, "HARVESTING")
+            result = await harvest_accounts(
+                page, device_id,
+                on_progress=lambda n: _set_progress(req.memberId, "HARVESTING", accountsFound=n))
             log.info("synced %d accounts (fresh login) for member %s",
                      len(result["accounts"]), req.memberId)
             return result
+
+
+@app.get("/progress/{member_id}")
+async def progress(member_id: str):
+    return _progress.get(_profile_key(member_id), {"phase": None})
 
 
 @app.get("/health")

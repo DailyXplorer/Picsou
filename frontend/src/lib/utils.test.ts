@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { cn, formatCurrency, formatDate, formatPercent, parseDate } from './utils'
+import {
+  cn,
+  formatCurrency,
+  formatDate,
+  formatPercent,
+  parseDate,
+  isOAuthAuthorizeRedirect,
+} from './utils'
 
 describe('cn', () => {
   it('merges class names', () => {
@@ -107,5 +114,32 @@ describe('parseDate', () => {
       const displayed = formatDate(iso, locale, format)
       expect(parseDate(displayed, locale, format), `${locale}/${format} → ${displayed}`).toBe(iso)
     }
+  })
+})
+
+describe('isOAuthAuthorizeRedirect', () => {
+  it('recognises backend OAuth2 authorize targets (full-page navigation, not SPA routing)', () => {
+    expect(isOAuthAuthorizeRedirect('/oauth2/authorize')).toBe(true)
+    expect(isOAuthAuthorizeRedirect('/oauth2/authorize?response_type=code&client_id=picsou-ios')).toBe(true)
+    expect(isOAuthAuthorizeRedirect('/oauth2/token')).toBe(true)
+    expect(isOAuthAuthorizeRedirect('/oauth2/')).toBe(true)
+  })
+
+  it('treats ordinary in-app SPA routes as client-side navigation', () => {
+    expect(isOAuthAuthorizeRedirect('/')).toBe(false)
+    expect(isOAuthAuthorizeRedirect('/dashboard')).toBe(false)
+    expect(isOAuthAuthorizeRedirect('/login')).toBe(false)
+    expect(isOAuthAuthorizeRedirect('')).toBe(false)
+  })
+
+  // The guard doubles as an open-redirect guard: only a literal same-origin `/oauth2/`
+  // prefix triggers the full-page navigation, so protocol-relative and absolute-URL
+  // targets — the classic open-redirect vectors — never qualify.
+  it('rejects open-redirect vectors and lookalikes that are not a same-origin /oauth2/ path', () => {
+    expect(isOAuthAuthorizeRedirect('//evil.com/oauth2/authorize')).toBe(false) // protocol-relative
+    expect(isOAuthAuthorizeRedirect('https://evil.com/oauth2/authorize')).toBe(false) // absolute URL
+    expect(isOAuthAuthorizeRedirect('/evil/oauth2/authorize')).toBe(false) // nested, wrong prefix
+    expect(isOAuthAuthorizeRedirect('/oauth2')).toBe(false) // no trailing slash
+    expect(isOAuthAuthorizeRedirect('/oauth2evil/authorize')).toBe(false) // prefix without the slash boundary
   })
 })

@@ -693,7 +693,23 @@
       "forget": "Oublier les identifiants",
       "lastSync": "Dernière synchro",
       "approvalTimeout": "Approbation non reçue. Réessaie.",
-      "notConnected": "Non connecté"
+      "notConnected": "Non connecté",
+      "syncSuccess": "Tes comptes sont à jour.",
+      "phase": {
+        "checkingSession": "Vérification de ta session Revolut…",
+        "loggingIn": "Connexion à Revolut…",
+        "awaitingApproval": "Approuve la connexion sur ton app Revolut… ({{remaining}} s restantes)",
+        "harvesting": "Récupération de tes comptes… ({{count}} trouvés)"
+      },
+      "selection": {
+        "title": "Choisis les comptes à importer",
+        "selectAll": "Tout sélectionner",
+        "confirm": "Importer la sélection",
+        "importing": "Import en cours…",
+        "alreadyImported": "Déjà importé",
+        "transactions": "{{count}} transactions",
+        "allImported": "Tous tes comptes Revolut sont déjà importés."
+      }
     },
     "exchanges": {
       "title": "Exchanges",

@@ -1,6 +1,6 @@
 # Feature: Revolut Sidecar Connector
 
-> Last updated: 2026-07-03 (on-demand Camoufox model + per-member profile-lock serialization)
+> Last updated: 2026-07-03 (live sync progress + account selection + pocket sub-account nesting)
 > Status: ⚠️ Code shipped + unit-tested; NOT yet tested live end-to-end and the sidecar
 > Docker image is not yet built (`camoufox fetch` pulls ~700 MB Firefox at build time).
 
@@ -23,6 +23,21 @@ The `services/revolut-auth/` sidecar (Python + FastAPI + **Camoufox** = stealth 
   phone) then harvests. Returns `{accounts: [...]}` or `408 APPROVAL_TIMEOUT` / `401 SESSION_EXPIRED`
   / `409 SYNC_IN_PROGRESS` (a sync for that member is already running). The call can block up to
   ~5 min waiting for mobile approval.
+- `GET /progress/{memberId}` — the sidecar's live phase for the in-flight `/sync` (CHECKING_SESSION →
+  LOGGING_IN → AWAITING_APPROVAL w/ countdown → HARVESTING w/ accounts-found). Purely additive; it does
+  not change `/sync`'s control flow or error codes.
+
+**Live progress + selection (backend as a background job).** The backend no longer blocks the HTTP
+request for the whole sidecar call (which nginx killed at its 60 s `/api` read-timeout on a fresh login).
+`POST /api/revolut/sync` now starts a background **discovery** and returns `202` + an initial
+`SyncProgress`; the frontend polls `GET /api/revolut/sync/progress` (~1.5 s) — the adapter meanwhile polls
+the sidecar's `/progress` and relays phase/countdown/count — and once discovery is done the member
+**confirms** which accounts to import via `POST /api/revolut/sync/confirm`. Both flows are **additive**:
+- **Add account** offers only not-yet-imported accounts and confirms with `voluntary:true` (re-adding a
+  trash-deleted account resurrects it).
+- **Sync tab / Sync-all** is automatic: it refreshes imported accounts and auto-adds new pockets, confirming
+  with `voluntary:false` (a trash-deleted account is NOT resurrected). Deletion happens only via the trash
+  icon — never by deselecting. The unattended scheduler still uses the synchronous `sync(...)` path.
 
 Auth (established by live recon): the retail API needs the httpOnly session cookie (kept in the
 Camoufox profile) **plus** header `x-device-id` (= the JS-readable `revo_device_id` cookie) +
@@ -31,41 +46,59 @@ refreshed with `PUT /api/retail/token`. All API calls run in-page (`page.evaluat
 the app's own JS, which can't be hooked.
 
 Java maps pockets → `CHECKING` sub-accounts (parent = wallet), money-boxes → `SAVINGS`, dedups
-against Enable Banking by IBAN, and ingests transactions (feeds Budget). Credentials are stored
-encrypted (AES-256-GCM) only if the user ticks "remember"; otherwise they're passed per sync and not
-stored. Revolut is the **primary** source; Enable Banking stays as a fallback for the current account.
+against Enable Banking by IBAN, and ingests transactions (feeds Budget). **Pocket nesting:** the sidecar
+emits one synthetic **wallet parent** account per wallet (`externalId = wallet_id`, IBAN, `balance = sum
+of its same-currency children`); pockets/vaults carry `parentExternalId = wallet_id` and become children.
+This matters because `DashboardService`/`AccountsPage` **exclude children** (`parentAccountId != null`)
+from net-worth totals — the parent must carry the sum, or balances are lost. Cross-currency pockets stay
+top-level (the sidecar has no FX). Credentials are stored encrypted (AES-256-GCM) only if the user ticks
+"remember"; otherwise they're passed per sync and not stored. Revolut is the **primary** source; Enable
+Banking stays as a fallback for the current account.
 
 ### Key files
 
-- `services/revolut-auth/main.py` — sidecar: `/sync`, Camoufox launch, login auto-fill, harvest,
-  per-member serialization + stale profile-lock clearing.
-- `services/revolut-auth/tests/test_profile_lock.py` — regression tests (concurrent-sync 409 +
-  stale-lock removal); run `.venv/bin/python tests/test_profile_lock.py` (no pytest needed).
+- `services/revolut-auth/main.py` — sidecar: `/sync`, `/progress/{memberId}`, Camoufox launch, login
+  auto-fill, harvest + synthetic wallet-parent emission (`_with_wallet_parents`), per-member
+  serialization + stale profile-lock clearing.
+- `services/revolut-auth/tests/{test_profile_lock.py,test_harvest_shape.py}` — regression tests
+  (concurrent-sync 409, stale-lock removal, progress read-back; wallet-parent + same-currency sum);
+  run `.venv/bin/python tests/test_*.py` (anyio, no pytest).
 - `services/revolut-auth/Dockerfile` — Camoufox image (Firefox deps + Xvfb + `camoufox fetch`).
-- `services/revolut-auth/requirements.txt` — `camoufox[geoip]==0.4.11`, `playwright==1.55.0`.
-- `backend/.../port/RevolutPort.java` — `sync(phoneNumber, passcode, memberId)` + data records.
-- `backend/.../adapter/RevolutAdapter.java` — WebClient → sidecar `/sync` (330 s timeout); maps
-  sidecar `401`/`408`/`409` → `SESSION_EXPIRED`/`APPROVAL_TIMEOUT`/`SYNC_IN_PROGRESS`.
-- `backend/.../service/RevolutSyncService.java` — orchestration, IBAN-first upsert, remembered creds.
-- `backend/.../controller/RevolutController.java` — `/api/revolut/{sync,status,session}`.
-- `backend/.../model/RevolutSession.java` — per-member row: encrypted creds (optional), `rememberCredentials`, `lastSyncedAt`.
-- `backend/.../service/RevolutPocketService.java` — PSD2 pocket reconstruction; stands down once the sidecar has synced.
-- `backend/.../db/migration/V48__revolut_session.sql`, `V49__revolut_session_credentials.sql`.
-- `frontend/src/pages/sync/RevolutTab.tsx` — phone+passcode+remember form / one-click sync / "approve on phone" state.
-- `frontend/src/features/sync/{api.ts,hooks.ts}`, `types/api.ts`, `AddAccountModal.tsx`, `SyncAllModal.tsx`.
+- `backend/.../adapter/RevolutAdapter.java` — WebClient → sidecar `/sync` (330 s timeout) + a best-effort
+  `/progress` poll side-channel relayed into `SyncProgressService`; maps `401`/`408`/`409`.
+- `backend/.../service/sync/SyncProgressService.java` — per-member+provider live progress (single-flight
+  guard, phase/countdown/count, + Revolut's harvested-but-unpersisted discovery held in memory between
+  discover and confirm). `dto/{SyncProgress,DiscoveredRevolutAccount}.java`, `service/sync/{SyncProvider,
+  RevolutSyncPhase}.java`, `config/SyncExecutorConfig.java` (`revolutSyncExecutor`).
+- `backend/.../service/RevolutSyncService.java` — `sync` (synchronous, scheduler), `discover` (background
+  harvest), `confirmSync(selected, remember, voluntary)` (additive upsert of the selection), IBAN-first upsert.
+- `backend/.../controller/RevolutController.java` — `/api/revolut/{sync→202,sync/progress,sync/confirm,status,session}`.
+- `backend/.../service/DashboardService.java` — excludes pocket children from net-worth AND from the
+  history account-id set (the latter fixes a double-count once real pocket balances flow).
+- `backend/.../model/RevolutSession.java`; `db/migration/V48__revolut_session.sql`, `V49__…credentials.sql`.
+- `frontend/src/pages/sync/RevolutTab.tsx` — auto-sync tab (live phase → auto-confirm all, no selection).
+- `frontend/src/components/sync/RevolutSelectionCard.tsx` — Add-account selection (only not-imported;
+  child-check implies parent-check). `features/sync/revolut-phase.ts` — shared phase label.
+- `frontend/src/features/sync/{api.ts,hooks.ts}` (`useSyncProgress`/`useStartRevolutSync`/`useConfirmRevolutSync`),
+  `types/api.ts`, `components/shared/AddAccountModal.tsx` (RevolutWizard), `components/sync/SyncAllModal.tsx`.
 
 ### Flow
 
+Manual (Add account / Sync tab) — background job + poll + confirm:
 ```
-RevolutTab (phone+passcode+remember) → POST /api/revolut/sync
-  → RevolutSyncService.sync(memberId, phone, passcode, remember)
-      → RevolutAdapter → sidecar POST /sync
-            reuse live profile session ─ yes → harvest → accounts
-                                        └ no → auto-login (user approves push) → harvest → accounts
-      → upsertAccount (IBAN-first dedup vs Enable Banking) + ingestTransactions (→ Budget)
-      → upsert RevolutSession (lastSyncedAt; encrypted creds iff remember)
-SchedulerService.dailyBankSync → resyncIfSessionActive (only if creds remembered; reuses live session or no-ops)
+POST /api/revolut/sync ──202──> RevolutSyncService.discover(memberId, phone, passcode)  [revolutSyncExecutor]
+   frontend polls GET /sync/progress ◀── adapter polls sidecar /progress (phase/countdown/count)
+     → RevolutAdapter → sidecar POST /sync : reuse live session ─ yes → harvest
+                                             └ no → auto-login (user approves push) → harvest
+     → sidecar emits wallet parents + pockets/vaults as children → SyncProgressService.setDiscovered (in-memory)
+   discovery done → frontend picks accounts →
+POST /api/revolut/sync/confirm {selectedExternalIds, remember, voluntary}
+   → persistSelected (parents-first upsert, IBAN-first dedup vs Enable Banking, ingestTransactions → Budget;
+     additive — deselect never deletes; voluntary=true lifts trash tombstones, false leaves them)
+   → upsert RevolutSession (lastSyncedAt; encrypted creds iff remember)
 ```
+Unattended: `SchedulerService.dailyBankSync → resyncIfSessionActive` → synchronous `sync(...)` (imports
+everything; only if creds remembered; reuses live session or no-ops).
 
 ## Technical choices
 

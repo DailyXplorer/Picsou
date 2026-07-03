@@ -237,11 +237,49 @@ export function useRevolutStatus() {
   })
 }
 
-export function useSyncRevolut() {
+/**
+ * Poll the live progress of a background sync job (Revolut now, Trade Republic once
+ * Increment 2 wires up its `/sync/progress` endpoint). Auto-refetches every 1.5s while
+ * running, mirroring `useCategorizeAiStatus`.
+ */
+export function useSyncProgress(provider: 'revolut' | 'tr', enabled: boolean) {
+  return useQuery({
+    queryKey: ['sync', provider, 'progress'],
+    queryFn: provider === 'revolut' ? revolutApi.getSyncProgress : trApi.getSyncProgress,
+    enabled,
+    refetchInterval: (q) => (q.state.data?.running ? 1500 : false),
+  })
+}
+
+/** Start the async Revolut discovery job and seed the progress cache with the initial status. */
+export function useStartRevolutSync() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body?: { phoneNumber?: string; passcode?: string; remember?: boolean }) =>
-      revolutApi.sync(body ?? {}),
+    mutationFn: (body: { phoneNumber?: string; passcode?: string }) => revolutApi.startSync(body),
+    onSuccess: (progress) => {
+      queryClient.setQueryData(['sync', 'revolut', 'progress'], progress)
+    },
+  })
+}
+
+/**
+ * Persist the selected discovered accounts (and optionally remember credentials).
+ * `voluntary` distinguishes an explicit Add-account re-selection (may resurrect a
+ * soft-deleted account) from an auto-sync confirm (tombstones stay respected) — see
+ * `RevolutSyncService.confirmSync` on the backend.
+ */
+export function useConfirmRevolutSync() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      selectedExternalIds,
+      remember,
+      voluntary,
+    }: {
+      selectedExternalIds: string[]
+      remember: boolean
+      voluntary: boolean
+    }) => revolutApi.confirmSync(selectedExternalIds, remember, voluntary),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.revolut() })
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
