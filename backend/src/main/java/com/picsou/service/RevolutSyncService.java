@@ -158,6 +158,11 @@ public class RevolutSyncService {
                     "The mobile approval was not confirmed in time. Please try again and approve the " +
                         "push notification on your phone.");
             }
+            if ("SYNC_IN_PROGRESS".equals(e.getMessage())) {
+                throw new SyncException(
+                    "A Revolut sync is already running for this account. Please wait for it to finish " +
+                        "before starting another.");
+            }
             throw e;
         }
     }

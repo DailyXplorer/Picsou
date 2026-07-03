@@ -66,6 +66,10 @@ public class RevolutAdapter implements RevolutPort {
                     log.warn("revolut-auth sidecar reports approval timeout (408) for member {}", memberId);
                     return Mono.error(new SyncException("APPROVAL_TIMEOUT"));
                 }
+                if (ex.getStatusCode().value() == 409) {
+                    log.warn("revolut-auth sidecar reports a sync already in progress (409) for member {}", memberId);
+                    return Mono.error(new SyncException("SYNC_IN_PROGRESS"));
+                }
                 log.error("revolut-auth sidecar /sync failed ({}) : {}",
                     ex.getStatusCode(), ex.getResponseBodyAsString());
                 return Mono.error(new SyncException(

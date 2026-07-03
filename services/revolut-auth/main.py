@@ -76,10 +76,37 @@ def _has_profile(member_id: str) -> bool:
     return os.path.isdir(path) and bool(os.listdir(path))
 
 
+# Firefox writes these into a profile to guard against two instances opening it at
+# once. A browser that exits uncleanly (killed mid-login, container restart, OOM)
+# leaves them behind, and Firefox then refuses to open the profile forever after with
+# "Firefox is already running, but is not responding". `lock` is a symlink to
+# <ip>:+<pid>; `.parentlock` is an fcntl-locked file.
+_FIREFOX_LOCK_FILES = ("lock", ".parentlock")
+
+
+def _clear_stale_locks(member_id: str) -> None:
+    """Remove leftover Firefox profile-lock files before launching Camoufox.
+
+    Only ever called while holding the member's async lock (see `_member_lock`), so no
+    live in-process browser can own these files -- any present are stale from a browser
+    that died, and are safe to delete. This is what lets the next /sync recover instead
+    of the profile staying wedged until someone clears the volume by hand."""
+    profile = _profile_dir(member_id)
+    for name in _FIREFOX_LOCK_FILES:
+        try:
+            os.remove(os.path.join(profile, name))  # removes the `lock` symlink itself, not its target
+        except FileNotFoundError:
+            pass
+        except OSError as exc:  # noqa: BLE001
+            log.warning("could not clear stale lock %s/%s: %s", profile, name, exc)
+
+
 def _camoufox(member_id: str, headless: bool):
     """A persistent Camoufox context bound to the member's profile dir. os=linux +
     geoip keep the fingerprint consistent with the host; humanize adds human-like
-    cursor motion. Camoufox manages UA/navigator/canvas/WebGL itself."""
+    cursor motion. Camoufox manages UA/navigator/canvas/WebGL itself. Stale profile
+    locks are cleared first so a previously-killed browser doesn't wedge this launch."""
+    _clear_stale_locks(member_id)
     return AsyncCamoufox(headless=headless, humanize=True, os="linux", geoip=True,
                          persistent_context=True, user_data_dir=_profile_dir(member_id))
 
@@ -406,6 +433,28 @@ async def _fill_passcode(page, passcode: str) -> None:
             return
 
 
+# ─── Per-member serialization ───────────────────────────────────────────────
+# A persistent Camoufox profile can be opened by only ONE Firefox process at a time.
+# Concurrent /sync calls for the same member (a double-click, or the daily scheduler
+# overlapping a manual sync) would otherwise launch two browsers on the same profile
+# and the second dies with "Firefox is already running". The sidecar runs as a single
+# uvicorn worker (one event loop), so an in-process asyncio.Lock per member suffices.
+_member_locks: Dict[str, asyncio.Lock] = {}
+
+
+def _member_lock(member_id: str) -> asyncio.Lock:
+    lock = _member_locks.get(member_id)
+    if lock is None:
+        lock = asyncio.Lock()  # safe to create lazily: no await between get and set
+        _member_locks[member_id] = lock
+    return lock
+
+
+def sync_in_progress() -> JSONResponse:
+    """Flat 409 the backend parses (mirrors session_expired()'s flat 401)."""
+    return JSONResponse(status_code=409, content={"error": "SYNC_IN_PROGRESS"})
+
+
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
 class SyncRequest(BaseModel):
@@ -440,38 +489,49 @@ async def sync(req: SyncRequest):
     mobile approval). If the session is dead/absent, does an automated login (Camoufox
     fills phone+passcode; the user approves the push on their phone), then harvests.
     Credentials are used for this call only; the sidecar never stores them (Java decides
-    whether to remember them, encrypted)."""
-    reused = await _harvest_from_profile(req.memberId)
-    if reused is not None:
-        log.info("synced %d accounts (reused session) for member %s",
-                 len(reused["accounts"]), req.memberId)
-        return reused
+    whether to remember them, encrypted).
 
-    async with _camoufox(req.memberId, headless=False) as ctx:  # headful login (Xvfb in the image)
-        page = await ctx.new_page()
-        await page.goto(APP_URL, wait_until="domcontentloaded", timeout=45000)
-        await page.wait_for_timeout(3000)
-        if "passcode" not in page.url:
-            await _fill_phone(page, req.phoneNumber)
-        if "passcode" in page.url or await page.get_by_role("textbox").count() >= 6:
-            await _fill_passcode(page, req.passcode)
+    Serialized per member: a sync already in flight for this member holds the profile,
+    so a second concurrent call fast-fails with 409 rather than colliding on the profile
+    lock (which is what surfaced as a 500)."""
+    lock = _member_lock(req.memberId)
+    # locked() + `async with` is atomic here: single event loop, no await in between.
+    if lock.locked():
+        log.info("sync already in progress for member %s -- rejecting", req.memberId)
+        return sync_in_progress()
 
-        log.info("login: waiting up to %ss for mobile approval", ENROLMENT_APPROVE_WAIT_S)
-        approved = False
-        for _ in range(ENROLMENT_APPROVE_WAIT_S * 1000 // POLL_MS):
-            if await _logged_in(page):
-                approved = True
-                break
-            await page.wait_for_timeout(POLL_MS)
-        if not approved:
-            return JSONResponse(status_code=408, content={"error": "APPROVAL_TIMEOUT"})
+    async with lock:
+        reused = await _harvest_from_profile(req.memberId)
+        if reused is not None:
+            log.info("synced %d accounts (reused session) for member %s",
+                     len(reused["accounts"]), req.memberId)
+            return reused
 
-        device_id = await _device_id(ctx)
-        await _settle(page)
-        result = await harvest_accounts(page, device_id)
-        log.info("synced %d accounts (fresh login) for member %s",
-                 len(result["accounts"]), req.memberId)
-        return result
+        async with _camoufox(req.memberId, headless=False) as ctx:  # headful login (Xvfb in the image)
+            page = await ctx.new_page()
+            await page.goto(APP_URL, wait_until="domcontentloaded", timeout=45000)
+            await page.wait_for_timeout(3000)
+            if "passcode" not in page.url:
+                await _fill_phone(page, req.phoneNumber)
+            if "passcode" in page.url or await page.get_by_role("textbox").count() >= 6:
+                await _fill_passcode(page, req.passcode)
+
+            log.info("login: waiting up to %ss for mobile approval", ENROLMENT_APPROVE_WAIT_S)
+            approved = False
+            for _ in range(ENROLMENT_APPROVE_WAIT_S * 1000 // POLL_MS):
+                if await _logged_in(page):
+                    approved = True
+                    break
+                await page.wait_for_timeout(POLL_MS)
+            if not approved:
+                return JSONResponse(status_code=408, content={"error": "APPROVAL_TIMEOUT"})
+
+            device_id = await _device_id(ctx)
+            await _settle(page)
+            result = await harvest_accounts(page, device_id)
+            log.info("synced %d accounts (fresh login) for member %s",
+                     len(result["accounts"]), req.memberId)
+            return result
 
 
 @app.get("/health")
