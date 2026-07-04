@@ -61,4 +61,22 @@ struct GoalProgress: Decodable, Equatable, Identifiable {
     let targetAmount: Decimal?
     let currentTotal: Decimal?
     let percentComplete: Double?
+    let deadline: String?
+    let monthlyNeeded: Decimal?
+    let monthsLeft: Int?
+    let isOnTrack: Bool?
+
+    var remaining: Decimal? {
+        guard let targetAmount, let currentTotal else { return nil }
+        return max(0, targetAmount - currentTotal)
+    }
+
+    /// "déc. 2026" from an ISO "yyyy-MM-dd" deadline.
+    var deadlineLabel: String? {
+        guard let deadline, let date = DateParsing.localDate.date(from: deadline) else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "fr_FR")
+        f.dateFormat = "MMM yyyy"
+        return f.string(from: date)
+    }
 }

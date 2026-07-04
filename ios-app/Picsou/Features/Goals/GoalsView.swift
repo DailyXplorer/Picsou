@@ -45,7 +45,8 @@ private struct GoalsContent: View {
 
     private func loaded(_ goals: [GoalProgress]) -> some View {
         let totalSaved = goals.reduce(Decimal(0)) { $0 + ($1.currentTotal ?? 0) }
-        return ScrollView {
+        return NavigationStack {
+          ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text("Objectifs")
@@ -65,13 +66,16 @@ private struct GoalsContent: View {
                     .padding(.bottom, 4)
 
                 ForEach(goals) { goal in
-                    GoalCard(goal: goal)
+                    NavigationLink { GoalDetailView(goal: goal) } label: { GoalCard(goal: goal) }
+                        .buttonStyle(.plain)
                 }
                 DashedAddCard(title: "Nouvel objectif")
             }
             .padding(.horizontal, 16)
             .padding(.top, 4)
             .padding(.bottom, 24)
+          }
+          .toolbar(.hidden, for: .navigationBar)
         }
     }
 }
