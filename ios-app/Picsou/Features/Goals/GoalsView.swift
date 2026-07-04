@@ -30,7 +30,9 @@ private enum GoalsSegment: Hashable { case goals, debts }
 
 private struct GoalsDebtsContent: View {
     let vm: DashboardViewModel
+    @Environment(AppState.self) private var appState
     @State private var segment: GoalsSegment = .goals
+    @State private var showGoalForm = false
 
     var body: some View {
         switch vm.state {
@@ -67,6 +69,11 @@ private struct GoalsDebtsContent: View {
                 .padding(.bottom, 24)
             }
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showGoalForm) {
+                GoalFormView(dataSource: appState.makeGoalsDataSource(),
+                             onSaved: { Task { await vm.load() } },
+                             onAuthExpired: { appState.signOut() })
+            }
         }
     }
 
@@ -82,7 +89,8 @@ private struct GoalsDebtsContent: View {
             NavigationLink { GoalDetailView(goal: goal) } label: { GoalCard(goal: goal) }
                 .buttonStyle(.plain)
         }
-        DashedAddCard(title: "Nouvel objectif")
+        Button { showGoalForm = true } label: { DashedAddCard(title: "Nouvel objectif") }
+            .buttonStyle(.plain)
     }
 
     // MARK: Debts

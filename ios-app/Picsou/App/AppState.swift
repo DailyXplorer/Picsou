@@ -76,6 +76,11 @@ final class AppState {
         isDemo ? DemoAccountsDataSource() : LiveAccountsDataSource(api: api)
     }
 
+    /// Goals write-side data source: mock in the demo build, the live API otherwise.
+    func makeGoalsDataSource() -> GoalsDataSource {
+        isDemo ? DemoGoalsDataSource() : LiveGoalsDataSource(api: api)
+    }
+
     /// Validate and persist the instance URL, then advance out of `.unconfigured`.
     func configureServer(_ raw: String) async throws {
         try await serverConfig.validateAndSave(raw, session: session)

@@ -189,6 +189,16 @@ enum DemoData {
                     accountId: accountId, accountName: account(id: accountId).name)
     }
 
+    static func accountsList() -> [Account] {
+        (1...assets.count).map { account(id: Int64($0)) }
+    }
+
+    static func makeGoal(from request: GoalRequest, id: Int64) -> GoalProgress {
+        GoalProgress(id: id, name: request.name, targetAmount: request.targetAmount,
+                     currentTotal: 0, percentComplete: 0, deadline: request.deadline,
+                     monthlyNeeded: nil, monthsLeft: nil, isOnTrack: false)
+    }
+
     private static func provider(for type: String) -> String {
         switch type {
         case "PEA", "COMPTE_TITRES": return "Bourse Direct"
