@@ -13,7 +13,7 @@ struct RootView: View {
         case .locked:
             LockView()
         case .ready:
-            DashboardView()
+            MainTabView()
         }
     }
 }

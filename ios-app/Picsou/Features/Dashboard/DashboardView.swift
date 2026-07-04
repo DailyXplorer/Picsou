@@ -76,7 +76,6 @@ private struct DashboardContent: View {
             .padding(.bottom, 24)
         }
         .refreshable { await vm.load() }
-        .safeAreaInset(edge: .bottom) { PicsouTabBar() }
     }
 
     private var header: some View {

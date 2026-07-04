@@ -30,4 +30,23 @@ enum AccountType: String {
         case .other: return "Autre"
         }
     }
+
+    /// Coarse grouping used by the accounts screen (banking / investment / real estate / other).
+    var category: String {
+        switch self {
+        case .checking, .savings, .lep: return "Banque"
+        case .pea, .compteTitres, .crypto: return "Investissement"
+        case .realEstate: return "Immobilier"
+        case .loan, .other: return "Autre"
+        }
+    }
+
+    var categoryRank: Int {
+        switch category {
+        case "Banque": return 0
+        case "Investissement": return 1
+        case "Immobilier": return 2
+        default: return 3
+        }
+    }
 }
