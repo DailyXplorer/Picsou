@@ -7,7 +7,7 @@ struct RootView: View {
     var body: some View {
         switch appState.phase {
         case .unconfigured:
-            ServerSetupView()
+            OnboardingFlow()
         case .loggedOut:
             LoginView()
         case .locked:
