@@ -195,6 +195,17 @@ enum DemoData {
         (1...assets.count).map { account(id: Int64($0)) }
     }
 
+    static func familyMembers() -> [FamilyMember] {
+        [
+            FamilyMember(id: 1, displayName: "Chloé", avatarColor: "#6366F1", managed: false,
+                         hasLogin: true, activated: true, loginName: "chloe", mfaEnabled: true),
+            FamilyMember(id: 2, displayName: "Alex", avatarColor: "#10B981", managed: false,
+                         hasLogin: true, activated: true, loginName: "alex", mfaEnabled: false),
+            FamilyMember(id: 3, displayName: "Léa", avatarColor: "#F59E0B", managed: true,
+                         hasLogin: false, activated: false, loginName: nil, mfaEnabled: false),
+        ]
+    }
+
     static func accessKeys() -> [AccessKey] {
         [
             AccessKey(id: 1, name: "Claude Desktop", keyPrefix: "pk_a1b2c3d4",

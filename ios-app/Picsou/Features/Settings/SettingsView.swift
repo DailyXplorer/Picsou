@@ -27,7 +27,9 @@ struct SettingsView: View {
                         SettingsRowLabel(icon: "lock.shield.fill", title: "Sécurité & 2FA")
                     }.buttonStyle(.plain)
                     rowDivider
-                    SettingsRow(icon: "person.2.fill", title: "Partage famille")
+                    NavigationLink { FamilyView() } label: {
+                        SettingsRowLabel(icon: "person.2.fill", title: "Partage famille")
+                    }.buttonStyle(.plain)
                 }
 
                 SettingsCard {
