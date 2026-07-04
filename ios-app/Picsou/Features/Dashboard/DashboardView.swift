@@ -5,6 +5,7 @@ import SwiftUI
 struct DashboardView: View {
     @Environment(AppState.self) private var appState
     @State private var vm: DashboardViewModel?
+    var onSeeAllAccounts: () -> Void = {}
 
     var body: some View {
         ZStack {
@@ -12,7 +13,7 @@ struct DashboardView: View {
             if let vm {
                 // Observe the view model in a child that holds it non-optionally, so state changes
                 // (loading → loaded) reliably re-render — an optional in the parent does not track.
-                DashboardContent(vm: vm, isDemo: appState.isDemo, onSignOut: { appState.signOut() })
+                DashboardContent(vm: vm, isDemo: appState.isDemo, onSignOut: { appState.signOut() }, onSeeAllAccounts: onSeeAllAccounts)
             } else {
                 ProgressView().controlSize(.large)
             }
@@ -34,6 +35,7 @@ private struct DashboardContent: View {
     let vm: DashboardViewModel
     let isDemo: Bool
     let onSignOut: () -> Void
+    let onSeeAllAccounts: () -> Void
 
     var body: some View {
         switch vm.state {
@@ -50,7 +52,8 @@ private struct DashboardContent: View {
 
     @ViewBuilder
     private func loaded(_ data: DashboardResponse) -> some View {
-        ScrollView {
+        NavigationStack {
+          ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
                 HeroNetWorthCard(
@@ -74,8 +77,10 @@ private struct DashboardContent: View {
             .padding(.horizontal, 16)
             .padding(.top, 4)
             .padding(.bottom, 24)
+          }
+          .refreshable { await vm.load() }
+          .toolbar(.hidden, for: .navigationBar)
         }
-        .refreshable { await vm.load() }
     }
 
     private var header: some View {
@@ -112,9 +117,12 @@ private struct DashboardContent: View {
                 .frame(minWidth: 20, minHeight: 20)
                 .background(Theme.muted, in: Capsule())
             Spacer()
-            Text("Tout voir")
-                .font(Theme.font(13, .semibold))
-                .foregroundStyle(Theme.brand)
+            Button(action: onSeeAllAccounts) {
+                Text("Tout voir")
+                    .font(Theme.font(13, .semibold))
+                    .foregroundStyle(Theme.brand)
+            }
+            .buttonStyle(.plain)
         }
     }
 

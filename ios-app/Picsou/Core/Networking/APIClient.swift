@@ -20,15 +20,33 @@ final class APIClient: @unchecked Sendable {
     }
 
     func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
-        let data = try await requestData(path: path, query: query)
-        do {
-            return try JSONDecoder.picsou.decode(T.self, from: data)
-        } catch {
-            throw APIError.decoding(String(describing: error))
-        }
+        try decode(try await requestData(path: path, query: query, method: "GET", body: nil))
     }
 
-    private func requestData(path: String, query: [URLQueryItem]) async throws -> Data {
+    func post<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
+        try decode(try await requestData(path: path, query: [], method: "POST", body: encode(body)))
+    }
+
+    func put<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
+        try decode(try await requestData(path: path, query: [], method: "PUT", body: encode(body)))
+    }
+
+    @discardableResult
+    func delete(_ path: String) async throws -> Data {
+        try await requestData(path: path, query: [], method: "DELETE", body: nil)
+    }
+
+    private func decode<T: Decodable>(_ data: Data) throws -> T {
+        do { return try JSONDecoder.picsou.decode(T.self, from: data) }
+        catch { throw APIError.decoding(String(describing: error)) }
+    }
+
+    private func encode<B: Encodable>(_ body: B) throws -> Data {
+        do { return try JSONEncoder.picsou.encode(body) }
+        catch { throw APIError.decoding(String(describing: error)) }
+    }
+
+    private func requestData(path: String, query: [URLQueryItem], method: String, body: Data?) async throws -> Data {
         guard let base = serverConfig.baseURL else { throw APIError.notConfigured }
         guard var comps = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false) else {
             throw APIError.invalidURL
@@ -38,11 +56,11 @@ final class APIClient: @unchecked Sendable {
 
         do {
             let token = try await validAccessToken()
-            let (data, response) = try await send(url: url, bearer: token)
+            let (data, response) = try await send(url: url, bearer: token, method: method, body: body)
             if (response as? HTTPURLResponse)?.statusCode == 401 {
                 // Expired/rejected token — refresh once and retry.
                 let fresh = try await refresher.forceRefresh()
-                let (retryData, retryResponse) = try await send(url: url, bearer: fresh.accessToken)
+                let (retryData, retryResponse) = try await send(url: url, bearer: fresh.accessToken, method: method, body: body)
                 return try validate(retryData, retryResponse)
             }
             return try validate(data, response)
@@ -52,10 +70,15 @@ final class APIClient: @unchecked Sendable {
         }
     }
 
-    private func send(url: URL, bearer: String) async throws -> (Data, URLResponse) {
+    private func send(url: URL, bearer: String, method: String, body: Data?) async throws -> (Data, URLResponse) {
         var request = URLRequest(url: url)
+        request.httpMethod = method
         request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         do {
             return try await session.data(for: request)
         } catch {

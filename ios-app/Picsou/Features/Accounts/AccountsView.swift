@@ -46,7 +46,8 @@ private struct AccountsContent: View {
     private func loaded(_ data: DashboardResponse) -> some View {
         let groups = grouped(data.distribution)
         let total = data.distribution.reduce(Decimal(0)) { $0 + $1.balanceEur }
-        return ScrollView {
+        return NavigationStack {
+          ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 HStack {
                     Text("Comptes")
@@ -78,6 +79,8 @@ private struct AccountsContent: View {
             .padding(.horizontal, 16)
             .padding(.top, 4)
             .padding(.bottom, 24)
+          }
+          .toolbar(.hidden, for: .navigationBar)
         }
     }
 

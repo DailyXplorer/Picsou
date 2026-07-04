@@ -8,7 +8,7 @@ struct MainTabView: View {
         ZStack {
             Theme.background.ignoresSafeArea()
             switch tab {
-            case .home: DashboardView()
+            case .home: DashboardView(onSeeAllAccounts: { tab = .assets })
             case .assets: AccountsView()
             case .goals: GoalsView()
             case .settings: SettingsView()

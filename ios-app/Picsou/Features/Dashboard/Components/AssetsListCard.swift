@@ -11,7 +11,12 @@ struct AssetsListCard: View {
                 if index > 0 {
                     Rectangle().fill(Theme.border).frame(height: 1)
                 }
-                row(item)
+                NavigationLink {
+                    AccountDetailView(accountId: item.accountId, accountName: item.name)
+                } label: {
+                    row(item)
+                }
+                .buttonStyle(.plain)
             }
         }
         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))

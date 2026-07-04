@@ -97,4 +97,105 @@ enum DemoData {
         case .year, .all: return 12
         }
     }
+
+    // MARK: - Account detail / transactions (Slice 1)
+
+    private static let loanId: Int64 = 99
+
+    static func account(id: Int64) -> Account {
+        if id == loanId {
+            return Account(id: loanId, name: "Prêt immobilier", accountType: "LOAN",
+                           provider: "Crédit Agricole", currency: "EUR",
+                           currentBalance: -18000, currentBalanceEur: -18000,
+                           lastSyncedAt: "2026-07-03T08:05:00Z", manual: false, color: "#DC2626",
+                           ticker: nil, parentAccountId: nil,
+                           debt: DebtInfo(borrowedAmount: 31000, interestRate: 1.9, monthlyPayment: 650,
+                                          lenderName: "Crédit Agricole", startDate: "2022-01-01", endDate: "2045-01-01"))
+        }
+        let index = max(0, min(Int(id) - 1, assets.count - 1))
+        let a = assets[index]
+        return Account(id: id, name: a.name, accountType: a.type,
+                       provider: provider(for: a.type), currency: "EUR",
+                       currentBalance: Decimal(a.balance), currentBalanceEur: Decimal(a.balance),
+                       lastSyncedAt: "2026-07-03T08:05:00Z", manual: false, color: a.color,
+                       ticker: nil, parentAccountId: nil, debt: nil)
+    }
+
+    static func holdings(id: Int64) -> [Holding] {
+        switch id {
+        case 2: return [
+            Holding(ticker: "CW8", name: "Amundi MSCI World", quantity: 42,
+                    currentValueEur: 9800, pnlEur: 1450, pnlPercent: 17.4, priceUpdatedAt: "2026-07-03T16:00:00Z"),
+            Holding(ticker: "ESE", name: "BNP S&P 500", quantity: 18,
+                    currentValueEur: 5700, pnlEur: 820, pnlPercent: 16.8, priceUpdatedAt: "2026-07-03T16:00:00Z"),
+        ]
+        case 4: return [
+            Holding(ticker: "BTC", name: "Bitcoin", quantity: 0.14,
+                    currentValueEur: 8900, pnlEur: 2100, pnlPercent: 30.9, priceUpdatedAt: "2026-07-03T16:00:00Z"),
+        ]
+        default: return []
+        }
+    }
+
+    static func transactions(id: Int64) -> [Transaction] {
+        let rows: [(String, Double, String?, String?)] = [
+            ("Carrefour Market", -54.30, "Alimentation", "Carrefour"),
+            ("Salaire", 2450.00, "Revenus", nil),
+            ("Netflix", -13.49, "Abonnements", "Netflix"),
+            ("SNCF", -78.00, "Transport", "SNCF"),
+            ("Boulangerie du coin", -6.80, "Alimentation", nil),
+            ("EDF", -89.00, "Énergie", "EDF"),
+            ("Amazon", -34.99, "Shopping", "Amazon"),
+            ("Pharmacie Centrale", -12.40, "Santé", nil),
+        ]
+        let name = account(id: id).name
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date()
+        return rows.enumerated().map { i, row in
+            let date = calendar.date(byAdding: .day, value: -i * 2, to: now) ?? now
+            return Transaction(id: Int64(i + 1), date: DateParsing.localDate.string(from: date),
+                               description: row.0, amount: Decimal(row.1), nativeCurrency: "EUR",
+                               manual: false, txType: row.1 < 0 ? "WITHDRAWAL" : "DEPOSIT",
+                               categoryName: row.2, merchantLabel: row.3, counterparty: nil,
+                               accountId: id, accountName: name)
+        }
+    }
+
+    static func loanSchedule() -> LoanSchedule {
+        var remaining = 18000.0
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date()
+        var rows: [LoanInstallment] = []
+        for n in 0..<12 {
+            let interest = remaining * 0.019 / 12
+            let capital = 650 - interest
+            remaining -= capital
+            let date = calendar.date(byAdding: .month, value: n, to: now) ?? now
+            rows.append(LoanInstallment(number: n + 1, date: DateParsing.localDate.string(from: date),
+                                        capital: Decimal(capital), interest: Decimal(interest),
+                                        totalPayment: 650, remainingBalance: Decimal(max(0, remaining))))
+        }
+        return LoanSchedule(
+            summary: LoanSummary(monthlyPayment: 650, remainingBalance: 18000, capitalRepaidPct: 42.5,
+                                 endDate: "2045-01-01", paidInstallments: 102, totalInstallments: 240),
+            schedule: rows)
+    }
+
+    static func makeTransaction(from request: TransactionRequest, accountId: Int64) -> Transaction {
+        Transaction(id: Int64.random(in: 100_000...999_999), date: request.date,
+                    description: request.description, amount: request.amount,
+                    nativeCurrency: request.currency ?? "EUR", manual: true, txType: request.txType,
+                    categoryName: nil, merchantLabel: nil, counterparty: nil,
+                    accountId: accountId, accountName: account(id: accountId).name)
+    }
+
+    private static func provider(for type: String) -> String {
+        switch type {
+        case "PEA", "COMPTE_TITRES": return "Bourse Direct"
+        case "CRYPTO": return "Ledger"
+        case "SAVINGS", "LEP": return "Crédit Agricole"
+        case "CHECKING": return "Boursorama"
+        default: return "Manuel"
+        }
+    }
 }

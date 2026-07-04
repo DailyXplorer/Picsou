@@ -8,3 +8,11 @@ extension JSONDecoder {
         JSONDecoder()
     }()
 }
+
+extension JSONEncoder {
+    /// Shared encoder for API request bodies. camelCase keys; dates are encoded as Strings by the
+    /// request models, and `Decimal` money serializes as a JSON number.
+    static let picsou: JSONEncoder = {
+        JSONEncoder()
+    }()
+}
