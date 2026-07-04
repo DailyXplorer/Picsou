@@ -114,16 +114,16 @@ Sets `access_token` and `refresh_token` HttpOnly cookies.
 
 #### `POST /api/auth/refresh`
 
-- **Auth:** Public (reads `refresh_token` cookie)
+- **Auth:** Public (reads `refresh_token` cookie; also honors a valid `persistent_token` "Remember Me" cookie via `PersistentTokenAuthFilter`)
 - **Body:** none
 
 **Response `200`:**
 ```json
-{ "username": "string" }
+{ "username": "string", "role": "string", "memberId": 0, "displayName": "string" }
 ```
-Rotates both cookies (old refresh token is invalidated).
+Rotates `access_token`/`refresh_token` (old refresh token is invalidated) whenever a valid `refresh_token` is presented, **or** when a still-valid `persistent_token` re-authenticates the request in place of a missing/invalid one (this is what lets "Remember Me" survive a tab/browser restart, since the frontend probes this endpoint on mount instead of trusting a stale client-side flag). `access_token`/`refresh_token` are reissued as **persistent cookies** (matching `persistent_token`'s remaining lifetime) only when the request actually carries a `persistent_token` owned by the same user — otherwise they're reissued as session cookies, so a non-"Remember Me" login can't outlive the browser via this endpoint. A Remember-Me `refresh_token` is bound to its persistent-session `series_id` (a `sid` claim); if that session has been revoked (`/auth/sessions`) or has passed its 90-day cap, the refresh is refused even though the JWT itself is still valid, so revoking a device actually logs it out at its next refresh.
 
-**Errors:** 401 (missing or invalid refresh token)
+**Errors:** 401 (no refresh token and no valid persistent_token; or the presented session's series has been revoked/expired — `"Session revoked"`)
 
 ---
 

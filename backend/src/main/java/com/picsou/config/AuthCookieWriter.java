@@ -33,9 +33,16 @@ public class AuthCookieWriter {
         this.jwtUtil = jwtUtil;
     }
 
-    public void setAccessAndRefresh(HttpServletResponse response, String accessToken, String refreshToken) {
-        addCookie(response, ACCESS_COOKIE, accessToken, (int) jwtUtil.getAccessExpirySeconds());
-        addCookie(response, REFRESH_COOKIE, refreshToken, (int) jwtUtil.getRefreshExpirySeconds());
+    /**
+     * Sets {@code access_token}/{@code refresh_token}. When {@code persistent} is false
+     * (no "Remember Me"), both are written as browser-session cookies (no {@code Max-Age}
+     * attribute at all) so they cannot outlive the browser being closed — otherwise a
+     * 7-day refresh_token would let a non-"Remember Me" login be silently resurrected
+     * after the tab/browser was closed (e.g. via {@code POST /auth/refresh}).
+     */
+    public void setAccessAndRefresh(HttpServletResponse response, String accessToken, String refreshToken, boolean persistent) {
+        addCookie(response, ACCESS_COOKIE, accessToken, persistent ? (int) jwtUtil.getAccessExpirySeconds() : null);
+        addCookie(response, REFRESH_COOKIE, refreshToken, persistent ? (int) jwtUtil.getRefreshExpirySeconds() : null);
     }
 
     public void setMfaChallenge(HttpServletResponse response, String challengeToken) {
@@ -76,10 +83,11 @@ public class AuthCookieWriter {
         addCookie(response, PERSISTENT_COOKIE, "", 0);
     }
 
-    private void addCookie(HttpServletResponse response, String name, String value, int maxAge) {
+    /** {@code maxAge == null} omits the Max-Age attribute entirely, producing a browser-session cookie. */
+    private void addCookie(HttpServletResponse response, String name, String value, Integer maxAge) {
         String cookieHeader = String.format(
-            "%s=%s; Max-Age=%d; Path=/; HttpOnly; SameSite=Lax%s",
-            name, value, maxAge, secureCookieProvider.isSecure() ? "; Secure" : ""
+            "%s=%s;%s Path=/; HttpOnly; SameSite=Lax%s",
+            name, value, maxAge != null ? " Max-Age=" + maxAge + ";" : "", secureCookieProvider.isSecure() ? "; Secure" : ""
         );
         response.addHeader("Set-Cookie", cookieHeader);
     }

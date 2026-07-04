@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ACCOUNT_COLORS } from '@/lib/constants'
+import { ACCOUNT_COLORS, ACCOUNT_TYPES } from '@/lib/constants'
 import { formatDate } from '@/lib/utils'
 import { extractErrorMessage, getErrorStatus, getErrorDetail } from '@/lib/errors'
 import { Button } from '@/components/ui/button'
@@ -694,9 +694,9 @@ function MappingCard({
                 value={mapping.newAccount.type}
                 onChange={(e) => onNewAccountField('type', e.target.value)}
               >
-                {(['CHECKING', 'SAVINGS', 'LEP', 'PEA', 'COMPTE_TITRES', 'CRYPTO', 'OTHER'] as const).map((type) => (
-                  <option key={type} value={type}>
-                    {t(`accountTypes.${type === 'COMPTE_TITRES' ? 'compteTitres' : type.toLowerCase()}`)}
+                {ACCOUNT_TYPES.map(({ value, labelKey }) => (
+                  <option key={value} value={value}>
+                    {t(labelKey)}
                   </option>
                 ))}
               </select>

@@ -35,6 +35,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -110,7 +111,7 @@ class AuthControllerTest {
         assertThat(res.getBody()).isInstanceOf(ProblemDetail.class);
         assertThat(((ProblemDetail) res.getBody()).getDetail()).containsIgnoringCase("not activated");
         // No session must be established for a deactivated account.
-        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any());
+        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
         verify(mfaService, never()).isEnabled(any());
     }
 
@@ -130,7 +131,7 @@ class AuthControllerTest {
             .contains("ADMIN_RECOVERY_ENABLED=false");
         // Hint fires before (and regardless of) the password check — no oracle, no cookies.
         verify(passwordEncoder, never()).matches(any(), any());
-        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any());
+        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
@@ -146,7 +147,7 @@ class AuthControllerTest {
             new LoginRequest("alice", "pw", false), httpReq, httpRes);
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
-        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc", "ref");
+        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc", "ref", false);
     }
 
     @Test
@@ -170,7 +171,7 @@ class AuthControllerTest {
         // caller stays unauthenticated until the second factor is verified.
         verify(cookieWriter).clearSessionCookies(httpRes);
         verify(cookieWriter).setMfaChallenge(httpRes, "chal");
-        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any());
+        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
@@ -189,7 +190,7 @@ class AuthControllerTest {
             new LoginRequest("alice", "pw", false), httpReq, httpRes);
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
-        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc", "ref");
+        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc", "ref", false);
         // The foreign Remember-Me cookie is cleared so it can't re-mint user 99's session.
         verify(cookieWriter).clearPersistent(httpRes);
     }
@@ -209,7 +210,7 @@ class AuthControllerTest {
 
         controller.login(new LoginRequest("alice", "pw", false), httpReq, httpRes);
 
-        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc", "ref");
+        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc", "ref", false);
         verify(cookieWriter, never()).clearPersistent(httpRes);
     }
 
@@ -260,7 +261,7 @@ class AuthControllerTest {
             .allSatisfy(h -> assertThat(h).startsWith("$2a$12$"));
 
         // ...and neither failing path leaks a session.
-        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any());
+        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
@@ -299,7 +300,7 @@ class AuthControllerTest {
         assertThat(hashUsed.getValue()).startsWith("$2a$12$");
 
         // No session is established, and a credential-less profile never reaches MFA.
-        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any());
+        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
         verify(mfaService, never()).isEnabled(any());
     }
 
@@ -354,7 +355,7 @@ class AuthControllerTest {
         // frontend keeps the user on the page to retry instead of bouncing to /login.
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         verify(cookieWriter, never()).clearMfaChallenge(httpRes);
-        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any());
+        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
@@ -379,7 +380,7 @@ class AuthControllerTest {
         when(userRepository.findByUsernameWithMember("alice")).thenReturn(Optional.of(deactivated));
         when(jwtUtil.getTokenVersion(claims)).thenReturn(3L); // matches user.tokenVersion
 
-        ResponseEntity<?> res = controller.refresh(httpReq, httpRes);
+        ResponseEntity<?> res = controller.refresh(null, httpReq, httpRes);
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         verify(cookieWriter).clearAuthCookies(httpRes);
@@ -387,7 +388,7 @@ class AuthControllerTest {
     }
 
     @Test
-    void refresh_rotatesTokens_whenActivated_andTvMatches() {
+    void refresh_rotatesTokens_asSessionCookies_whenActivated_andTvMatches_andNoRememberMe() {
         AppUser active = user(true);
         httpReq.setCookies(new Cookie("refresh_token", "rt"));
         Claims claims = org.mockito.Mockito.mock(Claims.class);
@@ -399,9 +400,138 @@ class AuthControllerTest {
         when(jwtUtil.generateAccessToken(active)).thenReturn("acc2");
         when(jwtUtil.generateRefreshToken(active)).thenReturn("ref2");
 
-        ResponseEntity<?> res = controller.refresh(httpReq, httpRes);
+        ResponseEntity<?> res = controller.refresh(null, httpReq, httpRes);
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
-        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc2", "ref2");
+        // No persistent_token cookie on this request -> rotated as session cookies, so a
+        // non-"Remember Me" login can't be silently resurrected past the browser closing.
+        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc2", "ref2", false);
+    }
+
+    @Test
+    void refresh_rotatesTokens_asPersistentCookies_whenPersistentTokenCookiePresentAndOwned() {
+        AppUser active = user(true); // id 7L
+        httpReq.setCookies(
+            new Cookie("refresh_token", "rt"),
+            new Cookie(AuthCookieWriter.PERSISTENT_COOKIE, "mine"));
+        Claims claims = org.mockito.Mockito.mock(Claims.class);
+        when(jwtUtil.validateAndParse("rt")).thenReturn(claims);
+        when(jwtUtil.isRefreshToken(claims)).thenReturn(true);
+        when(claims.getSubject()).thenReturn("alice");
+        when(userRepository.findByUsernameWithMember("alice")).thenReturn(Optional.of(active));
+        when(jwtUtil.getTokenVersion(claims)).thenReturn(3L);
+        when(jwtUtil.generateAccessToken(active)).thenReturn("acc2");
+        when(jwtUtil.generateRefreshToken(active)).thenReturn("ref2");
+        when(persistentSessionService.ownerUserId("mine")).thenReturn(Optional.of(7L));
+
+        ResponseEntity<?> res = controller.refresh(null, httpReq, httpRes);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc2", "ref2", true);
+    }
+
+    @Test
+    void refresh_returns200_andMintsFreshCookies_fromPersistentPrincipal_whenNoRefreshTokenCookie() {
+        // No refresh_token cookie in the request, but PersistentTokenAuthFilter already
+        // re-authenticated this request from a valid persistent_token one filter earlier.
+        AppUser active = user(true);
+        httpReq.setCookies(new Cookie(AuthCookieWriter.PERSISTENT_COOKIE, "mine"));
+        when(persistentSessionService.ownerUserId("mine")).thenReturn(Optional.of(active.getId()));
+        when(jwtUtil.generateAccessToken(active)).thenReturn("acc3");
+        when(jwtUtil.generateRefreshToken(active)).thenReturn("ref3");
+
+        ResponseEntity<?> res = controller.refresh(active, httpReq, httpRes);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).isEqualTo(Map.of(
+            "username", active.getUsername(),
+            "role", active.getRole().name(),
+            "memberId", active.getMember().getId(),
+            "displayName", active.getMember().getDisplayName()
+        ));
+        // The endpoint's contract is "200 = fresh cookies were issued" -- always mint here,
+        // regardless of whether PersistentTokenAuthFilter already wrote a pair moments ago,
+        // so a bare access-token-derived principal (no persistent_token at all) never gets
+        // a phantom 200 with zero Set-Cookie that dies within the access token's 15 minutes.
+        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc3", "ref3", true);
+    }
+
+    @Test
+    void refresh_returns401_whenNoRefreshTokenCookie_andNoPersistentPrincipal() {
+        ResponseEntity<?> res = controller.refresh(null, httpReq, httpRes);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        verify(cookieWriter).clearAuthCookies(httpRes);
+    }
+
+    @Test
+    void refresh_honoursPersistentPrincipal_whenRefreshTokenPresentButTokenVersionRevoked() {
+        // Concrete trigger from the review: something (e.g. AdminRecoveryRunner) bumps
+        // tokenVersion without revoking persistent sessions. The stale refresh_token cookie
+        // is now invalid, but a still-valid persistent_token was ALSO presented on this same
+        // request and PersistentTokenAuthFilter already re-authenticated it -- that must win
+        // instead of a flat 401, and cookies must not be cleared out from under the filter's
+        // just-rotated persistent_token.
+        AppUser active = user(true);
+        httpReq.setCookies(
+            new Cookie("refresh_token", "stale-rt"),
+            new Cookie(AuthCookieWriter.PERSISTENT_COOKIE, "mine"));
+        Claims claims = org.mockito.Mockito.mock(Claims.class);
+        when(jwtUtil.validateAndParse("stale-rt")).thenReturn(claims);
+        when(jwtUtil.isRefreshToken(claims)).thenReturn(true);
+        when(claims.getSubject()).thenReturn("alice");
+        when(userRepository.findByUsernameWithMember("alice")).thenReturn(Optional.of(active));
+        when(jwtUtil.getTokenVersion(claims)).thenReturn(1L); // stale -- user is now at tv=3
+        when(persistentSessionService.ownerUserId("mine")).thenReturn(Optional.of(active.getId()));
+        when(jwtUtil.generateAccessToken(active)).thenReturn("acc4");
+        when(jwtUtil.generateRefreshToken(active)).thenReturn("ref4");
+
+        ResponseEntity<?> res = controller.refresh(active, httpReq, httpRes);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(cookieWriter).setAccessAndRefresh(httpRes, "acc4", "ref4", true);
+        verify(cookieWriter, never()).clearAuthCookies(any());
+    }
+
+    @Test
+    void refresh_returns401_andClears_whenRefreshTokenBoundToRevokedSeries() {
+        // "Log out this device": the persistent session was revoked, but the device still
+        // holds a cryptographically-valid, series-bound refresh_token. It must be cut -- and
+        // must NOT fall through to a re-mint from the still-valid access-token principal.
+        AppUser active = user(true);
+        UUID revokedSeries = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        httpReq.setCookies(new Cookie("refresh_token", "rt"));
+        Claims claims = org.mockito.Mockito.mock(Claims.class);
+        when(jwtUtil.validateAndParse("rt")).thenReturn(claims);
+        when(jwtUtil.isRefreshToken(claims)).thenReturn(true);
+        when(claims.getSubject()).thenReturn("alice");
+        when(userRepository.findByUsernameWithMember("alice")).thenReturn(Optional.of(active));
+        when(jwtUtil.getTokenVersion(claims)).thenReturn(3L);
+        when(jwtUtil.getSeriesId(claims)).thenReturn(revokedSeries);
+        when(persistentSessionService.isSeriesActive(revokedSeries)).thenReturn(false);
+
+        ResponseEntity<?> res = controller.refresh(active, httpReq, httpRes);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        verify(cookieWriter).clearAuthCookies(httpRes);
+        verify(jwtUtil, never()).generateAccessToken(any());
+    }
+
+    @Test
+    void refresh_returns401_whenPersistentCookieSeriesRevoked_evenWithValidAccessPrincipal() {
+        // The device presents a persistent_token whose series was revoked ("log out
+        // everywhere else"). Even a still-valid access-token principal on the same request
+        // must not re-establish the session -- the front guard fires before any minting.
+        AppUser active = user(true);
+        UUID revokedSeries = UUID.fromString("dddddddd-eeee-ffff-0000-111111111111");
+        httpReq.setCookies(new Cookie(AuthCookieWriter.PERSISTENT_COOKIE, "revoked:tok"));
+        when(persistentSessionService.seriesFromCookie("revoked:tok")).thenReturn(Optional.of(revokedSeries));
+        when(persistentSessionService.isSeriesActive(revokedSeries)).thenReturn(false);
+
+        ResponseEntity<?> res = controller.refresh(active, httpReq, httpRes);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        verify(cookieWriter).clearAuthCookies(httpRes);
+        verify(jwtUtil, never()).generateAccessToken(any());
     }
 }

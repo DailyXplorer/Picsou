@@ -6,6 +6,8 @@ import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class JwtUtilTest {
@@ -41,6 +43,25 @@ class JwtUtilTest {
         assertThat(jwt.isRefreshToken(claims)).isTrue();
         assertThat(jwt.isAccessToken(claims)).isFalse();
         assertThat(jwt.isMfaChallengeToken(claims)).isFalse();
+    }
+
+    @Test
+    void refreshToken_carriesSeriesId_whenBoundToPersistentSession_andNoneOtherwise() {
+        UUID series = UUID.fromString("11111111-2222-3333-4444-555555555555");
+
+        // A "Remember Me" refresh token round-trips its series binding (sid claim) so
+        // /auth/refresh can later check whether that persistent session is still active.
+        Claims bound = jwt.validateAndParse(jwt.generateRefreshToken(user, series));
+        assertThat(jwt.getSeriesId(bound)).isEqualTo(series);
+
+        // The bare overload (non-"Remember Me") carries no binding.
+        Claims unbound = jwt.validateAndParse(jwt.generateRefreshToken(user));
+        assertThat(jwt.getSeriesId(unbound)).isNull();
+
+        // Access tokens are never series-bound (kept sid-free so validation stays a pure
+        // signature/tokenVersion check with no per-request session lookup).
+        Claims access = jwt.validateAndParse(jwt.generateAccessToken(user));
+        assertThat(jwt.getSeriesId(access)).isNull();
     }
 
     @Test

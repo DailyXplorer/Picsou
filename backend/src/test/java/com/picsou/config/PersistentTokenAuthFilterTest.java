@@ -154,11 +154,13 @@ class PersistentTokenAuthFilterTest {
         when(userRepository.findByIdWithMember(7L)).thenReturn(Optional.of(user));
         when(mfaService.isEnabled(user)).thenReturn(false);
         when(jwtUtil.generateAccessToken(user)).thenReturn("new-access");
-        when(jwtUtil.generateRefreshToken(user)).thenReturn("new-refresh");
+        // Refresh is now bound to the rotated session's series (sid), so it is minted via
+        // the (AppUser, UUID) overload rather than the bare one.
+        when(jwtUtil.generateRefreshToken(eq(user), any())).thenReturn("new-refresh");
 
         filter.doFilter(request, response, chain);
 
-        verify(cookieWriter).setAccessAndRefresh(response, "new-access", "new-refresh");
+        verify(cookieWriter).setAccessAndRefresh(response, "new-access", "new-refresh", true);
         verify(cookieWriter).setPersistent(eq(response), eq("rotated-cookie-value"), anyLong());
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal()).isSameAs(user);
@@ -173,11 +175,11 @@ class PersistentTokenAuthFilterTest {
         when(userRepository.findByIdWithMember(7L)).thenReturn(Optional.of(user));
         when(mfaService.isEnabled(user)).thenReturn(true);
         when(jwtUtil.generateAccessToken(user)).thenReturn("a");
-        when(jwtUtil.generateRefreshToken(user)).thenReturn("r");
+        when(jwtUtil.generateRefreshToken(eq(user), any())).thenReturn("r");
 
         filter.doFilter(request, response, chain);
 
-        verify(cookieWriter).setAccessAndRefresh(response, "a", "r");
+        verify(cookieWriter).setAccessAndRefresh(response, "a", "r", true);
         verify(cookieWriter).setPersistent(eq(response), eq("rotated-cookie-value"), anyLong());
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
     }
@@ -191,7 +193,7 @@ class PersistentTokenAuthFilterTest {
         filter.doFilter(request, response, chain);
 
         verify(cookieWriter).clearPersistent(response);
-        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any());
+        verify(cookieWriter, never()).setAccessAndRefresh(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         verify(chain).doFilter(request, response);
     }

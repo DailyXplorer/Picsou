@@ -832,6 +832,7 @@
     "accountDescription": "Gérer votre compte",
     "username": "Nom d'utilisateur",
     "logout": "Se déconnecter",
+    "logoutError": "La déconnexion a échoué. Veuillez réessayer.",
     "about": "À propos",
     "aboutDescription": "Informations sur l'application",
     "version": "Version",

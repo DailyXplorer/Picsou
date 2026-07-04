@@ -118,9 +118,12 @@ public class PersistentTokenAuthFilter extends OncePerRequestFilter {
 
         // Mint fresh access/refresh + re-set the rotated persistent cookie.
         // Rotated cookie carries the same series_id; remaining lifetime = expiresAt - now.
+        // The refresh token is bound to this series (sid) so /auth/refresh can cut its
+        // chain the moment the session is revoked ("log out this device").
         cookieWriter.setAccessAndRefresh(response,
             jwtUtil.generateAccessToken(user),
-            jwtUtil.generateRefreshToken(user));
+            jwtUtil.generateRefreshToken(user, session.getSeriesId()),
+            true);
         long secondsUntilExpiry = Math.max(
             ChronoUnit.SECONDS.between(java.time.Instant.now(), session.getExpiresAt()),
             0

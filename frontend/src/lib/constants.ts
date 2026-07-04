@@ -38,3 +38,12 @@ export const QUERY_STALE_TIMES = {
   goals: 2 * 60 * 1000,
   budget: 2 * 60 * 1000,
 } as const
+
+/**
+ * How long a successful `session-probe` result (RequireAuth's cookie-backed
+ * session check) may sit in the query cache after it stops being observed
+ * (isAuthenticated flips true). Bounded rather than Infinity so a stale
+ * "success" can eventually be garbage-collected as a backstop, even if some
+ * future logout path forgot to explicitly clear it via queryClient.clear().
+ */
+export const SESSION_PROBE_GC_TIME = 5 * 60 * 1000

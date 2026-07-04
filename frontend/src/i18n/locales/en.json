@@ -832,6 +832,7 @@
     "accountDescription": "Manage your account",
     "username": "Username",
     "logout": "Sign out",
+    "logoutError": "Logout failed. Please try again.",
     "about": "About",
     "aboutDescription": "Application information",
     "version": "Version",

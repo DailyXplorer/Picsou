@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAppStore, type DateFormat } from '@/stores/app-store'
+import { useLogout } from '@/features/auth/hooks'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/button'
 import {
@@ -109,7 +110,7 @@ export function SettingsPage() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
-  const logout = useAuthStore((s) => s.logout)
+  const logoutMutation = useLogout()
   const setUsername = useAuthStore((s) => s.setUsername)
   const { dateFormat, setDateFormat } = useAppStore()
 
@@ -165,9 +166,13 @@ export function SettingsPage() {
   }
 
   // Logout ----------------------------------------------------------------
+  // Routes through the server-side /auth/logout call (via useLogout), not just
+  // the local zustand flag -- otherwise the session cookies stay valid and
+  // RequireAuth's session-probe silently re-authenticates the user right back in.
   const handleLogout = () => {
-    logout()
-    navigate('/login')
+    logoutMutation.mutate(undefined, {
+      onSuccess: () => navigate('/login'),
+    })
   }
 
   // Theme / locale options
@@ -271,7 +276,7 @@ export function SettingsPage() {
             )}
           </div>
           <div className="flex justify-end">
-            <Button variant="destructive" onClick={handleLogout}>
+            <Button variant="destructive" onClick={handleLogout} disabled={logoutMutation.isPending}>
               <LogOut className="mr-2 size-4" />
               {t('settings.logout')}
             </Button>

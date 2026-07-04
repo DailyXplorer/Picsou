@@ -226,6 +226,45 @@ class PersistentSessionServiceTest {
         assertThat(service.revokeAllForUser(99L)).isEqualTo(3);
     }
 
+    // ─── isSeriesActive (revocation gate for /auth/refresh) ─────────────────
+
+    @Test
+    void isSeriesActive_trueForLiveSession_falseForRevokedExpiredOrUnknown() {
+        UUID live = UUID.randomUUID();
+        UUID revoked = UUID.randomUUID();
+        UUID expired = UUID.randomUUID();
+
+        when(repository.findBySeriesId(live)).thenReturn(Optional.of(sessionFor(live, null, NOW.plus(10, ChronoUnit.DAYS))));
+        // Revoked via "log out this device" -- revokedAt set, not yet past expiry.
+        when(repository.findBySeriesId(revoked)).thenReturn(Optional.of(sessionFor(revoked, NOW.minus(1, ChronoUnit.HOURS), NOW.plus(10, ChronoUnit.DAYS))));
+        // Past the 90-day cap.
+        when(repository.findBySeriesId(expired)).thenReturn(Optional.of(sessionFor(expired, null, NOW.minus(1, ChronoUnit.DAYS))));
+
+        assertThat(service.isSeriesActive(live)).isTrue();
+        assertThat(service.isSeriesActive(revoked)).isFalse();
+        assertThat(service.isSeriesActive(expired)).isFalse();
+    }
+
+    @Test
+    void isSeriesActive_falseForUnknownSeries() {
+        UUID unknown = UUID.randomUUID();
+        when(repository.findBySeriesId(unknown)).thenReturn(Optional.empty());
+
+        assertThat(service.isSeriesActive(unknown)).isFalse();
+    }
+
+    private PersistentSession sessionFor(UUID seriesId, Instant revokedAt, Instant expiresAt) {
+        return PersistentSession.builder()
+            .seriesId(seriesId)
+            .user(user)
+            .tokenHash("h")
+            .createdAt(NOW.minus(1, ChronoUnit.DAYS))
+            .lastUsedAt(NOW)
+            .expiresAt(expiresAt)
+            .revokedAt(revokedAt)
+            .build();
+    }
+
     // ─── helpers ───────────────────────────────────────────────────────────
 
     @Test

@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.UUID;
 
 @Component
 public class JwtUtil {
@@ -38,11 +39,22 @@ public class JwtUtil {
     }
 
     public String generateAccessToken(AppUser user) {
-        return buildToken(user, "access", Instant.now().plus(accessExpiryMinutes, ChronoUnit.MINUTES));
+        return buildToken(user, "access", Instant.now().plus(accessExpiryMinutes, ChronoUnit.MINUTES), null);
     }
 
     public String generateRefreshToken(AppUser user) {
-        return buildToken(user, "refresh", Instant.now().plus(refreshExpiryDays, ChronoUnit.DAYS));
+        return generateRefreshToken(user, null);
+    }
+
+    /**
+     * Refresh token optionally bound to a "Remember Me" persistent-session series via a
+     * {@code sid} claim. The binding lets {@code /auth/refresh} reject a refresh chain whose
+     * series has been revoked ("log out this device") or has hit its 90-day cap, even though
+     * the JWT itself has not yet expired. Pass {@code null} for a session-scoped login not
+     * tied to any persistent session.
+     */
+    public String generateRefreshToken(AppUser user, UUID seriesId) {
+        return buildToken(user, "refresh", Instant.now().plus(refreshExpiryDays, ChronoUnit.DAYS), seriesId);
     }
 
     /**
@@ -65,8 +77,8 @@ public class JwtUtil {
             .compact();
     }
 
-    private String buildToken(AppUser user, String tokenType, Instant expiry) {
-        return Jwts.builder()
+    private String buildToken(AppUser user, String tokenType, Instant expiry, UUID seriesId) {
+        JwtBuilder builder = Jwts.builder()
             .subject(user.getUsername())
             .claim("uid", user.getId())
             .claim("role", user.getRole().name())
@@ -74,8 +86,26 @@ public class JwtUtil {
             .claim("tv", user.getTokenVersion())
             .issuedAt(Date.from(Instant.now()))
             .expiration(Date.from(expiry))
-            .signWith(signingKey)
-            .compact();
+            .signWith(signingKey);
+        if (seriesId != null) {
+            builder.claim("sid", seriesId.toString());
+        }
+        return builder.compact();
+    }
+
+    /**
+     * The persistent-session series this refresh token is bound to, or {@code null} if the
+     * token carries no {@code sid} claim (a session-scoped, non-"Remember Me" refresh) or the
+     * claim is malformed.
+     */
+    public UUID getSeriesId(Claims claims) {
+        String sid = claims.get("sid", String.class);
+        if (sid == null) return null;
+        try {
+            return UUID.fromString(sid);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     public Long getTokenVersion(Claims claims) {

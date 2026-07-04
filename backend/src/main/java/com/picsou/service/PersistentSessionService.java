@@ -166,6 +166,19 @@ public class PersistentSessionService {
             .map(s -> s.getUser().getId());
     }
 
+    /**
+     * Whether {@code seriesId} names a persistent session that is currently active — i.e.
+     * neither revoked ("log out this device"/"log out everywhere else") nor past its 90-day
+     * expiry. Used by {@code /auth/refresh} to cut a refresh chain bound to a series the user
+     * has revoked, even while the refresh JWT itself is still cryptographically valid. Unknown
+     * series → {@code false} (treat as no longer valid).
+     */
+    public boolean isSeriesActive(UUID seriesId) {
+        return repository.findBySeriesId(seriesId)
+            .filter(s -> s.isActive(Instant.now(clock)))
+            .isPresent();
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────────
 
     private String generateToken() {
