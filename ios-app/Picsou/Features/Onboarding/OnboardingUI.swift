@@ -80,11 +80,13 @@ struct FeatureRow: View {
 
 /// Text wordmark stand-in for the Picsou logo (the SVG asset can replace this later).
 struct PicsouWordmark: View {
+    /// Rendered height of the wordmark.
     var size: CGFloat = 30
     var body: some View {
-        Text("Picsou")
-            .font(.system(size: size, weight: .heavy, design: .rounded))
-            .tracking(-size * 0.02)
-            .foregroundStyle(.white)
+        Image("PicsouWordmark")
+            .resizable()
+            .scaledToFit()
+            .frame(height: size)
+            .accessibilityLabel("Picsou")
     }
 }
