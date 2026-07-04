@@ -1,42 +1,23 @@
 import SwiftUI
 
-/// Read-only dashboard: net worth, history chart, allocation, accounts, liabilities and goals.
+/// Read-only dashboard — design "Variant B": greeting header, a featured blue net-worth card with a
+/// sparkline, the top goal, and a condensed assets list, over a bottom tab bar.
 struct DashboardView: View {
     @Environment(AppState.self) private var appState
     @State private var vm: DashboardViewModel?
 
     var body: some View {
-        NavigationStack {
-            Group {
-                switch vm?.state {
-                case .none, .some(.loading):
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                case .some(.loaded(let data)):
-                    content(data)
-                case .some(.failed(let message)):
-                    errorView(message)
-                }
-            }
-            .navigationTitle("Patrimoine")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if appState.isDemo {
-                        Text("Démo")
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.tint.opacity(0.15), in: Capsule())
-                            .foregroundStyle(.tint)
-                    } else {
-                        Menu {
-                            Button("Se déconnecter", role: .destructive) { appState.signOut() }
-                        } label: {
-                            Image(systemName: "person.crop.circle")
-                        }
-                    }
-                }
+        ZStack {
+            Theme.background.ignoresSafeArea()
+            if let vm {
+                // Observe the view model in a child that holds it non-optionally, so state changes
+                // (loading → loaded) reliably re-render — an optional in the parent does not track.
+                DashboardContent(vm: vm, isDemo: appState.isDemo, onSignOut: { appState.signOut() })
+            } else {
+                ProgressView().controlSize(.large)
             }
         }
+        .tint(Theme.brand)
         .task {
             if vm == nil {
                 vm = DashboardViewModel(
@@ -44,30 +25,98 @@ struct DashboardView: View {
                     onAuthExpired: { appState.signOut() }
                 )
             }
-            if case .loaded = vm?.state {} else { await vm?.load() }
+            await vm?.load()
+        }
+    }
+}
+
+private struct DashboardContent: View {
+    let vm: DashboardViewModel
+    let isDemo: Bool
+    let onSignOut: () -> Void
+
+    var body: some View {
+        switch vm.state {
+        case .loading:
+            ProgressView().controlSize(.large)
+        case .loaded(let data):
+            loaded(data)
+        case .failed(let message):
+            errorView(message)
         }
     }
 
+    // MARK: Loaded
+
     @ViewBuilder
-    private func content(_ data: DashboardResponse) -> some View {
+    private func loaded(_ data: DashboardResponse) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                NetWorthHeader(data: data)
-                if let vm {
-                    RangeSelector(selected: vm.range) { vm.select($0) }
+            VStack(alignment: .leading, spacing: 22) {
+                header
+                HeroNetWorthCard(
+                    netWorth: data.totalNetWorth,
+                    delta: monthDelta(data.netWorthHistory),
+                    spark: data.netWorthHistory.map(\.totalDouble)
+                )
+                if let goal = data.goalSummaries.first {
+                    VStack(alignment: .leading, spacing: 9) {
+                        SectionLabel("Objectif")
+                        GoalCard(goal: goal)
+                    }
                 }
-                HistoryChart(points: data.netWorthHistory)
-                AllocationSection(items: data.distribution)
-                if !data.liabilities.isEmpty {
-                    LiabilitiesSection(entries: data.liabilities, totalMonthlyPayment: data.totalMonthlyPayment)
-                }
-                if !data.goalSummaries.isEmpty {
-                    GoalsSection(goals: data.goalSummaries)
+                if !data.distribution.isEmpty {
+                    VStack(alignment: .leading, spacing: 11) {
+                        assetsHeader(count: data.distribution.count)
+                        AssetsListCard(items: data.distribution)
+                    }
                 }
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 24)
         }
-        .refreshable { await vm?.load() }
+        .refreshable { await vm.load() }
+        .safeAreaInset(edge: .bottom) { PicsouTabBar() }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(greetingName.map { "Bonjour, \($0)" } ?? "Bonjour")
+                    .font(Theme.font(13))
+                    .foregroundStyle(Theme.mutedForeground)
+                Text("Patrimoine")
+                    .font(Theme.font(21, .heavy))
+                    .tracking(Theme.tracking(21, em: -0.01))
+                    .foregroundStyle(Theme.foreground)
+            }
+            Spacer()
+            Menu {
+                if isDemo {
+                    Label("Mode démo", systemImage: "sparkles")
+                } else {
+                    Button("Se déconnecter", role: .destructive, action: onSignOut)
+                }
+            } label: {
+                Avatar(initials: initials, size: 40)
+            }
+        }
+    }
+
+    private func assetsHeader(count: Int) -> some View {
+        HStack(spacing: 8) {
+            SectionLabel("Actifs")
+            Text("\(count)")
+                .font(Theme.font(11, .bold))
+                .foregroundStyle(Theme.mutedForeground)
+                .padding(.horizontal, 6)
+                .frame(minWidth: 20, minHeight: 20)
+                .background(Theme.muted, in: Capsule())
+            Spacer()
+            Text("Tout voir")
+                .font(Theme.font(13, .semibold))
+                .foregroundStyle(Theme.brand)
+        }
     }
 
     @ViewBuilder
@@ -75,14 +124,34 @@ struct DashboardView: View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.largeTitle)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.destructive)
             Text(message)
+                .font(Theme.font(15))
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-            Button("Réessayer") { Task { await vm?.load() } }
+                .foregroundStyle(Theme.mutedForeground)
+            Button("Réessayer") { Task { await vm.load() } }
                 .buttonStyle(.bordered)
+                .tint(Theme.brand)
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(32)
+    }
+
+    // MARK: Helpers
+
+    private var greetingName: String? { isDemo ? "Chloé" : nil }
+    private var initials: String? { greetingName.map { String($0.prefix(1)).uppercased() } }
+
+    private func monthDelta(_ history: [NetWorthPoint]) -> HeroNetWorthCard.DeltaValue? {
+        guard history.count >= 2 else { return nil }
+        let last = history[history.count - 1].total
+        let previous = history[history.count - 2].total
+        let diff = last - previous
+        let previousD = previous.doubleValue
+        let pctValue = previousD != 0 ? (diff.doubleValue / previousD * 100) : 0
+        return HeroNetWorthCard.DeltaValue(
+            amount: Money.formatSigned(diff),
+            pct: String(format: "%+.1f%%", pctValue),
+            positive: diff >= 0
+        )
     }
 }
