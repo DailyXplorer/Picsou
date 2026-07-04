@@ -32,6 +32,12 @@ final class APIClient: @unchecked Sendable {
         try decode(try await requestData(path: path, query: [], method: "POST", body: nil))
     }
 
+    /// POST a body to an endpoint that returns no content (204), ignoring the response.
+    @discardableResult
+    func postVoid<B: Encodable>(_ path: String, body: B) async throws -> Data {
+        try await requestData(path: path, query: [], method: "POST", body: encode(body))
+    }
+
     func put<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
         try decode(try await requestData(path: path, query: [], method: "PUT", body: encode(body)))
     }

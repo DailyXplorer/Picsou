@@ -48,4 +48,25 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(connections.contains { $0.status == "LINKED" })
         XCTAssertTrue(connections.contains { $0.status == "FAILED" })
     }
+
+    func testMfaStatusDecoding() throws {
+        let json = #"{"enabled":true,"enrolledAt":"2026-06-01T10:00:00Z","remainingRecoveryCodes":6}"#
+        let status = try JSONDecoder.picsou.decode(MfaStatus.self, from: Data(json.utf8))
+        XCTAssertTrue(status.enabled)
+        XCTAssertEqual(status.remainingRecoveryCodes, 6)
+    }
+
+    func testDemoMfaEnrollFlow_returnsSecretThenCodes() async throws {
+        let ds = DemoSettingsDataSource()
+        let status = try await ds.mfaStatus()
+        XCTAssertFalse(status.enabled)
+        let enroll = try await ds.mfaEnrollInit(password: "pw")
+        XCTAssertFalse(enroll.secret.isEmpty)
+        let codes = try await ds.mfaEnrollVerify(code: "123456")
+        XCTAssertFalse(codes.isEmpty)
+    }
+
+    func testQRCodeGeneration_returnsImage() {
+        XCTAssertNotNil(QRCode.image(from: "otpauth://totp/Picsou:chloe?secret=ABC&issuer=Picsou"))
+    }
 }

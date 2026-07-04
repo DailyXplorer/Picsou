@@ -13,10 +13,10 @@ struct SecurityView: View {
     var body: some View {
         List {
             Section("Double authentification") {
-                HStack {
+                NavigationLink {
+                    TwoFactorView()
+                } label: {
                     Label("2FA (TOTP)", systemImage: "lock.shield.fill")
-                    Spacer()
-                    Text("Bientôt").foregroundStyle(Theme.mutedForeground)
                 }
             }
             Section("Sessions actives") {
