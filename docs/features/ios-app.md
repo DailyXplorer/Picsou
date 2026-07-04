@@ -57,6 +57,18 @@ Face ID) and `makeDashboardDataSource()` returns `DemoDashboardDataSource` — c
 the mode. The demo source/mocks compile in all configs (so they're testable); only the boot decision
 is gated by `#if DEMO`.
 
+### Design system
+
+Ported from the "Picsou Design System" Claude Design project (`Core/DesignSystem/`). `Color(oklch:)`
+converts the web tokens' exact OKLCH values to sRGB and `Color(light:dark:)` resolves per appearance,
+so `Theme` mirrors the web `index.css` 1:1 (colors, radii, brand `#2563eb`, emerald charts); type is
+SF Pro behind `Theme.font(...)` (swappable for Geist). Screens implement the project's two mobile
+templates: the **dashboard** is Variant B (blue hero net-worth card + sparkline, goal card, condensed
+assets list) over a bottom `PicsouTabBar` — a floating **Liquid Glass** pill on iOS 26+, a material
+bar below. The **onboarding** flow (intro → server setup → login → Face ID lock) is the dark,
+aurora-lit treatment with white pill CTAs (`Features/Onboarding/`). Verified on the iOS 17/26
+simulator via the Demo scheme.
+
 ### Flow
 
 ```
