@@ -10,8 +10,9 @@ struct MainTabView: View {
             switch tab {
             case .home: DashboardView()
             case .assets: AccountsView()
+            case .goals: GoalsView()
             case .settings: SettingsView()
-            case .budget, .goals: ComingSoonView(tab: tab)
+            case .budget: ComingSoonView(tab: tab)
             }
         }
         .tint(Theme.brand)
