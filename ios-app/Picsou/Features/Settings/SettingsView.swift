@@ -4,6 +4,7 @@ import SwiftUI
 /// "Déconnexion"; the other rows are the design's entries (their sub-screens land in a later phase).
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
+    @AppStorage("appearanceMode") private var appearanceRaw = AppearanceMode.system.rawValue
 
     private var instanceHost: String { appState.serverConfig.baseURL?.host ?? "—" }
 
@@ -33,21 +34,24 @@ struct SettingsView: View {
                 }
 
                 SettingsCard {
-                    SettingsRow(icon: "server.rack", title: "Serveur", value: instanceHost)
+                    SettingsRow(icon: "server.rack", title: "Serveur", value: instanceHost, showsChevron: false)
                     rowDivider
                     NavigationLink { SyncView() } label: {
                         SettingsRowLabel(icon: "arrow.triangle.2.circlepath", title: "Synchronisation")
                     }.buttonStyle(.plain)
                     rowDivider
-                    SettingsRow(icon: "bell.fill", title: "Notifications")
+                    SettingsRow(icon: "bell.fill", title: "Notifications", value: "Bientôt", showsChevron: false)
                 }
 
                 SettingsCard {
-                    SettingsRow(icon: "paintbrush.fill", title: "Apparence", value: "Auto")
+                    NavigationLink { AppearanceView() } label: {
+                        SettingsRowLabel(icon: "paintbrush.fill", title: "Apparence",
+                                         value: AppearanceMode(rawValue: appearanceRaw)?.label)
+                    }.buttonStyle(.plain)
                     rowDivider
-                    SettingsRow(icon: "eurosign.circle.fill", title: "Devise", value: "EUR")
+                    SettingsRow(icon: "eurosign.circle.fill", title: "Devise", value: "EUR", showsChevron: false)
                     rowDivider
-                    SettingsRow(icon: "globe", title: "Langue", value: "Français")
+                    SettingsRow(icon: "globe", title: "Langue", value: "Français", showsChevron: false)
                 }
 
                 SettingsCard {
