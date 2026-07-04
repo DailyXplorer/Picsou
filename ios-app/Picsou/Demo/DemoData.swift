@@ -195,6 +195,19 @@ enum DemoData {
         (1...assets.count).map { account(id: Int64($0)) }
     }
 
+    static func accessKeys() -> [AccessKey] {
+        [
+            AccessKey(id: 1, name: "Claude Desktop", keyPrefix: "pk_a1b2c3d4",
+                      scopes: ["accounts:read", "transactions:read", "dashboard:read"],
+                      lastUsedAt: "2026-07-04T18:00:00Z", expiresAt: nil, revokedAt: nil,
+                      createdAt: "2026-06-15T10:00:00Z"),
+            AccessKey(id: 2, name: "Script export", keyPrefix: "pk_e5f6g7h8",
+                      scopes: ["transactions:read"],
+                      lastUsedAt: nil, expiresAt: nil, revokedAt: "2026-07-01T00:00:00Z",
+                      createdAt: "2026-05-01T10:00:00Z"),
+        ]
+    }
+
     static func bankConnections() -> [BankConnection] {
         [
             BankConnection(id: 1, institutionName: "Crédit Agricole", institutionId: "ca_fr",

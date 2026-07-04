@@ -96,6 +96,11 @@ final class AppState {
         isDemo ? DemoSyncDataSource() : LiveSyncDataSource(api: api)
     }
 
+    /// MCP access-keys data source: mock in the demo build, the live API otherwise.
+    func makeAccessKeysDataSource() -> AccessKeysDataSource {
+        isDemo ? DemoAccessKeysDataSource() : LiveAccessKeysDataSource(api: api)
+    }
+
     struct Identity { let username: String; let role: String }
 
     /// Current user identity for display — a demo constant, else decoded (unverified) from the

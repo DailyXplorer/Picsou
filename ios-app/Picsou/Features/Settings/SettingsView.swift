@@ -49,7 +49,9 @@ struct SettingsView: View {
                 }
 
                 SettingsCard {
-                    SettingsRow(icon: "key.fill", title: "Clés d'accès MCP")
+                    NavigationLink { AccessKeysView() } label: {
+                        SettingsRowLabel(icon: "key.fill", title: "Clés d'accès MCP")
+                    }.buttonStyle(.plain)
                 }
 
                 SettingsCard {
