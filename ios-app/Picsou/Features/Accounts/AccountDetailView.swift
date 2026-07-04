@@ -91,7 +91,7 @@ private struct AccountDetailContent: View {
             VStack(alignment: .leading, spacing: 20) {
                 header(account)
                 if !holdings.isEmpty { holdingsSection(holdings) }
-                if let loan { loanSection(loan) }
+                if let loan { loanSection(account, loan) }
                 transactionsSection(account, txs)
             }
             .padding(16)
@@ -144,7 +144,7 @@ private struct AccountDetailContent: View {
         }
     }
 
-    private func loanSection(_ loan: LoanSchedule) -> some View {
+    private func loanSection(_ account: Account, _ loan: LoanSchedule) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             SectionLabel("Prêt")
             VStack(alignment: .leading, spacing: 12) {
@@ -155,17 +155,17 @@ private struct AccountDetailContent: View {
                     Text("\(Int(pct.doubleValue)) % remboursé")
                         .font(Theme.font(12)).foregroundStyle(Theme.mutedForeground)
                 }
-                if !loan.schedule.isEmpty {
-                    Divider().background(Theme.border)
-                    ForEach(loan.schedule.prefix(3)) { row in
-                        HStack {
-                            Text(monthLabel(row.day)).font(Theme.font(13)).foregroundStyle(Theme.mutedForeground)
-                            Spacer()
-                            Text("cap. \(Money.format(row.capital))").font(Theme.font(12.5)).monospacedDigit().foregroundStyle(Theme.foreground)
-                            Text("int. \(Money.format(row.interest))").font(Theme.font(12.5)).monospacedDigit().foregroundStyle(Theme.mutedForeground)
-                        }
+                Divider().background(Theme.border)
+                NavigationLink {
+                    LoanScheduleView(accountId: account.id, accountName: account.name)
+                } label: {
+                    HStack {
+                        Text("Voir l'échéancier complet").font(Theme.font(14, .semibold)).foregroundStyle(Theme.brand)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.mutedForeground)
                     }
                 }
+                .buttonStyle(.plain)
             }
             .padding(16)
             .cardOutline()

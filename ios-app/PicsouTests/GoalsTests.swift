@@ -25,4 +25,23 @@ final class GoalsTests: XCTestCase {
         let accounts = try await DemoGoalsDataSource().accounts()
         XCTAssertFalse(accounts.isEmpty)
     }
+
+    func testGoalProgressDecodesLinkedAccounts() throws {
+        let json = #"{"id":5,"name":"Voiture","targetAmount":20000,"currentTotal":5000,"percentComplete":25,"deadline":"2028-01-01","isOnTrack":true,"accounts":[{"id":3},{"id":7}]}"#
+        let goal = try JSONDecoder.picsou.decode(GoalProgress.self, from: Data(json.utf8))
+        XCTAssertEqual(goal.accountIds, [3, 7])
+    }
+
+    func testGoalProgressWithoutAccountsKey_decodesToEmpty() throws {
+        let json = #"{"id":5,"name":"Voiture","targetAmount":20000,"currentTotal":5000,"percentComplete":25}"#
+        let goal = try JSONDecoder.picsou.decode(GoalProgress.self, from: Data(json.utf8))
+        XCTAssertTrue(goal.accountIds.isEmpty)
+    }
+
+    func testDemoGoalsUpdate_returnsUpdatedGoal() async throws {
+        let goal = try await DemoGoalsDataSource().update(
+            id: 5, GoalRequest(name: "Voiture", targetAmount: 20000, deadline: "2028-01-01", accountIds: [3]))
+        XCTAssertEqual(goal.id, 5)
+        XCTAssertEqual(goal.name, "Voiture")
+    }
 }

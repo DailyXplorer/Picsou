@@ -4,18 +4,32 @@ import SwiftUI
 /// non-empty set of linked accounts.
 struct GoalFormView: View {
     let dataSource: GoalsDataSource
+    var editing: GoalProgress?
     var onSaved: () -> Void
     var onAuthExpired: () -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var targetText = ""
-    @State private var deadline = Calendar.current.date(byAdding: .year, value: 1, to: Date()) ?? Date()
-    @State private var selected: Set<Int64> = []
+    @State private var name: String
+    @State private var targetText: String
+    @State private var deadline: Date
+    @State private var selected: Set<Int64>
     @State private var accounts: [Account] = []
     @State private var loadingAccounts = true
     @State private var submitting = false
     @State private var error: String?
+
+    init(dataSource: GoalsDataSource, editing: GoalProgress? = nil,
+         onSaved: @escaping () -> Void, onAuthExpired: @escaping () -> Void) {
+        self.dataSource = dataSource
+        self.editing = editing
+        self.onSaved = onSaved
+        self.onAuthExpired = onAuthExpired
+        _name = State(initialValue: editing?.name ?? "")
+        _targetText = State(initialValue: editing?.targetAmount.map { NSDecimalNumber(decimal: $0).stringValue } ?? "")
+        _deadline = State(initialValue: editing?.deadline.flatMap { DateParsing.localDate.date(from: $0) }
+                          ?? Calendar.current.date(byAdding: .year, value: 1, to: Date()) ?? Date())
+        _selected = State(initialValue: Set(editing?.accountIds ?? []))
+    }
 
     private var parsedTarget: Decimal? {
         let normalized = targetText.replacingOccurrences(of: ",", with: ".")
@@ -65,13 +79,14 @@ struct GoalFormView: View {
                     Text(error).font(Theme.font(13)).foregroundStyle(Theme.destructive)
                 }
             }
-            .navigationTitle("Nouvel objectif")
+            .navigationTitle(editing == nil ? "Nouvel objectif" : "Modifier l'objectif")
             .navigationBarTitleDisplayMode(.inline)
             .tint(Theme.brand)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Annuler") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Créer") { submit() }.disabled(submitting || !isValid).fontWeight(.semibold)
+                    Button(editing == nil ? "Créer" : "Enregistrer") { submit() }
+                        .disabled(submitting || !isValid).fontWeight(.semibold)
                 }
             }
             .task { await loadAccounts() }
@@ -103,11 +118,15 @@ struct GoalFormView: View {
                 accountIds: Array(selected)
             )
             do {
-                _ = try await dataSource.create(request)
+                if let editing {
+                    _ = try await dataSource.update(id: editing.id, request)
+                } else {
+                    _ = try await dataSource.create(request)
+                }
                 onSaved()
                 dismiss()
             } catch {
-                self.error = (error as? APIError)?.errorDescription ?? "Échec de la création."
+                self.error = (error as? APIError)?.errorDescription ?? "Échec de l'enregistrement."
             }
             submitting = false
         }

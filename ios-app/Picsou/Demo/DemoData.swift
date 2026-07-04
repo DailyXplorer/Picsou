@@ -47,9 +47,11 @@ enum DemoData {
 
         let goals = [
             GoalProgress(id: 1, name: "Fonds d'urgence", targetAmount: 15000, currentTotal: 12000,
-                         percentComplete: 80, deadline: "2026-12-01", monthlyNeeded: 960, monthsLeft: 5, isOnTrack: true),
+                         percentComplete: 80, deadline: "2026-12-01", monthlyNeeded: 960, monthsLeft: 5,
+                         isOnTrack: true, accounts: [GoalAccountRef(id: 1)]),
             GoalProgress(id: 2, name: "Vacances Japon", targetAmount: 5000, currentTotal: 1500,
-                         percentComplete: 30, deadline: "2026-09-01", monthlyNeeded: 700, monthsLeft: 5, isOnTrack: false),
+                         percentComplete: 30, deadline: "2026-09-01", monthlyNeeded: 700, monthsLeft: 5,
+                         isOnTrack: false, accounts: [GoalAccountRef(id: 3)]),
         ]
 
         return DashboardResponse(

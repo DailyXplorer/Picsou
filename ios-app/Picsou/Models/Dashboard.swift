@@ -65,6 +65,11 @@ struct GoalProgress: Decodable, Equatable, Identifiable {
     let monthlyNeeded: Decimal?
     let monthsLeft: Int?
     let isOnTrack: Bool?
+    /// Linked accounts (from GoalProgressResponse.accounts) — used to preselect on edit. Defaulted so
+    /// the demo memberwise initializers stay source-compatible; decodes to nil when the key is absent.
+    var accounts: [GoalAccountRef]? = nil
+
+    var accountIds: [Int64] { accounts?.map(\.id) ?? [] }
 
     var remaining: Decimal? {
         guard let targetAmount, let currentTotal else { return nil }
@@ -79,4 +84,9 @@ struct GoalProgress: Decodable, Equatable, Identifiable {
         f.dateFormat = "MMM yyyy"
         return f.string(from: date)
     }
+}
+
+/// Minimal ref to a goal's linked account (subset of GoalProgressResponse.accounts[]).
+struct GoalAccountRef: Decodable, Equatable {
+    let id: Int64
 }

@@ -3,7 +3,11 @@ import SwiftUI
 /// Goal detail (from the "Objectifs & Dettes" template): a big progress ring, an on-track badge,
 /// and a Reste / Par mois / Échéance stats grid, plus a short projection note.
 struct GoalDetailView: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
     let goal: GoalProgress
+    var onChanged: () -> Void = {}
+    @State private var showEdit = false
 
     var body: some View {
         ScrollView {
@@ -50,8 +54,13 @@ struct GoalDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Text("Modifier").font(Theme.font(15)).foregroundStyle(Theme.brand)
+                Button("Modifier") { showEdit = true }.foregroundStyle(Theme.brand)
             }
+        }
+        .sheet(isPresented: $showEdit) {
+            GoalFormView(dataSource: appState.makeGoalsDataSource(), editing: goal,
+                         onSaved: { onChanged(); dismiss() },
+                         onAuthExpired: { appState.signOut() })
         }
     }
 

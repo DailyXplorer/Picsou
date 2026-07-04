@@ -86,7 +86,9 @@ private struct GoalsDebtsContent: View {
             .font(Theme.font(14))
             .foregroundStyle(Theme.mutedForeground)
         ForEach(goals) { goal in
-            NavigationLink { GoalDetailView(goal: goal) } label: { GoalCard(goal: goal) }
+            NavigationLink {
+                GoalDetailView(goal: goal, onChanged: { Task { await vm.load() } })
+            } label: { GoalCard(goal: goal) }
                 .buttonStyle(.plain)
         }
         Button { showGoalForm = true } label: { DashedAddCard(title: "Nouvel objectif") }
@@ -130,7 +132,10 @@ private struct GoalsDebtsContent: View {
             VStack(spacing: 0) {
                 ForEach(Array(data.liabilities.enumerated()), id: \.element.id) { index, loan in
                     if index > 0 { Rectangle().fill(Theme.border).frame(height: 1) }
-                    loanRow(loan)
+                    NavigationLink {
+                        LoanScheduleView(accountId: loan.accountId, accountName: loan.name)
+                    } label: { loanRow(loan) }
+                    .buttonStyle(.plain)
                 }
             }
             .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
