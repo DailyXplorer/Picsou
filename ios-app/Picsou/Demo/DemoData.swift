@@ -195,6 +195,27 @@ enum DemoData {
         (1...assets.count).map { account(id: Int64($0)) }
     }
 
+    static func cashflow() -> CashflowSummary {
+        CashflowSummary(from: "2026-07-01", to: "2026-07-31", income: 2450, expense: 1684, net: 766)
+    }
+
+    static func budgetEnvelopes() -> [BudgetEnvelope] {
+        func env(_ id: Int64, _ name: String, _ color: String, _ limit: Double, _ spent: Double) -> BudgetEnvelope {
+            let percent = limit > 0 ? min(999, spent / limit * 100) : 0
+            return BudgetEnvelope(id: id, categoryName: name, categoryColor: color, categoryKind: "EXPENSE",
+                                  monthlyLimit: Decimal(limit), spent: Decimal(spent),
+                                  remaining: Decimal(limit - spent), percent: Decimal(percent),
+                                  overBudget: spent > limit, cycleStart: "2026-07-01", cycleEnd: "2026-07-31")
+        }
+        return [
+            env(1, "Alimentation", "#10B981", 500, 543),
+            env(2, "Transport", "#F59E0B", 150, 118),
+            env(3, "Loisirs", "#8B5CF6", 200, 96),
+            env(4, "Abonnements", "#6366F1", 80, 64),
+            env(5, "Restaurants", "#EF4444", 180, 152),
+        ]
+    }
+
     static func makeGoal(from request: GoalRequest, id: Int64) -> GoalProgress {
         GoalProgress(id: id, name: request.name, targetAmount: request.targetAmount,
                      currentTotal: 0, percentComplete: 0, deadline: request.deadline,

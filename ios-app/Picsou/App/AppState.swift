@@ -86,6 +86,11 @@ final class AppState {
         isDemo ? DemoSettingsDataSource() : LiveSettingsDataSource(api: api)
     }
 
+    /// Budget-tab data source: mock in the demo build, the live API otherwise.
+    func makeBudgetDataSource() -> BudgetDataSource {
+        isDemo ? DemoBudgetDataSource() : LiveBudgetDataSource(api: api)
+    }
+
     struct Identity { let username: String; let role: String }
 
     /// Current user identity for display — a demo constant, else decoded (unverified) from the

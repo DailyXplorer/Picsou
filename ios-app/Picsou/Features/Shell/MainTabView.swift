@@ -12,7 +12,7 @@ struct MainTabView: View {
             case .assets: AccountsView()
             case .goals: GoalsView()
             case .settings: SettingsView()
-            case .budget: ComingSoonView(tab: tab)
+            case .budget: BudgetView()
             }
         }
         .tint(Theme.brand)
