@@ -34,4 +34,18 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(claims?["sub"] as? String, "chloe")
         XCTAssertEqual(claims?["role"] as? String, "ADMIN")
     }
+
+    func testBankConnectionDecoding_ignoresAuditKeys() throws {
+        let json = #"[{"id":1,"institutionName":"Crédit Agricole","institutionId":"ca_fr","status":"LINKED","authLink":null,"lastSyncedAt":"2026-07-04T07:30:00Z","createdAt":"2026-06-01T00:00:00Z"}]"#
+        let connections = try JSONDecoder.picsou.decode([BankConnection].self, from: Data(json.utf8))
+        XCTAssertEqual(connections.count, 1)
+        XCTAssertEqual(connections[0].status, "LINKED")
+        XCTAssertEqual(connections[0].institutionName, "Crédit Agricole")
+    }
+
+    func testDemoSyncConnections_hasLinkedAndFailed() async throws {
+        let connections = try await DemoSyncDataSource().connections()
+        XCTAssertTrue(connections.contains { $0.status == "LINKED" })
+        XCTAssertTrue(connections.contains { $0.status == "FAILED" })
+    }
 }

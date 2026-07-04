@@ -91,6 +91,11 @@ final class AppState {
         isDemo ? DemoBudgetDataSource() : LiveBudgetDataSource(api: api)
     }
 
+    /// Bank-sync data source: mock in the demo build, the live API otherwise.
+    func makeSyncDataSource() -> SyncDataSource {
+        isDemo ? DemoSyncDataSource() : LiveSyncDataSource(api: api)
+    }
+
     struct Identity { let username: String; let role: String }
 
     /// Current user identity for display — a demo constant, else decoded (unverified) from the

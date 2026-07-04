@@ -27,6 +27,11 @@ final class APIClient: @unchecked Sendable {
         try decode(try await requestData(path: path, query: [], method: "POST", body: encode(body)))
     }
 
+    /// POST with no request body (e.g. action endpoints like `/api/sync/{id}/retry`).
+    func post<T: Decodable>(_ path: String) async throws -> T {
+        try decode(try await requestData(path: path, query: [], method: "POST", body: nil))
+    }
+
     func put<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
         try decode(try await requestData(path: path, query: [], method: "PUT", body: encode(body)))
     }

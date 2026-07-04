@@ -195,6 +195,15 @@ enum DemoData {
         (1...assets.count).map { account(id: Int64($0)) }
     }
 
+    static func bankConnections() -> [BankConnection] {
+        [
+            BankConnection(id: 1, institutionName: "Crédit Agricole", institutionId: "ca_fr",
+                           status: "LINKED", authLink: nil, lastSyncedAt: "2026-07-04T07:30:00Z"),
+            BankConnection(id: 2, institutionName: "Boursorama", institutionId: "bourso_fr",
+                           status: "FAILED", authLink: nil, lastSyncedAt: "2026-07-01T09:00:00Z"),
+        ]
+    }
+
     static func cashflow() -> CashflowSummary {
         CashflowSummary(from: "2026-07-01", to: "2026-07-31", income: 2450, expense: 1684, net: 766)
     }

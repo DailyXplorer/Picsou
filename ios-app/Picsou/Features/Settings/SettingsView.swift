@@ -33,7 +33,9 @@ struct SettingsView: View {
                 SettingsCard {
                     SettingsRow(icon: "server.rack", title: "Serveur", value: instanceHost)
                     rowDivider
-                    SettingsRow(icon: "arrow.triangle.2.circlepath", title: "Synchronisation", value: "il y a 12 min")
+                    NavigationLink { SyncView() } label: {
+                        SettingsRowLabel(icon: "arrow.triangle.2.circlepath", title: "Synchronisation")
+                    }.buttonStyle(.plain)
                     rowDivider
                     SettingsRow(icon: "bell.fill", title: "Notifications")
                 }
