@@ -81,6 +81,23 @@ final class AppState {
         isDemo ? DemoGoalsDataSource() : LiveGoalsDataSource(api: api)
     }
 
+    /// Profile + sessions data source: mock in the demo build, the live API otherwise.
+    func makeSettingsDataSource() -> SettingsDataSource {
+        isDemo ? DemoSettingsDataSource() : LiveSettingsDataSource(api: api)
+    }
+
+    struct Identity { let username: String; let role: String }
+
+    /// Current user identity for display — a demo constant, else decoded (unverified) from the
+    /// access-token JWT (`sub` = username, `role`). There is no `/api/me` endpoint.
+    var identity: Identity? {
+        if isDemo { return Identity(username: "chloe", role: "Admin") }
+        guard let token = tokenStore.load()?.accessToken, let claims = JWT.payload(of: token) else { return nil }
+        let username = (claims["sub"] as? String) ?? "—"
+        let role = (claims["role"] as? String) == "ADMIN" ? "Admin" : "Membre"
+        return Identity(username: username, role: role)
+    }
+
     /// Validate and persist the instance URL, then advance out of `.unconfigured`.
     func configureServer(_ raw: String) async throws {
         try await serverConfig.validateAndSave(raw, session: session)
