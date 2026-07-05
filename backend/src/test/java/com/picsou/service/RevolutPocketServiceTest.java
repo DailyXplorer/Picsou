@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -160,7 +161,8 @@ class RevolutPocketServiceTest {
         service.processTransaction(walletTx, MEMBER_ID);
 
         ArgumentCaptor<Account> captor = ArgumentCaptor.forClass(Account.class);
-        verify(accountRepository, times(1)).save(captor.capture());
+        // Two saves: findOrCreatePocket creates the pocket, refreshPocketBalance updates its balance.
+        verify(accountRepository, times(2)).save(captor.capture());
         // The first saved Account is the new pocket
         Account savedPocket = captor.getAllValues().stream()
             .filter(a -> a.getParentAccountId() != null)
@@ -223,8 +225,8 @@ class RevolutPocketServiceTest {
         walletTx.setExternalId("ext-wallet-002");
         service.processTransaction(walletTx, MEMBER_ID);
 
-        // No new Account saved (pocket already existed)
-        verify(accountRepository, never()).save(any(Account.class));
+        // The existing pocket is re-saved to refresh its balance, but no NEW pocket is created.
+        verify(accountRepository, never()).save(argThat(a -> a.getId() == null));
     }
 
     @Test

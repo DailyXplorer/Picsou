@@ -8,6 +8,7 @@ import com.picsou.dto.CashflowPeriod;
 import com.picsou.dto.SpendingByCategoryResponse;
 import com.picsou.dto.SpendingDetailResponse;
 import com.picsou.exception.ResourceNotFoundException;
+import com.picsou.model.Account;
 import com.picsou.model.Category;
 import com.picsou.model.CategoryKind;
 import com.picsou.model.Transaction;
@@ -64,7 +65,9 @@ class CashflowFlowServiceTest {
     }
 
     private static Transaction tx(String amount, Category category) {
+        // account is @ManyToOne(optional = false); TransactionResponse.from() dereferences it.
         return Transaction.builder().amount(bd(amount)).categoryRef(category)
+            .account(Account.builder().id(1L).name("Compte").build())
             .date(LocalDate.of(2025, 3, 10)).build();
     }
 

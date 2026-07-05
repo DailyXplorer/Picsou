@@ -5,7 +5,12 @@ import { AccountCard } from './AccountCard'
 import type { Account } from '@/types/api'
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    // CurrencyDisplay (rendered for the balance) resolves the locale/currency via i18n;
+    // return the real values so Intl.NumberFormat gets a valid tag instead of the raw key.
+    t: (key: string) =>
+      key === 'common.locale' ? 'fr-FR' : key === 'common.currency' ? 'EUR' : key,
+  }),
 }))
 
 /**
@@ -17,15 +22,38 @@ class MockImage {
   onload: (() => void) | null = null
   onerror: (() => void) | null = null
   private _src = ''
+  private handlers: Record<string, Set<() => void>> = { load: new Set(), error: new Set() }
+
+  // Radix Avatar (@radix-ui/react-avatar ≥1.1) subscribes via addEventListener, and only
+  // after it has already assigned `src` — so dispatch on both the src set and each late
+  // listener registration. Firing 'load'/'error' more than once is idempotent for Radix.
+  addEventListener(type: string, handler: () => void) {
+    this.handlers[type]?.add(handler)
+    if (this._src) this.dispatch()
+  }
+  removeEventListener(type: string, handler: () => void) {
+    this.handlers[type]?.delete(handler)
+  }
   set src(value: string) {
     this._src = value
-    queueMicrotask(() => {
-      if (value.includes('broken')) this.onerror?.()
-      else this.onload?.()
-    })
+    this.dispatch()
   }
   get src() {
     return this._src
+  }
+
+  private dispatch() {
+    const src = this._src
+    queueMicrotask(() => {
+      if (this._src !== src) return
+      if (src.includes('broken')) {
+        this.onerror?.()
+        this.handlers.error.forEach((h) => h())
+      } else {
+        this.onload?.()
+        this.handlers.load.forEach((h) => h())
+      }
+    })
   }
 }
 
