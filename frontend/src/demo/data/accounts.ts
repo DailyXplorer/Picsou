@@ -127,6 +127,7 @@ export const mockAccounts: Account[] = [
     isManual: false,
     color: '#1a1a2e',
     ticker: null,
+    logoUrl: null,
     createdAt: '2024-01-01T08:00:00Z',
   },
   {
@@ -141,6 +142,7 @@ export const mockAccounts: Account[] = [
     isManual: false,
     color: '#1a1a2e',
     ticker: null,
+    logoUrl: null,
     createdAt: '2024-01-15T08:00:00Z',
     parentAccountId: 8,
     externalAccountId: '76fe0dd0-c245-4d73-9df4-d4fcda89abfe',
@@ -157,6 +159,7 @@ export const mockAccounts: Account[] = [
     isManual: false,
     color: '#1a1a2e',
     ticker: null,
+    logoUrl: null,
     createdAt: '2024-02-01T08:00:00Z',
     parentAccountId: 8,
     externalAccountId: '3874abbf-a1b2-c3d4-e5f6-a7b8c9d0e1f2',
