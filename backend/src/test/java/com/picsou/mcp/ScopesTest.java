@@ -12,8 +12,12 @@ class ScopesTest {
         assertThat(Scopes.ALL).containsExactlyInAnyOrder(
             "accounts:read", "transactions:read", "goals:read",
             "dashboard:read", "prices:read", "family:read",
-            "accounts:write", "transactions:write", "goals:write",
-            "sync:trigger"
+            "budget:categories-read", "budget:rules-read", "budget:transactions-read",
+            "budget:recurring-read", "budget:envelopes-read", "budget:dashboard-read",
+            "oauth2:discover", "oauth2:session-status",
+            "accounts:write", "transactions:write", "goals:write", "sync:trigger",
+            "budget:categories-write", "budget:rules-write", "budget:transactions-write",
+            "budget:envelopes-write", "oauth2:token"
         );
     }
 

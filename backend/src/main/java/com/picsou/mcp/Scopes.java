@@ -26,15 +26,34 @@ public final class Scopes {
     public static final String PRICES_READ = "prices:read";
     public static final String FAMILY_READ = "family:read";
 
+    public static final String BUDGET_CATEGORIES_READ = "budget:categories-read";
+    public static final String BUDGET_RULES_READ = "budget:rules-read";
+    public static final String BUDGET_TRANSACTIONS_READ = "budget:transactions-read";
+    public static final String BUDGET_RECURRING_READ = "budget:recurring-read";
+    public static final String BUDGET_ENVELOPES_READ = "budget:envelopes-read";
+    public static final String BUDGET_DASHBOARD_READ = "budget:dashboard-read";
+    public static final String OAUTH2_DISCOVER = "oauth2:discover";
+    public static final String OAUTH2_SESSION_STATUS = "oauth2:session-status";
+
     // ── Write / trigger ───────────────────────────────────────────────────────
     public static final String ACCOUNTS_WRITE = "accounts:write";
     public static final String TRANSACTIONS_WRITE = "transactions:write";
     public static final String GOALS_WRITE = "goals:write";
     public static final String SYNC_TRIGGER = "sync:trigger";
 
+    public static final String BUDGET_CATEGORIES_WRITE = "budget:categories-write";
+    public static final String BUDGET_RULES_WRITE = "budget:rules-write";
+    public static final String BUDGET_TRANSACTIONS_WRITE = "budget:transactions-write";
+    public static final String BUDGET_ENVELOPES_WRITE = "budget:envelopes-write";
+    public static final String OAUTH2_TOKEN = "oauth2:token";
+
     /** Immutable allowlist of every valid scope. Used to validate key-creation requests. */
     public static final Set<String> ALL = Set.of(
         ACCOUNTS_READ, TRANSACTIONS_READ, GOALS_READ, DASHBOARD_READ, PRICES_READ, FAMILY_READ,
-        ACCOUNTS_WRITE, TRANSACTIONS_WRITE, GOALS_WRITE, SYNC_TRIGGER
+        BUDGET_CATEGORIES_READ, BUDGET_RULES_READ, BUDGET_TRANSACTIONS_READ, BUDGET_RECURRING_READ,
+        BUDGET_ENVELOPES_READ, BUDGET_DASHBOARD_READ, OAUTH2_DISCOVER, OAUTH2_SESSION_STATUS,
+        ACCOUNTS_WRITE, TRANSACTIONS_WRITE, GOALS_WRITE, SYNC_TRIGGER,
+        BUDGET_CATEGORIES_WRITE, BUDGET_RULES_WRITE, BUDGET_TRANSACTIONS_WRITE, BUDGET_ENVELOPES_WRITE,
+        OAUTH2_TOKEN
     );
 }

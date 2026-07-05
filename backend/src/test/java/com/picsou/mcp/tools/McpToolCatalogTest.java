@@ -1,8 +1,11 @@
 package com.picsou.mcp.tools;
 
 import com.picsou.config.McpToolConfig;
+import com.picsou.config.OAuthClientProperties;
+import com.picsou.mcp.AccessKeyService;
 import com.picsou.mcp.RequiresScope;
 import com.picsou.mcp.Scopes;
+import com.picsou.repository.TransactionRepository;
 import com.picsou.service.AccountService;
 import com.picsou.service.BoursoSyncService;
 import com.picsou.service.CryptoExchangeSyncService;
@@ -11,12 +14,20 @@ import com.picsou.service.FamilyViewService;
 import com.picsou.service.GoalService;
 import com.picsou.service.HistoryService;
 import com.picsou.service.ManualTransactionService;
+import com.picsou.service.MfaService;
 import com.picsou.service.PriceService;
 import com.picsou.service.SyncService;
 import com.picsou.service.TradeRepublicSyncService;
 import com.picsou.service.UserContext;
 import com.picsou.service.WalletSyncService;
+import com.picsou.service.budget.BudgetService;
+import com.picsou.service.budget.CashflowFlowService;
+import com.picsou.service.budget.CashflowService;
+import com.picsou.service.budget.CategorizationService;
+import com.picsou.service.budget.CategoryService;
+import com.picsou.service.budget.RecurringSeriesService;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.annotation.Tool;
 
@@ -55,11 +66,29 @@ class McpToolCatalogTest {
         // dashboard:read / family:read / prices:read (read-only insights)
         "get_dashboard", "get_net_worth_history", "get_profit_and_loss", "get_family_dashboard", "get_price",
         // sync:trigger (refresh existing connections only)
-        "trigger_bank_sync", "trigger_broker_sync", "trigger_crypto_exchange_sync", "trigger_crypto_wallet_sync"
+        "trigger_bank_sync", "trigger_broker_sync", "trigger_crypto_exchange_sync", "trigger_crypto_wallet_sync",
+        // oauth2:discover / oauth2:session-status
+        "get_oauth2_configuration", "get_oauth2_session_status",
+        // budget:categories-read / budget:categories-write
+        "list_budget_categories", "get_budget_category", "create_budget_category",
+        "update_budget_category", "delete_budget_category",
+        // budget:rules-read / budget:rules-write
+        "list_budget_rules", "get_budget_rule", "create_budget_rule", "update_budget_rule",
+        "delete_budget_rule", "apply_rule_to_transactions",
+        // budget:transactions-read / budget:transactions-write
+        "list_budget_transactions", "update_budget_transaction",
+        // budget:recurring-read
+        "list_recurring_series", "get_recurring_series",
+        // budget:envelopes-read / budget:envelopes-write
+        "list_budget_envelopes", "get_budget_envelope", "create_budget_envelope",
+        "update_budget_envelope", "delete_budget_envelope", "set_envelope_allocation",
+        // budget:dashboard-read
+        "get_budget_dashboard"
     );
 
     private static final List<Class<?>> TOOL_CLASSES = List.of(
-        AccountTools.class, TransactionTools.class, GoalTools.class, InsightTools.class, SyncTools.class);
+        AccountTools.class, TransactionTools.class, GoalTools.class, InsightTools.class, SyncTools.class,
+        OAuth2Tools.class, BudgetTools.class);
 
     /** Build the provider exactly as production does, with mocked services (never invoked during catalog build). */
     private ToolCallbackProvider buildProvider() {
@@ -73,7 +102,14 @@ class McpToolCatalogTest {
         SyncTools sync = new SyncTools(
             mock(SyncService.class), mock(TradeRepublicSyncService.class), mock(BoursoSyncService.class),
             mock(CryptoExchangeSyncService.class), mock(WalletSyncService.class), mock(UserContext.class));
-        return new McpToolConfig().picsouMcpTools(account, tx, goal, insight, sync);
+        OAuth2Tools oauth2 = new OAuth2Tools(
+            mock(AuthorizationServerSettings.class), mock(OAuthClientProperties.class),
+            mock(AccessKeyService.class), mock(MfaService.class), mock(UserContext.class));
+        BudgetTools budget = new BudgetTools(
+            mock(CategoryService.class), mock(CategorizationService.class), mock(BudgetService.class),
+            mock(RecurringSeriesService.class), mock(CashflowService.class), mock(CashflowFlowService.class),
+            mock(TransactionRepository.class), mock(UserContext.class));
+        return new McpToolConfig().picsouMcpTools(account, tx, goal, insight, sync, oauth2, budget);
     }
 
     private Set<String> registeredToolNames() {
@@ -94,7 +130,13 @@ class McpToolCatalogTest {
             "auth", "credential", "login", "logout", "password", "passcode", "mfa", "totp",
             "admin", "export", "setup", "recovery", "token", "secret", "initiate", "complete",
             "wizard", "powens", "finary", "add_exchange", "add_wallet", "delete_member", "create_member");
+        // Reviewed, deliberate exceptions: these two names legitimately contain "auth" as a substring
+        // of "oauth2" (the discovery/session-status tools), not the forbidden "auth[enticate]" operation.
+        Set<String> exceptions = Set.of("get_oauth2_configuration", "get_oauth2_session_status");
         for (String name : registeredToolNames()) {
+            if (exceptions.contains(name)) {
+                continue;
+            }
             for (String bad : forbidden) {
                 assertThat(name)
                     .as("tool name '%s' must not look like a forbidden operation ('%s')", name, bad)
