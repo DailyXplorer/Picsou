@@ -237,6 +237,7 @@ export function AccountsPage() {
       isManual: false,
       color: meta.color,
       ticker: null,
+      logoUrl: null,
       createdAt: '',
     }))
   }, [accounts, nonPocketAccounts, filter, t])

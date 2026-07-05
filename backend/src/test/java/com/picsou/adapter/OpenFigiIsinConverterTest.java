@@ -37,4 +37,57 @@ class OpenFigiIsinConverterTest {
         assertThat(OpenFigiIsinConverter.isIsin("")).isFalse();
         assertThat(OpenFigiIsinConverter.isIsin("   ")).isFalse();
     }
+
+    @Test
+    void isTrCryptoIsin_detectsXf000PrefixCaseAndWhitespaceInsensitively() {
+        // Shared with TradeRepublicAdapter's exchange choice; must tolerate the same
+        // case/whitespace variants resolve()'s normalization does (unlike a raw startsWith).
+        assertThat(OpenFigiIsinConverter.isTrCryptoIsin("XF000BTC0017")).isTrue();
+        assertThat(OpenFigiIsinConverter.isTrCryptoIsin(" xf000btc0017 ")).isTrue();
+        assertThat(OpenFigiIsinConverter.isTrCryptoIsin("IE00B4L5Y983")).isFalse(); // real ISIN
+        assertThat(OpenFigiIsinConverter.isTrCryptoIsin("BTC")).isFalse();
+        assertThat(OpenFigiIsinConverter.isTrCryptoIsin(null)).isFalse();
+    }
+
+    @Test
+    void resolve_parsesTickerAndNameForTradeRepublicCryptoIsins() {
+        OpenFigiIsinConverter converter = new OpenFigiIsinConverter(new CoinGeckoPriceProvider());
+
+        // Ticker is now the parsed symbol (not the fake ISIN), so the holding becomes
+        // price-resolvable via CoinGeckoPriceProvider instead of staying stuck on averageBuyIn.
+        OpenFigiIsinConverter.TickerResult btc = converter.resolve("XF000BTC0017");
+        assertThat(btc.ticker()).isEqualTo("BTC");
+        assertThat(btc.name()).isEqualTo("Bitcoin");
+
+        OpenFigiIsinConverter.TickerResult eth = converter.resolve("XF000ETH0017");
+        assertThat(eth.ticker()).isEqualTo("ETH");
+        assertThat(eth.name()).isEqualTo("Ethereum");
+    }
+
+    @Test
+    void resolve_parsesAnyKnownCryptoSymbolNotJustBtcAndEth() {
+        OpenFigiIsinConverter converter = new OpenFigiIsinConverter(new CoinGeckoPriceProvider());
+
+        // The symbol is parsed generically from the "XF000<SYMBOL><digits>" pattern and
+        // validated against CoinGeckoPriceProvider's known tickers -- SOL isn't hardcoded
+        // anywhere in OpenFigiIsinConverter (GH issue #22). The display name is derived
+        // from the provider's coin registry too, so every known coin gets a real name,
+        // including multi-word ids ("matic-network" -> "Matic Network").
+        OpenFigiIsinConverter.TickerResult sol = converter.resolve("XF000SOL0042");
+        assertThat(sol.ticker()).isEqualTo("SOL");
+        assertThat(sol.name()).isEqualTo("Solana");
+
+        OpenFigiIsinConverter.TickerResult matic = converter.resolve("XF000MATIC0099");
+        assertThat(matic.ticker()).isEqualTo("MATIC");
+        assertThat(matic.name()).isEqualTo("Matic Network");
+    }
+
+    @Test
+    void resolve_normalizesCaseAndWhitespaceConsistently() {
+        OpenFigiIsinConverter converter = new OpenFigiIsinConverter(new CoinGeckoPriceProvider());
+
+        OpenFigiIsinConverter.TickerResult padded = converter.resolve(" xf000btc0017 ");
+        assertThat(padded.ticker()).isEqualTo("BTC");
+        assertThat(padded.name()).isEqualTo("Bitcoin");
+    }
 }

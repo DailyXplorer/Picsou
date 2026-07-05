@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { AccountForm } from '@/components/shared/AccountForm'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ACCOUNT_COLORS } from '@/lib/constants'
@@ -274,6 +275,17 @@ function SuccessState({ message }: { message: string }) {
 // Wizard: Banques
 // ---------------------------------------------------------------------------
 
+function InstitutionLogo({ logoUrl }: { logoUrl?: string | null }) {
+  return (
+    <Avatar className="size-4 shrink-0 rounded-sm after:rounded-sm">
+      {logoUrl && <AvatarImage src={logoUrl} alt="" className="rounded-sm object-contain" />}
+      <AvatarFallback className="rounded-sm bg-transparent">
+        <Landmark className="size-4 text-muted-foreground" />
+      </AvatarFallback>
+    </Avatar>
+  )
+}
+
 function BankWizard({ onBack }: { onDone: () => void; onBack: () => void }) {
   const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
@@ -332,7 +344,7 @@ function BankWizard({ onBack }: { onDone: () => void; onBack: () => void }) {
             {institutions.map((inst) => (
               <div key={inst.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
                 <div className="flex items-center gap-2">
-                  <Landmark className="size-4 text-muted-foreground" />
+                  <InstitutionLogo logoUrl={inst.logoUrl} />
                   <span className="text-sm font-medium">{inst.name}</span>
                   <span className="text-xs text-muted-foreground">{inst.country}</span>
                 </div>

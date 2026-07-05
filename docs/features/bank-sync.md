@@ -156,6 +156,7 @@ Because the text fields (Application ID + Redirect URI) live in Postgres while t
   don't expose per-account currency. Picsou resolves this via IBAN-first matching and uid refresh on
   match; if an account has no IBAN it will fall back to uid matching and may be treated as a new
   account after an EB provider upgrade. This is tracked by `V46__account_iban.sql`.
+- **Bank logos**: `InstitutionData.logoUrl` (Enable Banking only — Powens hardcodes `null`) is captured at connection time and copied onto each `Account`. See [bank-logos.md](./bank-logos.md) for the capture/backfill flow and the account card fallback to `color`.
 
 ## Tests
 
@@ -171,3 +172,4 @@ Because the text fields (Application ID + Redirect URI) live in Postgres while t
 - Related ADR: [Dual bank providers](../decisions/2026-03-01-dual-bank-providers.md)
 - Related ADR: [Ports and adapters](../decisions/2026-01-01-ports-and-adapters.md)
 - Downstream feature: [Budget & Cashflow](./budget.md) (consumes ingested transactions)
+- Related: [bank-logos.md](./bank-logos.md) — logo capture/backfill and account card rendering

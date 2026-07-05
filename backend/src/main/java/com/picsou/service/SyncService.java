@@ -103,6 +103,7 @@ public class SyncService {
             .requisitionId(result.requisitionId())
             .institutionId(institutionId)
             .institutionName(institutionName)
+            .logoUrl(resolveLogoUrl(institutionId, institutionName))
             .status(RequisitionStatus.CREATED)
             .authLink(result.authLink())
             .build();
@@ -150,7 +151,7 @@ public class SyncService {
         FamilyMember member = requisition.getMember();
 
         List<AccountResponse> responses = accountDataList.stream()
-            .map(data -> upsertAccount(data, requisition.getInstitutionName(), member, sessionId))
+            .map(data -> upsertAccount(data, requisition, member))
             .flatMap(Optional::stream)
             .toList();
 
@@ -195,6 +196,7 @@ public class SyncService {
             .orElseThrow(() -> new ResourceNotFoundException("Requisition not found"));
 
         log.info("Retrying sync for {} (session={})", req.getInstitutionName(), req.getRequisitionId());
+        ensureLogoUrl(req);
 
         List<BankConnectorPort.AccountData> accountDataList;
         try {
@@ -208,7 +210,7 @@ public class SyncService {
         FamilyMember member = req.getMember();
 
         List<AccountResponse> responses = accountDataList.stream()
-            .map(data -> upsertAccount(data, req.getInstitutionName(), member, req.getRequisitionId()))
+            .map(data -> upsertAccount(data, req, member))
             .flatMap(Optional::stream)
             .toList();
 
@@ -281,9 +283,10 @@ public class SyncService {
         List<Requisition> linked = requisitionRepository.findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.LINKED, memberId);
         for (Requisition req : linked) {
             try {
+                ensureLogoUrl(req);
                 List<BankConnectorPort.AccountData> accounts = bankConnector.fetchBalances(req.getRequisitionId());
                 FamilyMember member = req.getMember();
-                accounts.forEach(data -> upsertAccount(data, req.getInstitutionName(), member, req.getRequisitionId()));
+                accounts.forEach(data -> upsertAccount(data, req, member));
                 req.setLastSyncedAt(Instant.now());
                 requisitionRepository.save(req);
                 detectRecurring(member.getId());
@@ -304,11 +307,12 @@ public class SyncService {
             .stream().findFirst()
             .orElseThrow(() -> new SyncException("No linked session found to refresh."));
 
+        ensureLogoUrl(req);
         FamilyMember member = req.getMember();
 
         List<BankConnectorPort.AccountData> accountDataList = bankConnector.fetchBalances(req.getRequisitionId());
         List<AccountResponse> responses = accountDataList.stream()
-            .map(data -> upsertAccount(data, req.getInstitutionName(), member, req.getRequisitionId()))
+            .map(data -> upsertAccount(data, req, member))
             .flatMap(Optional::stream)
             .toList();
         req.setLastSyncedAt(Instant.now());
@@ -320,6 +324,68 @@ public class SyncService {
     }
 
     // --- Private ---
+
+    /**
+     * Best-effort backfill for requisitions created before bank logos were captured
+     * (or whose logo lookup missed the first time): re-searches institutions, scoped
+     * to the requisition's own country, and stores the match's logo, if any.
+     *
+     * <p>Bounded to a single attempt per requisition via {@code logoBackfillAttemptedAt}
+     * — a miss (renamed institution, no provider logo) is not retried on every
+     * resync/retry forever. The marker is only set once the search call actually
+     * completes, so a transient network failure can still be retried next sync.
+     */
+    private void ensureLogoUrl(Requisition req) {
+        if (req.getLogoUrl() != null || req.getLogoBackfillAttemptedAt() != null) return;
+        try {
+            String country = parseCountry(req.getInstitutionId());
+            List<BankConnectorPort.InstitutionData> matches = bankConnector.searchInstitutions(req.getInstitutionName(), country);
+            req.setLogoBackfillAttemptedAt(Instant.now());
+            findInstitution(matches, req.getInstitutionId(), req.getInstitutionName())
+                .map(BankConnectorPort.InstitutionData::logoUrl)
+                .ifPresent(req::setLogoUrl);
+        } catch (Exception ex) {
+            log.warn("Could not backfill logo for requisition {} ({}): {}", req.getId(), req.getInstitutionName(), ex.getMessage());
+        }
+    }
+
+    /**
+     * Resolves a bank's logo at connection-initiation time from the server's own
+     * institution catalog — the client-supplied logoUrl is never trusted/persisted,
+     * since nothing between an arbitrary client-supplied URL and the Accounts page
+     * `<img src>` would validate its scheme or host.
+     */
+    private String resolveLogoUrl(String institutionId, String institutionName) {
+        try {
+            List<BankConnectorPort.InstitutionData> matches =
+                bankConnector.searchInstitutions(institutionName, parseCountry(institutionId));
+            return findInstitution(matches, institutionId, institutionName)
+                .map(BankConnectorPort.InstitutionData::logoUrl)
+                .orElse(null);
+        } catch (Exception ex) {
+            log.warn("Could not resolve logo for institution {} ({}): {}", institutionId, institutionName, ex.getMessage());
+            return null;
+        }
+    }
+
+    /** Matches by exact institution id first; falls back to a case-insensitive name match only if no id match exists. */
+    private static Optional<BankConnectorPort.InstitutionData> findInstitution(
+        List<BankConnectorPort.InstitutionData> candidates, String institutionId, String institutionName
+    ) {
+        return candidates.stream()
+            .filter(i -> i.id().equals(institutionId))
+            .findFirst()
+            .or(() -> candidates.stream()
+                .filter(i -> i.name().equalsIgnoreCase(institutionName))
+                .findFirst());
+    }
+
+    /** institutionId format: "BankName::FR" (name::country) — see EnableBankingBankConnector. */
+    private static String parseCountry(String institutionId) {
+        if (institutionId == null) return null;
+        String[] parts = institutionId.split("::");
+        return parts.length > 1 ? parts[1] : null;
+    }
 
     /**
      * Returns {@link Optional#empty()} when the matching account was soft-deleted
@@ -337,7 +403,7 @@ public class SyncService {
      * </ol>
      * Soft-delete guards follow the same two-step order.
      */
-    private Optional<AccountResponse> upsertAccount(BankConnectorPort.AccountData data, String provider, FamilyMember member, String sessionId) {
+    private Optional<AccountResponse> upsertAccount(BankConnectorPort.AccountData data, Requisition requisition, FamilyMember member) {
         // Step 1: locate an existing active account (IBAN-first when available)
         Optional<Account> existing = Optional.empty();
         if (data.iban() != null) {
@@ -369,12 +435,16 @@ public class SyncService {
             if (data.iban() != null) {
                 account.setIban(data.iban());
             }
+            // Backfill the bank logo on a pre-logo account once the requisition has one.
+            if (account.getLogoUrl() == null && requisition.getLogoUrl() != null) {
+                account.setLogoUrl(requisition.getLogoUrl());
+            }
         } else {
             account = Account.builder()
                 .member(member)
                 .name(data.name() != null ? data.name() : "Account")
                 .type(AccountType.CHECKING)
-                .provider(provider)
+                .provider(requisition.getInstitutionName())
                 .currency(data.currency() != null ? data.currency() : "EUR")
                 .currentBalance(data.balance())
                 .lastSyncedAt(Instant.now())
@@ -382,13 +452,14 @@ public class SyncService {
                 .iban(data.iban())
                 .isManual(false)
                 .color("#6366f1")
+                .logoUrl(requisition.getLogoUrl())
                 .build();
         }
 
         account = accountRepository.save(account);
         accountService.upsertSnapshot(account, data.balance(), LocalDate.now());
 
-        ingestTransactions(account, sessionId, member);
+        ingestTransactions(account, requisition.getRequisitionId(), member);
 
         return Optional.of(accountService.toResponse(account));
     }

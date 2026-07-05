@@ -1,6 +1,6 @@
 # Feature: Trade Republic Sync
 
-> Last updated: 2026-06-29 (compactPortfolioByType migration — TR breaking change 2026-06-21)
+> Last updated: 2026-07-04 (ticker exchange-suffix FORBIDDEN fix #23; compactPortfolioByType migration — TR breaking change 2026-06-21)
 
 ## Context
 
@@ -30,7 +30,7 @@ The `TradeRepublicAdapter.fetchAccounts()` connects directly to `wss://api.trade
 
 1. Sends a `connect` message with locale, platform info, and client version.
 2. Subscribes to `availableCash` (cash balance) and `compactPortfolioByType` (list of positions grouped by category, with `isin`, `netSize`, `averageBuyIn`). One subscription per `secAccNo` from the JWT.
-3. For each position, subscribes to `ticker` to get the live market price.
+3. For each position, subscribes to `ticker` to get the live market price. `compactPortfolioByType` positions carry no `exchangeId`, so the adapter appends one itself: `.LSX` (Lang & Schwarz Exchange, TR's home exchange for equities/ETFs) by default, or `.TRD0` for TR-native crypto ISINs (`XF000...`), which LSX doesn't list. Using the wrong suffix makes TR reject the subscription (`FORBIDDEN`), so the position's ticker price is never received and the sync silently falls back to `averageBuyIn` — see GH issue #23.
 4. Computes portfolio value as `sum(ticker.last.price * position.netSize)`.
 5. Extracts secAccNo (securities account numbers) from the JWT to handle multiple sub-portfolios.
 6. Builds `TrPosition` records from `positionsByIsin` map: each position includes ISIN, quantity (netSize), averageBuyIn, and currentPrice (from ticker, or averageBuyIn as fallback if ticker price is missing).
@@ -163,6 +163,8 @@ Both compose files (`docker-compose.yml` at repo root and `docker/docker-compose
 - **Background sync uses `TransactionTemplate`**: The `completeAuth` background thread runs outside Spring's proxy, so `@Transactional` has no effect. It uses `TransactionTemplate` for programmatic transaction management. If you add more background sync paths, you must wrap them in `txTemplate.executeWithoutResult()` — never rely on class-level `@Transactional` from a non-Spring thread.
 - **`holdingRepository.flush()` is required after delete**: `deleteByAccountId` does not guarantee immediate DB flush. Without an explicit `flush()` call before inserting new holdings, Hibernate may execute INSERT before DELETE, causing duplicate key violations on `(account_id, ticker)`.
 - **SyncAllModal detects TR via accounts**: TR appears in the SyncAllModal when the user has any account with `provider === "Trade Republic"`, even without an active session. When the session is expired, clicking sync opens an inline phone+PIN/TAN form. After successful auth, the backend sync runs in background and the frontend picks up results via existing `refetchInterval`.
+- **Ticker subscription exchange suffix is guessed, not provided**: `compactPortfolioByType` gives no `exchangeId`, so `TradeRepublicAdapter` appends `.LSX` for equities/ETFs and `.TRD0` for TR-native crypto. Crypto is detected via `OpenFigiIsinConverter.isTrCryptoIsin()` (prefix `XF000`), the single shared predicate so the adapter's exchange choice and the converter's ISIN parsing can't drift. If TR introduces another on-platform product family with its own dedicated exchange, it will hit the same `FORBIDDEN` symptom as issue #23 until this default is extended.
+- **Ticker completion counts distinct subscriptions, not messages**: A *successful* TR `ticker` subscription is a stream — an initial full state followed by continuous delta updates under the same `wsId`. The stream's `takeUntil` completes once every ticker subscription has answered, tracked as a set of answered `wsId`s (`answeredTickerSubs`), and only the first message per `wsId` is read (it carries the full state a sync snapshot needs). Counting raw messages instead let a fast-ticking position push the total to the expected count before slower positions had answered even once, closing the socket early and dropping their prices to the `averageBuyIn` fallback — the same symptom as issue #23. (The reference `pytr` client `unsub`s after the first message; we simply ignore later ones.)
 
 ## Tests
 

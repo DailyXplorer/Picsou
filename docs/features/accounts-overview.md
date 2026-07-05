@@ -104,3 +104,4 @@ No dedicated test files for this feature yet.
 - i18n keys: `accounts.pnl`, `accounts.total`, `accounts.filters.*`, `dashboard.netWorthChange` in `en.json` / `fr.json`
 - Related: [dashboard-time-range-isolation.md](./dashboard-time-range-isolation.md) — Dashboard PnL chart
 - Related: [live-prices-holdings.md](./live-prices-holdings.md) — per-holding PnL calculation
+- Related: [bank-logos.md](./bank-logos.md) — account card avatar (bank logo, falls back to `color`)

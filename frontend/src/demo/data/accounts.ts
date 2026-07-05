@@ -14,6 +14,7 @@ export const mockAccounts: Account[] = [
     isManual: false,
     color: '#10b981',
     ticker: null,
+    logoUrl: null,
     createdAt: '2024-01-15T08:00:00Z',
   },
   {
@@ -28,6 +29,7 @@ export const mockAccounts: Account[] = [
     isManual: false,
     color: '#6366f1',
     ticker: null,
+    logoUrl: null,
     createdAt: '2024-02-01T08:00:00Z',
   },
   {
@@ -42,6 +44,7 @@ export const mockAccounts: Account[] = [
     isManual: false,
     color: '#8b5cf6',
     ticker: null,
+    logoUrl: null,
     createdAt: '2024-03-10T08:00:00Z',
   },
   {
@@ -56,6 +59,7 @@ export const mockAccounts: Account[] = [
     isManual: false,
     color: '#0ea5e9',
     ticker: null,
+    logoUrl: null,
     createdAt: '2024-01-01T08:00:00Z',
   },
   {
@@ -70,6 +74,7 @@ export const mockAccounts: Account[] = [
     isManual: false,
     color: '#06b6d4',
     ticker: null,
+    logoUrl: null,
     createdAt: '2024-06-15T08:00:00Z',
   },
   {
@@ -84,6 +89,7 @@ export const mockAccounts: Account[] = [
     isManual: false,
     color: '#f97316',
     ticker: null,
+    logoUrl: null,
     createdAt: '2024-04-01T08:00:00Z',
   },
   {
@@ -98,6 +104,7 @@ export const mockAccounts: Account[] = [
     isManual: false,
     color: '#22c55e',
     ticker: null,
+    logoUrl: null,
     createdAt: '2024-01-01T08:00:00Z',
     savingsConfig: {
       product: 'LIVRET_A' as const,

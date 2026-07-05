@@ -36,6 +36,7 @@ export interface Account {
   isManual: boolean
   color: string
   ticker: string | null
+  logoUrl: string | null
   createdAt: string
   realEstate?: RealEstateMetadata
   debt?: DebtInfo

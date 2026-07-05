@@ -1,6 +1,6 @@
 # Feature: ISIN to Yahoo Finance Ticker Conversion
 
-> Last updated: 2026-06-03
+> Last updated: 2026-07-04
 
 ## Context
 
@@ -40,6 +40,18 @@ Stored as AccountHolding.ticker + AccountHolding.name
 Frontend: h.name ?? h.ticker → shows name, falls back to ticker
 ```
 
+## TR-native crypto ISIN short-circuit
+
+Trade Republic's on-platform crypto (Bitcoin, Ethereum, etc. held directly, not via an ETC) uses internal ISINs of the form `XF000<SYMBOL><digits>` (e.g. `XF000BTC0017`, `XF000SOL0042`) that are not real market instruments — OpenFIGI never resolves them. `resolve()` checks the cache, then detects this pattern before the OpenFIGI call, parses `<SYMBOL>` out generically (not a hardcoded per-coin list — see GH issue #22), and validates it against the injected `CoinGeckoPriceProvider.supports()`. If known it returns `TickerResult(symbol, coinGecko.displayName(symbol))` and caches it. Returning the parsed symbol as the **ticker** (not just the name) is what makes the holding price-resolvable via `CoinGeckoPriceProvider` afterwards — the earlier version only fixed the display name and left the ticker as the fake ISIN. An unrecognized symbol logs one warning and falls through to the normal OpenFIGI path (which will still miss, same as before this feature); because that miss is cached, the warning fires once per holding, not on every `resolve()`.
+
+Both the "is this a known crypto?" check and the display name come from `CoinGeckoPriceProvider`'s single `TICKER_TO_ID` registry (`displayName()` title-cases the CoinGecko coin id, so `MATIC` → "Matic Network") — there is no second per-coin map to keep in sync, and every known coin gets a real name, not just BTC/ETH. The converter takes `CoinGeckoPriceProvider` as a constructor dependency rather than calling a static method, so it stays consistent with whatever the price provider actually supports.
+
+`resolve()` normalizes the input (`trim().toUpperCase(Locale.ROOT)`) once at the top and reuses that value for the cache key, the crypto-symbol match, and the OpenFIGI fallback ticker — earlier the cache/fallback used the raw input, so case/whitespace variants of the same ISIN (or a real ISIN differing only by case) created duplicate cache entries and duplicate OpenFIGI calls. `Locale.ROOT` avoids the Turkish-locale `i`/`İ` hazard on `toUpperCase`.
+
+The `XF000` marker itself lives in one place: `OpenFigiIsinConverter.isTrCryptoIsin()` (prefix-based, case-insensitive), which `TradeRepublicAdapter` also calls to route these holdings to TR's own exchange (`TRD0`). The two TR-crypto detection sites (the adapter's exchange choice and this converter's parse) share that predicate/prefix so they can't drift.
+
+**Backfill:** because the resolved ticker is persisted on each `Transaction`, manual crypto transactions entered *before* this behavior existed carry the fake ISIN (`XF000BTC0017`) as their ticker and would no longer aggregate with new `BTC` rows (`HoldingComputeService` groups by exact ticker). Migration `V51__backfill_tr_crypto_transaction_tickers.sql` rewrites those historical rows to the resolved symbol for the crypto set known at that release; derived `account_holding` rows self-heal on the next recompute.
+
 ## Exchange selection logic
 
 `pickBest()` selects the Yahoo Finance ticker from multiple OpenFIGI results:
@@ -72,7 +84,7 @@ OpenFIGI `exchCode` is mapped to Yahoo suffix (e.g., `GY`→`.DE`, `NA`→`.AS`,
 
 ## Tests
 
-- `OpenFigiIsinConverterTest` — 4 unit tests covering the `isIsin()` detector (valid ISINs, case/whitespace normalization, rejects tickers and non-ISIN strings, rejects null/blank). The network-bound `resolve()` path still has no unit test (WebClient mock setup is complex); callers that use it (`ManualTransactionServiceTest`) mock the converter instead.
+- `OpenFigiIsinConverterTest` — 4 unit tests covering the `isIsin()` detector (valid ISINs, case/whitespace normalization, rejects tickers and non-ISIN strings, rejects null/blank), plus 3 covering the TR-native crypto short-circuit: BTC/ETH ticker+name, a generic symbol (SOL) to prove it isn't hardcoded per coin, and case/whitespace normalization consistency. The network-bound OpenFIGI fallback path still has no unit test (WebClient mock setup is complex); callers that use it (`ManualTransactionServiceTest`) mock the converter instead.
 - Manual verification with `curl` against OpenFIGI API:
   - `US0378331005` (Apple) → `AAPL`
   - `IE00B4L5Y983` (iShares MSCI World) → `IWDA.AS`

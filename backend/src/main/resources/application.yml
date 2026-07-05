@@ -24,6 +24,10 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: false
+    # Allow migrations to apply even if a lower version number lands later
+    # (branches are numbered independently, e.g. this feature's V50 may deploy
+    # before the 1.1.0 branch's V33-V47). Without this, validate-on-migrate
+    # rejects the out-of-order migrations and the app fails to start.
     out-of-order: true
 
   jackson:
