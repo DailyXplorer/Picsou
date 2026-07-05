@@ -28,32 +28,27 @@ and its tests, plus the two lines in `McpToolConfig` that wire the new component
   - `OAuth2AndBudgetScopeDenialTest` (new, 13 parameterized cases) — every new scope denies when
     absent, mirroring `ScopeEnforcementAspectTest`'s pattern.
 
-## Deliberately not built: `request_oauth2_token`
+## Not built: `request_oauth2_token` (scope dropped)
 
-The brief assumes an "OAuth2 service/controller" that this tool could delegate to, scoped to the key
-owner. That doesn't exist, and building a plausible substitute would be actively misleading:
+The brief assumed an "OAuth2 service/controller" that this tool could delegate to, scoped to the key
+owner. That doesn't exist:
 
 - The authorization server (`AuthorizationServerConfig`) is Spring's stock
   `OAuth2AuthorizationServerConfigurer` serving **one** first-party **public** client (`picsou-ios`,
   `ClientAuthenticationMethod.NONE`, PKCE mandatory, no client secret) for the native iOS app's
   custom-scheme redirect (`picsou://callback`). There is no per-user or per-MCP-client registration,
-  and no service layer — the token endpoint is auto-configured by the Spring Security AS starter.
+  and no service layer.
 - The token endpoint only accepts an authorization code (+ PKCE verifier) obtained by a browser
-  completing the existing cookie-based login (`CookieBridgeAuthenticationFilter` → SPA login
-  redirect), or a refresh token from a prior grant. An MCP tool call is authenticated by a `psk_`
-  **access-key**, a completely separate principal type from this flow (Property A: keys authenticate
-  only `/mcp/**`, and the AS chain isn't part of `/mcp/**` either way) — it has no code or verifier to
-  hand the token endpoint on the caller's behalf, and no legitimate one to mint.
-- Even as a bare HTTP proxy to `POST /oauth2/token` (no server-side logic change, just forwarding),
-  the tool would have no real caller: a client that already completed the browser PKCE handshake can
-  call `/oauth2/token` directly over plain HTTP — it does not need an MCP tool, and does not have an
-  access-key yet at that point in the flow to authenticate the MCP call in the first place.
+  completing the existing cookie-based login, or a refresh token from a prior grant. An MCP tool
+  call is authenticated by an access-key (`psk_`), a completely separate principal type with no code
+  or verifier to provide, and no legitimate token to mint.
+- A bare HTTP proxy would add no value: a client that already completed PKCE can call `/oauth2/token`
+  directly — it doesn't need an MCP tool and doesn't have an access-key at that point in the flow
+  anyway.
 
-Recommendation: either (a) drop `oauth2:token` from `Scopes.ALL` since no tool will ever honour it —
-I left it in per the brief's explicit "13 new scopes" checklist item, but it is currently dead — or
-(b) if there's a concrete scenario for claude.ai to mint its own OAuth2 tokens, design it as its own
-piece (likely a new registered client + grant type), not a wrapper around the iOS app's flow. Worth
-a Chancellerie decision before anyone builds it.
+**Decision:** dropped `oauth2:token` from `Scopes.ALL` (12 scopes total, not 13). If a future
+use case needs it (e.g. claude.ai minting its own tokens), that's a separate client + grant type
+design, not a wrapper around the native app's flow.
 
 ## Simplifications from the brief (all tool-layer choices, no service changes)
 
