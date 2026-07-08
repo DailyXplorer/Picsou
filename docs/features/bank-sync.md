@@ -57,7 +57,9 @@ SyncController.initiate() --> SyncService --> BankConnectorPort.initiateConnecti
         |                          Powens: build webview URL
         |
         v
-User authorizes in browser --> redirect to /api/sync/complete?code=xxx
+User authorizes in browser --> redirect to /sync/callback?code=xxx&state=yyy
+        |                      (frontend forwards code + state to /api/sync/complete;
+        |                       the requisition is resolved by its stored state nonce)
         |
         v
 SyncController.complete() --> SyncService.completeConnection()
@@ -121,7 +123,8 @@ Because the text fields (Application ID + Redirect URI) live in Postgres while t
 - **Enable Banking RSA key**: The private key must be PKCS8 PEM format. The `ENABLEBANKING_PRIVATE_KEY` env var can contain literal `\n` characters -- both formats are handled in `parsePem()`. The key lives on disk, **not** in the DB — see "Enable Banking configuration" above; setting only the text fields (Application ID + Redirect URI) leaves searches failing until a key is generated/imported.
 - **Local dev key path**: the `dev` Spring profile stores the generated key under `backend/.local/keys/enablebanking-private.pem` so bare-metal macOS/Linux runs do not try to create Docker's `/data/keys` directory at filesystem root.
 - **Enable Banking redirect URI must be registered**: `ENABLEBANKING_REDIRECT_URI` defaults to `http://localhost:5173/sync/callback` (dev only). In production, set it to `http://<host>:8080/sync/callback` in `.env`. The same URL must be registered in the Enable Banking developer portal under the application's Redirect URIs. A mismatch causes a `REDIRECT_URI_NOT_ALLOWED` 400 error at auth initiation — it surfaces in the Add Account modal bank wizard.
-- **ALREADY_AUTHORIZED**: If the OAuth code is reused (e.g. browser back button), `SyncService.completeConnection()` catches the error and falls back to refreshing the latest linked session instead of failing.
+- **ALREADY_AUTHORIZED**: If the OAuth code is reused (e.g. browser back button), `SyncService.completeConnection()` catches the error and falls back to refreshing the latest linked session **of the same institution** instead of failing (a replayed Revolut callback must not resync BNP).
+- **OAuth `state` correlation**: each initiation stores a random single-use nonce on the requisition; the callback resolves the requisition by it (member derived from the row — this is what makes admin-impersonated connections complete correctly). See [ADR 2026-07-08](../decisions/2026-07-08-oauth-state-requisition-correlation.md).
 - **Type upgrade on resync**: If the user has not customized an account's type, `upsertAccount()` will upgrade it from CHECKING to the detected type on the next sync. Manual user changes are preserved (only CHECKING is auto-upgraded).
 - **Both providers are optional**: The app starts fine without either. No `BankConnectorPort` bean is required at startup.
 - **Bank logos**: `InstitutionData.logoUrl` (Enable Banking only — Powens hardcodes `null`) is captured at connection time and copied onto each `Account`. See [bank-logos.md](./bank-logos.md) for the capture/backfill flow and the account card fallback to `color`.

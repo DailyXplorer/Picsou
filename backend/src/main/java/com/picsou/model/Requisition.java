@@ -50,6 +50,15 @@ public class Requisition extends AuditableEntity {
     @Column(name = "auth_link", columnDefinition = "TEXT")
     private String authLink;
 
+    /**
+     * Random nonce sent as OAuth {@code state} at initiation; Enable Banking
+     * echoes it on the redirect, letting the callback resolve this exact
+     * requisition. Single-use: cleared once the session is linked.
+     */
+    @JsonIgnore
+    @Column(name = "oauth_state", length = 64)
+    private String oauthState;
+
     /** When this connection last successfully synced */
     @Column(name = "last_synced_at")
     private Instant lastSyncedAt;

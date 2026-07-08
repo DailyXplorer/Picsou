@@ -62,8 +62,11 @@ public class SyncController {
     }
 
     @GetMapping("/complete")
-    public List<AccountResponse> complete(@RequestParam String code) {
-        return syncService.completeConnection(code, userContext.currentMemberId());
+    public List<AccountResponse> complete(
+        @RequestParam String code,
+        @RequestParam(required = false) String state
+    ) {
+        return syncService.completeConnection(code, state, userContext.currentMemberId());
     }
 
     @GetMapping("/status")

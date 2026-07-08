@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @Transactional
@@ -49,7 +50,8 @@ public class SyncService {
         FamilyMember member = familyMemberRepository.findById(memberId)
             .orElseThrow(() -> new ResourceNotFoundException("Family member not found"));
 
-        BankConnectorPort.InitiateResult result = bankConnector.initiateConnection(institutionId);
+        String state = UUID.randomUUID().toString();
+        BankConnectorPort.InitiateResult result = bankConnector.initiateConnection(institutionId, state);
 
         Requisition requisition = Requisition.builder()
             .member(member)
@@ -59,6 +61,7 @@ public class SyncService {
             .logoUrl(resolveLogoUrl(institutionId, institutionName))
             .status(RequisitionStatus.CREATED)
             .authLink(result.authLink())
+            .oauthState(state)
             .build();
 
         requisitionRepository.save(requisition);
@@ -68,21 +71,22 @@ public class SyncService {
 
     /** Step 2: Complete Enable Banking flow -- exchange OAuth code, fetch balances, upsert accounts. */
     @Transactional(noRollbackFor = SyncException.class)
-    public List<AccountResponse> completeConnection(String oauthCode, Long memberId) {
-        // Find the pending requisition for this member
-        Requisition requisition = requisitionRepository
-            .findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.CREATED, memberId)
-            .stream().findFirst()
-            .orElseThrow(() -> new SyncException("No pending bank connection found. Please initiate a new connection."));
+    public List<AccountResponse> completeConnection(String oauthCode, String state, Long memberId) {
+        Requisition requisition = resolveCallbackRequisition(state, memberId);
+        // The state nonce is the callback's credential; the member it was issued
+        // for wins over the current user context (fixes admin impersonation:
+        // initiation under ?memberId=X must complete under X too).
+        Long targetMemberId = requisition.getMember().getId();
 
         String sessionId;
         try {
             sessionId = bankConnector.exchangeCode(oauthCode);
         } catch (SyncException ex) {
-            // Code already used -> find existing linked session and just refresh balances
+            // Code already used -> refresh the latest linked session of the SAME
+            // institution (a replayed Revolut callback must not resync BNP).
             if (ex.getMessage().contains("ALREADY_AUTHORIZED")) {
-                log.info("Code already used, refreshing latest linked session");
-                return resyncLatest(memberId);
+                log.info("Code already used, refreshing latest linked session for {}", requisition.getInstitutionName());
+                return resyncLatest(targetMemberId, requisition.getInstitutionId());
             }
             requisition.setStatus(RequisitionStatus.FAILED);
             requisitionRepository.save(requisition);
@@ -92,8 +96,10 @@ public class SyncService {
         // Store session_id immediately: the OAuth code is consumed at Enable
         // Banking the moment the exchange succeeds, so losing this id to a later
         // failure in the same transaction would leave the requisition pointing at
-        // the stale authorization id — a permanently unretryable state.
+        // the stale authorization id — a permanently unretryable state. The state
+        // nonce is single-use and spent with the code.
         requisition.setRequisitionId(sessionId);
+        requisition.setOauthState(null);
         requisitionRepository.saveAndFlush(requisition);
 
         List<BankConnectorPort.AccountData> accountDataList;
@@ -184,11 +190,13 @@ public class SyncService {
         Requisition req = requisitionRepository.findByIdAndMemberId(id, memberId)
             .orElseThrow(() -> new ResourceNotFoundException("Requisition not found"));
 
-        BankConnectorPort.InitiateResult result = bankConnector.initiateConnection(req.getInstitutionId());
+        String state = UUID.randomUUID().toString();
+        BankConnectorPort.InitiateResult result = bankConnector.initiateConnection(req.getInstitutionId(), state);
 
         req.setRequisitionId(result.requisitionId());
         req.setAuthLink(result.authLink());
         req.setStatus(RequisitionStatus.CREATED);
+        req.setOauthState(state);
         requisitionRepository.save(req);
 
         log.info("Re-initiated Enable Banking auth for {} (requisition {})", req.getInstitutionName(), id);
@@ -240,10 +248,29 @@ public class SyncService {
         }
     }
 
-    /** Refresh balances for the most recent LINKED session for a member. */
-    private List<AccountResponse> resyncLatest(Long memberId) {
+    /**
+     * Resolves the requisition an OAuth callback belongs to. The state nonce is
+     * authoritative when present; the latest-CREATED-for-member guess is kept
+     * only for legacy callbacks already in flight when the state round-trip
+     * shipped (their requisitions have no stored nonce).
+     */
+    private Requisition resolveCallbackRequisition(String state, Long memberId) {
+        if (state != null && !state.isBlank()) {
+            return requisitionRepository.findByOauthState(state)
+                .orElseThrow(() -> new SyncException(
+                    "Unknown or expired bank connection. Please initiate a new connection."));
+        }
+        log.warn("OAuth callback without state — falling back to latest CREATED requisition for member {}", memberId);
+        return requisitionRepository
+            .findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.CREATED, memberId)
+            .stream().findFirst()
+            .orElseThrow(() -> new SyncException("No pending bank connection found. Please initiate a new connection."));
+    }
+
+    /** Refresh balances for the most recent LINKED session of the given institution. */
+    private List<AccountResponse> resyncLatest(Long memberId, String institutionId) {
         Requisition req = requisitionRepository
-            .findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.LINKED, memberId)
+            .findByStatusAndMemberIdAndInstitutionIdOrderByCreatedAtDesc(RequisitionStatus.LINKED, memberId, institutionId)
             .stream().findFirst()
             .orElseThrow(() -> new SyncException("No linked session found to refresh."));
 

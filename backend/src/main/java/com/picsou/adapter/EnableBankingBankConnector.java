@@ -87,7 +87,7 @@ public class EnableBankingBankConnector implements BankConnectorPort {
     // ─── BankConnectorPort ────────────────────────────────────────────────────
 
     @Override
-    public InitiateResult initiateConnection(String institutionId) {
+    public InitiateResult initiateConnection(String institutionId, String state) {
         // institutionId format: "BankName::FR" (name::country)
         String[] parts = institutionId.split("::");
         String bankName = parts[0];
@@ -96,7 +96,7 @@ public class EnableBankingBankConnector implements BankConnectorPort {
         var body = Map.of(
             "access", Map.of("valid_until", Instant.now().plus(90, ChronoUnit.DAYS).toString()),
             "aspsp", Map.of("name", bankName, "country", country),
-            "state", applicationId() + "_" + System.currentTimeMillis(),
+            "state", state,
             "redirect_url", redirectUri(),
             "psu_type", "personal"
         );

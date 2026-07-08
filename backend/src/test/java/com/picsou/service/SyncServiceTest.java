@@ -51,7 +51,7 @@ class SyncServiceTest {
         FamilyMember member = FamilyMember.builder().id(memberId).displayName("Owner").build();
         when(familyMemberRepository.findById(memberId)).thenReturn(Optional.of(member));
 
-        when(bankConnector.initiateConnection("BNP_PARIBAS::FR"))
+        when(bankConnector.initiateConnection(org.mockito.ArgumentMatchers.eq("BNP_PARIBAS::FR"), any(String.class)))
             .thenReturn(new BankConnectorPort.InitiateResult("auth-1", "https://auth.example/link"));
 
         InstitutionData wrongCountry = new InstitutionData("BNP_PARIBAS::BE", "BNP Paribas", "GEBABEBB",
@@ -105,7 +105,7 @@ class SyncServiceTest {
                 new BigDecimal("100"), new BigDecimal("100"), null, false, "#6366f1", null,
                 "https://logos.example/bnp.png", null, null, null));
 
-        syncService.completeConnection("oauth-code", memberId);
+        syncService.completeConnection("oauth-code", null, memberId);
 
         ArgumentCaptor<Account> captor = ArgumentCaptor.forClass(Account.class);
         verify(accountRepository).save(captor.capture());
@@ -278,7 +278,7 @@ class SyncServiceTest {
             .build();
 
         when(requisitionRepository.findByIdAndMemberId(40L, memberId)).thenReturn(Optional.of(requisition));
-        when(bankConnector.initiateConnection("REVOLUT::FR"))
+        when(bankConnector.initiateConnection(org.mockito.ArgumentMatchers.eq("REVOLUT::FR"), any(String.class)))
             .thenReturn(new BankConnectorPort.InitiateResult("new-auth-id", "https://auth.example/new"));
         when(requisitionRepository.save(any(Requisition.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -299,7 +299,7 @@ class SyncServiceTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> syncService.reconnect(99L, 1L))
             .isInstanceOf(com.picsou.exception.ResourceNotFoundException.class);
 
-        verify(bankConnector, never()).initiateConnection(any());
+        verify(bankConnector, never()).initiateConnection(any(), any());
     }
 
     /**
@@ -328,12 +328,105 @@ class SyncServiceTest {
         when(bankConnector.fetchBalances("sess-1"))
             .thenThrow(new com.picsou.exception.SyncException("Failed to fetch session: boom"));
 
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> syncService.completeConnection("oauth-code", memberId))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> syncService.completeConnection("oauth-code", null, memberId))
             .isInstanceOf(com.picsou.exception.SyncException.class);
 
         // The session id was flushed before the fetch, and the failure path kept it.
         verify(requisitionRepository).saveAndFlush(requisition);
         assertThat(requisition.getRequisitionId()).isEqualTo("sess-1");
         assertThat(requisition.getStatus()).isEqualTo(RequisitionStatus.FAILED);
+    }
+
+    // --- OAuth state correlation ---
+
+    private Requisition createdRequisition(Long id, FamilyMember member, String institutionId, String name, String state) {
+        return Requisition.builder()
+            .id(id)
+            .member(member)
+            .requisitionId("auth-" + id)
+            .institutionId(institutionId)
+            .institutionName(name)
+            .status(RequisitionStatus.CREATED)
+            .oauthState(state)
+            .build();
+    }
+
+    /** The state nonce must pick the exact requisition, not the newest CREATED one. */
+    @Test
+    void completeConnection_resolvesByState() {
+        Long memberId = 1L;
+        FamilyMember member = FamilyMember.builder().id(memberId).displayName("Owner").build();
+        Requisition revolut = createdRequisition(10L, member, "REVOLUT::FR", "Revolut", "state-revolut");
+
+        when(requisitionRepository.findByOauthState("state-revolut")).thenReturn(Optional.of(revolut));
+        when(bankConnector.exchangeCode("oauth-code")).thenReturn("sess-1");
+        when(bankConnector.fetchBalances("sess-1")).thenReturn(List.of());
+
+        syncService.completeConnection("oauth-code", "state-revolut", memberId);
+
+        // Resolved by state — the latest-CREATED guess must not even be consulted.
+        verify(requisitionRepository, never())
+            .findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.CREATED, memberId);
+        assertThat(revolut.getRequisitionId()).isEqualTo("sess-1");
+        assertThat(revolut.getOauthState()).isNull(); // single-use nonce spent
+    }
+
+    @Test
+    void completeConnection_unknownState_throws() {
+        when(requisitionRepository.findByOauthState("bogus")).thenReturn(Optional.empty());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> syncService.completeConnection("oauth-code", "bogus", 1L))
+            .isInstanceOf(com.picsou.exception.SyncException.class)
+            .hasMessageContaining("Unknown or expired");
+
+        verify(bankConnector, never()).exchangeCode(any());
+    }
+
+    /** A replayed callback (code already used) must only resync the SAME institution. */
+    @Test
+    void alreadyAuthorized_scopedToSameInstitution() {
+        Long memberId = 1L;
+        FamilyMember member = FamilyMember.builder().id(memberId).displayName("Owner").build();
+        Requisition revolut = createdRequisition(10L, member, "REVOLUT::FR", "Revolut", "state-revolut");
+
+        when(requisitionRepository.findByOauthState("state-revolut")).thenReturn(Optional.of(revolut));
+        when(bankConnector.exchangeCode("oauth-code"))
+            .thenThrow(new com.picsou.exception.SyncException("Enable Banking code exchange failed: ALREADY_AUTHORIZED"));
+        // A BNP session is LINKED, but no Revolut one: the fallback must not touch BNP.
+        when(requisitionRepository.findByStatusAndMemberIdAndInstitutionIdOrderByCreatedAtDesc(
+            RequisitionStatus.LINKED, memberId, "REVOLUT::FR")).thenReturn(List.of());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> syncService.completeConnection("oauth-code", "state-revolut", memberId))
+            .isInstanceOf(com.picsou.exception.SyncException.class)
+            .hasMessageContaining("No linked session");
+
+        verify(bankConnector, never()).fetchBalances(any());
+    }
+
+    /** Admin impersonation: the requisition's own member wins over the caller context. */
+    @Test
+    void completeConnection_usesRequisitionMember() {
+        Long managedMemberId = 2L;
+        FamilyMember managed = FamilyMember.builder().id(managedMemberId).displayName("Managed").build();
+        Requisition requisition = createdRequisition(10L, managed, "REVOLUT::FR", "Revolut", "state-x");
+
+        when(requisitionRepository.findByOauthState("state-x")).thenReturn(Optional.of(requisition));
+        when(bankConnector.exchangeCode("oauth-code")).thenReturn("sess-1");
+        AccountData accountData = new AccountData("ext-1", "Compte", "FR76...", "EUR", new BigDecimal("10"));
+        when(bankConnector.fetchBalances("sess-1")).thenReturn(List.of(accountData));
+        when(accountRepository.findByExternalAccountIdAndMemberId("ext-1", managedMemberId)).thenReturn(Optional.empty());
+        lenient().when(accountRepository.existsSoftDeletedByExternalAccountIdAndMemberId("ext-1", managedMemberId))
+            .thenReturn(false);
+        when(accountRepository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(accountService.toResponse(any(Account.class)))
+            .thenReturn(new AccountResponse(1L, "Compte", null, "Revolut", "EUR",
+                new BigDecimal("10"), new BigDecimal("10"), null, false, "#6366f1", null, null, null, null, null));
+
+        // Caller context is member 1 (the admin), requisition belongs to member 2.
+        syncService.completeConnection("oauth-code", "state-x", 1L);
+
+        ArgumentCaptor<Account> captor = ArgumentCaptor.forClass(Account.class);
+        verify(accountRepository).save(captor.capture());
+        assertThat(captor.getValue().getMember().getId()).isEqualTo(managedMemberId);
     }
 }
