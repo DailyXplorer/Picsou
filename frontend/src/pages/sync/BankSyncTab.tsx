@@ -67,6 +67,7 @@ export function BankSyncTab() {
   const [callbackStatus, setCallbackStatus] = useState<CallbackStatus | null>(null)
   const [callbackError, setCallbackError] = useState<string | null>(null)
   const [initiateError, setInitiateError] = useState<string | null>(null)
+  const [retryError, setRetryError] = useState<string | null>(null)
   const handledCode = useRef<string | null>(null)
 
   const { mutate: completeSync } = useMutation({
@@ -126,9 +127,13 @@ export function BankSyncTab() {
     mutationFn: (id: number) =>
       api.post(`/sync/${id}/retry`).then(r => r.data),
     onSuccess: () => {
+      setRetryError(null)
       queryClient.invalidateQueries({ queryKey: ['sync', 'connections'] })
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: (err: unknown) => {
+      setRetryError(extractErrorMessage(err, t('sync.banks.callbackError')))
     },
   })
 
@@ -186,6 +191,19 @@ export function BankSyncTab() {
             <AlertTriangle className="size-4 shrink-0 text-destructive" />
             <span className="flex-1 text-sm font-medium text-destructive">{initiateError}</span>
             <Button variant="ghost" size="sm" onClick={() => setInitiateError(null)}>
+              {t('common.close')}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Retry error */}
+      {retryError && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="flex items-center gap-3 py-3">
+            <AlertTriangle className="size-4 shrink-0 text-destructive" />
+            <span className="flex-1 text-sm font-medium text-destructive">{retryError}</span>
+            <Button variant="ghost" size="sm" onClick={() => setRetryError(null)}>
               {t('common.close')}
             </Button>
           </CardContent>
