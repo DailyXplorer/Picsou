@@ -71,7 +71,10 @@ export function useInitiateBankSync() {
 export function useCompleteBankSync() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (code: string) => bankSyncApi.complete(code),
+    // `state` is the OAuth nonce echoed on the redirect — dropping it would
+    // route the backend into the legacy latest-CREATED guess.
+    mutationFn: ({ code, state }: { code: string; state?: string | null }) =>
+      bankSyncApi.complete(code, state),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.banks() })
       queryClient.invalidateQueries({ queryKey: ['accounts'] })

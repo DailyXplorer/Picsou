@@ -190,6 +190,14 @@ public class SyncService {
         Requisition req = requisitionRepository.findByIdAndMemberId(id, memberId)
             .orElseThrow(() -> new ResourceNotFoundException("Requisition not found"));
 
+        // A LINKED requisition holds a working session id; overwriting it with a
+        // fresh (unconsumed) authorization id would break scheduled syncs if the
+        // user abandons the new OAuth flow. Only dead connections may reconnect.
+        if (req.getStatus() == RequisitionStatus.LINKED) {
+            throw new SyncException(
+                "This bank connection is still active. Use sync/retry instead, or delete it to start over.");
+        }
+
         String state = UUID.randomUUID().toString();
         BankConnectorPort.InitiateResult result = bankConnector.initiateConnection(req.getInstitutionId(), state);
 
@@ -250,21 +258,30 @@ public class SyncService {
 
     /**
      * Resolves the requisition an OAuth callback belongs to. The state nonce is
-     * authoritative when present; the latest-CREATED-for-member guess is kept
-     * only for legacy callbacks already in flight when the state round-trip
-     * shipped (their requisitions have no stored nonce).
+     * authoritative when it matches. Requisitions created before the nonce
+     * shipped DID send a state (the old connector's {@code appId_timestamp}
+     * format) that was never persisted, so an unknown or missing state falls
+     * back to the latest CREATED requisition <b>without a stored nonce</b> —
+     * post-migration rows always carry one, so they can never be captured by a
+     * crafted state, and the fallback self-retires once legacy rows are gone.
      */
     private Requisition resolveCallbackRequisition(String state, Long memberId) {
         if (state != null && !state.isBlank()) {
-            return requisitionRepository.findByOauthState(state)
-                .orElseThrow(() -> new SyncException(
-                    "Unknown or expired bank connection. Please initiate a new connection."));
+            Optional<Requisition> byState = requisitionRepository.findByOauthState(state);
+            if (byState.isPresent()) {
+                return byState.get();
+            }
+            log.warn("OAuth callback state not found — trying legacy (pre-nonce) requisitions for member {}", memberId);
+        } else {
+            log.warn("OAuth callback without state — trying legacy (pre-nonce) requisitions for member {}", memberId);
         }
-        log.warn("OAuth callback without state — falling back to latest CREATED requisition for member {}", memberId);
         return requisitionRepository
             .findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.CREATED, memberId)
-            .stream().findFirst()
-            .orElseThrow(() -> new SyncException("No pending bank connection found. Please initiate a new connection."));
+            .stream()
+            .filter(r -> r.getOauthState() == null)
+            .findFirst()
+            .orElseThrow(() -> new SyncException(
+                "Unknown or expired bank connection. Please initiate a new connection."));
     }
 
     /** Refresh balances for the most recent LINKED session of the given institution. */

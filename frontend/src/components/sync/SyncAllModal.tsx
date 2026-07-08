@@ -54,7 +54,8 @@ import {
 } from '@/features/sync/hooks'
 import { useAccounts } from '@/features/accounts/hooks'
 import { formatTimeAgo } from '@/lib/utils'
-import { formatApiError, formatTrAuthError, getErrorDetail } from '@/lib/errors'
+import { formatApiError, formatTrAuthError, isTrSessionDeadError } from '@/lib/errors'
+import { syncKeys } from '@/features/sync/hooks'
 import { TR_VERIFICATION_CODE_LENGTH } from '@/lib/constants'
 
 type SyncConnection = {
@@ -276,14 +277,14 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
         break
       case 'tr':
         syncTrMutation.mutate(undefined, {
-          ...options(err => formatTrAuthError(err, t)),
+          onSettled: clearSyncing,
+          onSuccess: clearRowError,
           onError: (err: unknown) => {
             setRowErrors(prev => ({ ...prev, [connection.id]: formatTrAuthError(err, t) }))
             // Session truly dead (refresh rejected or session cleared): refetch
             // the now-inactive status and fall back to the inline phone/PIN form.
-            const detail = getErrorDetail(err) || ''
-            if (detail.includes('expired') || detail.includes('reconnect') || detail.includes('No Trade Republic session')) {
-              queryClient.invalidateQueries({ queryKey: ['sync', 'tr'] })
+            if (isTrSessionDeadError(err)) {
+              queryClient.invalidateQueries({ queryKey: syncKeys.tr() })
               setTrAuthStep('phone')
             }
           },
@@ -373,10 +374,9 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
           setTrTan('')
           setTrProcessId(null)
           setTrAuthError(null)
-          // Sync runs in background — invalidate to pick up results
-          queryClient.invalidateQueries({ queryKey: ['accounts'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-          queryClient.invalidateQueries({ queryKey: ['sync', 'tr', 'status'] })
+          // Query invalidation (status, accounts, dashboard) is handled by
+          // useCompleteTrAuth itself; the background sync results arrive via
+          // the existing refetch intervals.
         },
         onError: (err: unknown) => {
           setTrAuthError(formatTrAuthError(err, t))
@@ -521,25 +521,33 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
-                        {connection.providerType === 'bank' && connection.status === 'FAILED' && connection.syncId !== undefined && (
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            title={t('sync.banks.reconnect')}
-                            disabled={reconnectBankMutation.isPending}
-                            onClick={() => reconnectBankMutation.mutate(connection.syncId!, {
-                              onSuccess: (data) => { window.location.href = data.authLink },
-                              onError: (err: unknown) => setRowErrors(prev => ({
-                                ...prev,
-                                [connection.id]: formatApiError(err, t, 'sync.banks.initiateError'),
-                              })),
-                            })}
-                          >
-                            {reconnectBankMutation.isPending
-                              ? <Loader2 className="size-4 animate-spin" />
-                              : <ExternalLink className="size-4" />}
-                          </Button>
-                        )}
+                        {connection.providerType === 'bank' && connection.status === 'FAILED' && connection.syncId !== undefined && (() => {
+                          // Pending state scoped to THIS row — the mutation is shared,
+                          // so isPending alone would spin every bank's button at once.
+                          const isReconnecting =
+                            reconnectBankMutation.isPending && reconnectBankMutation.variables === connection.syncId
+                          return (
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              title={t('sync.banks.reconnect')}
+                              disabled={isReconnecting}
+                              onClick={() => reconnectBankMutation.mutate(connection.syncId!, {
+                                onSuccess: (data) => {
+                                  if (data.authLink) window.location.href = data.authLink
+                                },
+                                onError: (err: unknown) => setRowErrors(prev => ({
+                                  ...prev,
+                                  [connection.id]: formatApiError(err, t, 'sync.banks.initiateError'),
+                                })),
+                              })}
+                            >
+                              {isReconnecting
+                                ? <Loader2 className="size-4 animate-spin" />
+                                : <ExternalLink className="size-4" />}
+                            </Button>
+                          )
+                        })()}
                         <Button
                           size="icon-sm"
                           variant="ghost"

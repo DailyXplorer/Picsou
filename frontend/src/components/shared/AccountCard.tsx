@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TriangleAlert } from 'lucide-react'
 import type { Account } from '@/types/api'
@@ -36,9 +36,14 @@ export function AccountCard({ account, onClick }: AccountCardProps) {
   const isLoan = account.type === 'LOAN'
   const isRealEstate = account.type === 'REAL_ESTATE'
 
-  // Mount-time snapshot via lazy initializer (Date.now() in render is rejected
-  // by the compiler); a 48h threshold does not need a ticking clock.
-  const [now] = useState(() => Date.now())
+  // Lazy initializer keeps the impure Date.now() out of render; the slow tick
+  // lets a long-lived tab cross the 48h threshold without a remount (the whole
+  // point of the badge is catching sessions that die while the app sits open).
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 5 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [])
   const isSyncStale =
     !account.isManual &&
     account.lastSyncedAt != null &&

@@ -48,9 +48,7 @@ public class SyncController {
         HttpServletRequest httpReq
     ) {
         if (!checkSyncRateLimit(httpReq)) {
-            ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.TOO_MANY_REQUESTS);
-            detail.setDetail("Too many sync requests. Please wait a moment.");
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(detail);
+            return rateLimited();
         }
 
         SyncService.InitiateResponse response = syncService.initiateConnection(
@@ -84,9 +82,7 @@ public class SyncController {
     @PostMapping("/{id}/reconnect")
     public ResponseEntity<?> reconnect(@PathVariable Long id, HttpServletRequest httpReq) {
         if (!checkSyncRateLimit(httpReq)) {
-            ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.TOO_MANY_REQUESTS);
-            detail.setDetail("Too many sync requests. Please wait a moment.");
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(detail);
+            return rateLimited();
         }
         return ResponseEntity.ok(syncService.reconnect(id, userContext.currentMemberId()));
     }
@@ -101,6 +97,12 @@ public class SyncController {
         String ip = request.getRemoteAddr();
         Bucket bucket = syncBuckets.computeIfAbsent(ip, k -> RateLimitConfig.createSyncBucket());
         return bucket.tryConsume(1);
+    }
+
+    private static ResponseEntity<ProblemDetail> rateLimited() {
+        ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.TOO_MANY_REQUESTS);
+        detail.setDetail("Too many sync requests. Please wait a moment.");
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(detail);
     }
 
     record InitiateRequest(String institutionId, String institutionName) {}

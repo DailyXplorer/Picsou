@@ -7,7 +7,10 @@ interface PriceFreshnessDotProps {
   priceUpdatedAt: string | null
 }
 
-const LIVE_THRESHOLD_MS = 2 * 60 * 1000 // 2 minutes
+// Strictly greater than the holdings/portfolio refetchInterval (2 min) plus
+// tick + network latency, so the dot doesn't flicker to stale right before
+// each scheduled refetch lands.
+const LIVE_THRESHOLD_MS = 3 * 60 * 1000
 const TICK_MS = 30 * 1000
 
 export function PriceFreshnessDot({ priceUpdatedAt }: PriceFreshnessDotProps) {

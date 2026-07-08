@@ -166,11 +166,16 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
                 "Trade Republic authentication service is unavailable. Please make sure tr-auth is running on port 8001.",
                 ex))
             .blockOptional()
-            .orElseThrow(() -> new SyncException("SESSION_EXPIRED"));
+            // An empty 2xx body is a sidecar/proxy defect, not a TR rejection —
+            // it must not carry the SESSION_EXPIRED sentinel that destroys the
+            // stored session. Only a 4xx above means TR refused the token.
+            .orElseThrow(() -> new SyncException(
+                "Trade Republic authentication service returned an empty response. Please try again later."));
 
         String newSession = response.path("sessionToken").asText(null);
         if (newSession == null || newSession.isBlank()) {
-            throw new SyncException("SESSION_EXPIRED");
+            throw new SyncException(
+                "Trade Republic authentication service returned an empty response. Please try again later.");
         }
         String newRefresh = response.path("refreshToken").asText(null);
         log.info("TR session refreshed successfully");

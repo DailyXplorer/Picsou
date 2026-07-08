@@ -34,8 +34,12 @@ could resync BNP and report success.
   nonce is cleared the moment the code exchange succeeds) and derives the
   member from the resolved requisition, not the caller context.
 - The `ALREADY_AUTHORIZED` fallback is scoped to the same `institutionId`.
-- A callback **without** state falls back to the legacy latest-CREATED guess
-  (kept only for flows already in flight when this shipped).
+- A callback whose state is missing **or unknown** falls back to the latest
+  CREATED requisition **without a stored nonce** (pre-migration rows sent an
+  old-format `appId_timestamp` state that was never persisted, so they can't
+  match `findByOauthState`). Post-migration rows always carry a nonce and can
+  never be captured by a crafted state; the fallback self-retires once legacy
+  CREATED rows are gone.
 
 ## Alternatives considered
 
@@ -60,8 +64,9 @@ member is derived from the row it resolves to.
 ## Trade-offs accepted
 
 - One more nullable column + unique index on `requisition`.
-- The blank-state legacy fallback preserves the old (guessing) behavior for
-  in-flight flows; it should be removed one release later.
+- The legacy fallback (nonce-less rows only) preserves the old guessing
+  behavior for pre-migration requisitions; it becomes unreachable once those
+  rows are completed or deleted, and the code path can then be removed.
 - `BankConnectorPort.initiateConnection` gained a `state` parameter (Powens
   adapter forwards it when provided).
 

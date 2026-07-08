@@ -302,6 +302,31 @@ class SyncServiceTest {
         verify(bankConnector, never()).initiateConnection(any(), any());
     }
 
+    /** A LINKED requisition holds a working session id — reconnect must refuse to clobber it. */
+    @Test
+    void reconnect_refusesLinkedRequisition() {
+        Long memberId = 4L;
+        FamilyMember member = FamilyMember.builder().id(memberId).displayName("Owner").build();
+
+        Requisition linked = Requisition.builder()
+            .id(41L)
+            .member(member)
+            .requisitionId("live-session-id")
+            .institutionId("BNP_PARIBAS::FR")
+            .institutionName("BNP Paribas")
+            .status(RequisitionStatus.LINKED)
+            .build();
+        when(requisitionRepository.findByIdAndMemberId(41L, memberId)).thenReturn(Optional.of(linked));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> syncService.reconnect(41L, memberId))
+            .isInstanceOf(com.picsou.exception.SyncException.class)
+            .hasMessageContaining("still active");
+
+        verify(bankConnector, never()).initiateConnection(any(), any());
+        assertThat(linked.getRequisitionId()).isEqualTo("live-session-id");
+        assertThat(linked.getStatus()).isEqualTo(RequisitionStatus.LINKED);
+    }
+
     /**
      * The exchanged session id must survive a balance-fetch failure: the OAuth
      * code is consumed at Enable Banking, so if the id were lost the requisition
@@ -372,14 +397,40 @@ class SyncServiceTest {
     }
 
     @Test
-    void completeConnection_unknownState_throws() {
+    void completeConnection_unknownState_throwsWhenNoLegacyRow() {
         when(requisitionRepository.findByOauthState("bogus")).thenReturn(Optional.empty());
+        when(requisitionRepository.findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.CREATED, 1L))
+            .thenReturn(List.of());
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> syncService.completeConnection("oauth-code", "bogus", 1L))
             .isInstanceOf(com.picsou.exception.SyncException.class)
             .hasMessageContaining("Unknown or expired");
 
         verify(bankConnector, never()).exchangeCode(any());
+    }
+
+    /**
+     * Pre-nonce requisitions sent an old-format state that was never persisted
+     * (oauth_state NULL). An unknown state must fall back to them — but never
+     * to a post-migration row, whose stored nonce is the only way in.
+     */
+    @Test
+    void completeConnection_unknownState_fallsBackToLegacyNullStateRowOnly() {
+        Long memberId = 1L;
+        FamilyMember member = FamilyMember.builder().id(memberId).displayName("Owner").build();
+        Requisition postMigration = createdRequisition(11L, member, "BNP_PARIBAS::FR", "BNP Paribas", "state-bnp");
+        Requisition legacy = createdRequisition(10L, member, "REVOLUT::FR", "Revolut", null);
+
+        when(requisitionRepository.findByOauthState("picsou-app_1720000000")).thenReturn(Optional.empty());
+        when(requisitionRepository.findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.CREATED, memberId))
+            .thenReturn(List.of(postMigration, legacy)); // newest first — nonce row must be skipped
+        when(bankConnector.exchangeCode("oauth-code")).thenReturn("sess-1");
+        when(bankConnector.fetchBalances("sess-1")).thenReturn(List.of());
+
+        syncService.completeConnection("oauth-code", "picsou-app_1720000000", memberId);
+
+        assertThat(legacy.getRequisitionId()).isEqualTo("sess-1");
+        assertThat(postMigration.getRequisitionId()).isEqualTo("auth-11"); // untouched
     }
 
     /** A replayed callback (code already used) must only resync the SAME institution. */

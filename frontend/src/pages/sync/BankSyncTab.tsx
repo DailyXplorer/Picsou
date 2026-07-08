@@ -20,7 +20,9 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import type { Institution } from '@/types/api'
-import { extractErrorMessage } from '@/lib/errors'
+import { extractErrorMessage, formatApiError } from '@/lib/errors'
+import { bankSyncApi } from '@/features/sync/api'
+import { useReconnectBankSync } from '@/features/sync/hooks'
 
 type CallbackStatus = 'completing' | 'done' | 'error'
 
@@ -73,7 +75,7 @@ export function BankSyncTab() {
 
   const { mutate: completeSync } = useMutation({
     mutationFn: ({ code, state }: { code: string; state: string | null }) =>
-      api.get('/sync/complete', { params: { code, state: state ?? undefined } }).then(r => r.data),
+      bankSyncApi.complete(code, state),
     onSuccess: () => {
       setCallbackStatus('done')
       cleanBankCallbackUrl()
@@ -135,23 +137,25 @@ export function BankSyncTab() {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
     onError: (err: unknown) => {
-      setRetryError(extractErrorMessage(err, t('sync.banks.callbackError')))
+      setRetryError(formatApiError(err, t, 'sync.banks.callbackError'))
     },
   })
 
   // Re-initiates the OAuth flow for a dead requisition (failed code exchange,
   // expired PSD2 consent) — a plain retry can never fix those.
-  const reconnectMutation = useMutation({
-    mutationFn: (id: number) =>
-      api.post<{ authLink: string }>(`/sync/${id}/reconnect`).then(r => r.data),
-    onSuccess: (data) => {
-      setRetryError(null)
-      window.location.href = data.authLink
-    },
-    onError: (err: unknown) => {
-      setRetryError(extractErrorMessage(err, t('sync.banks.initiateError')))
-    },
-  })
+  const reconnectMutation = useReconnectBankSync()
+
+  function handleReconnect(id: number) {
+    reconnectMutation.mutate(id, {
+      onSuccess: (data) => {
+        setRetryError(null)
+        if (data.authLink) window.location.href = data.authLink
+      },
+      onError: (err: unknown) => {
+        setRetryError(formatApiError(err, t, 'sync.banks.initiateError'))
+      },
+    })
+  }
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
@@ -321,10 +325,10 @@ export function BankSyncTab() {
                           size="icon-sm"
                           variant="ghost"
                           title={t('sync.banks.reconnect')}
-                          onClick={() => reconnectMutation.mutate(conn.id)}
-                          disabled={reconnectMutation.isPending}
+                          onClick={() => handleReconnect(conn.id)}
+                          disabled={reconnectMutation.isPending && reconnectMutation.variables === conn.id}
                         >
-                          {reconnectMutation.isPending
+                          {reconnectMutation.isPending && reconnectMutation.variables === conn.id
                             ? <Loader2 className="size-4 animate-spin" />
                             : <ExternalLink className="size-4" />}
                         </Button>

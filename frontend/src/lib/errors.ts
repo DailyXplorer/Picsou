@@ -100,6 +100,21 @@ function matchTrDetail(detail: string, t: TFunc): string | null {
 }
 
 /**
+ * True when a TR sync/auth error means the stored session is genuinely dead
+ * (rejected refresh, cleared session) — the caller should offer re-auth.
+ * Matches the exact backend messages from TradeRepublicSyncService; kept next
+ * to {@link formatTrAuthError} so the two substring taxonomies evolve together.
+ */
+export function isTrSessionDeadError(err: unknown): boolean {
+  const detail = getErrorDetail(err) || ''
+  return (
+    detail.includes('expired') ||
+    detail.includes('reconnect') ||
+    detail.includes('No Trade Republic session')
+  )
+}
+
+/**
  * Maps Trade Republic auth errors (credentials initiation / TAN completion) to
  * translated messages. TR rejections are `SyncException`s, which the backend
  * maps to HTTP 422 with the upstream error code in the ProblemDetail `detail`
