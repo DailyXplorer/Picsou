@@ -152,9 +152,19 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
             .bodyToMono(JsonNode.class)
             .onErrorResume(WebClientResponseException.class, ex -> {
                 log.error("tr-auth sidecar /refresh failed ({}) : {}", ex.getStatusCode(), ex.getResponseBodyAsString());
-                return Mono.error(new SyncException("SESSION_EXPIRED"));
+                // Only a 4xx means TR actually rejected the refresh token; a sidecar
+                // 5xx is transient and must not destroy the stored session.
+                if (ex.getStatusCode().is4xxClientError()) {
+                    return Mono.error(new SyncException("SESSION_EXPIRED"));
+                }
+                return Mono.error(new SyncException(
+                    "Trade Republic authentication service is unavailable. Please make sure tr-auth is running on port 8001.",
+                    ex));
             })
             .timeout(Duration.ofSeconds(15))
+            .onErrorMap(ex -> !(ex instanceof SyncException), ex -> new SyncException(
+                "Trade Republic authentication service is unavailable. Please make sure tr-auth is running on port 8001.",
+                ex))
             .blockOptional()
             .orElseThrow(() -> new SyncException("SESSION_EXPIRED"));
 

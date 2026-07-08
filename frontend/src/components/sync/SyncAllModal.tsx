@@ -53,7 +53,7 @@ import {
 } from '@/features/sync/hooks'
 import { useAccounts } from '@/features/accounts/hooks'
 import { formatTimeAgo } from '@/lib/utils'
-import { formatApiError, formatTrAuthError } from '@/lib/errors'
+import { formatApiError, formatTrAuthError, getErrorDetail } from '@/lib/errors'
 import { TR_VERIFICATION_CODE_LENGTH } from '@/lib/constants'
 
 type SyncConnection = {
@@ -273,7 +273,19 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
         if (connection.syncId !== undefined) syncWalletMutation.mutate(connection.syncId, options(formatGeneric))
         break
       case 'tr':
-        syncTrMutation.mutate(undefined, options(err => formatTrAuthError(err, t)))
+        syncTrMutation.mutate(undefined, {
+          ...options(err => formatTrAuthError(err, t)),
+          onError: (err: unknown) => {
+            setRowErrors(prev => ({ ...prev, [connection.id]: formatTrAuthError(err, t) }))
+            // Session truly dead (refresh rejected or session cleared): refetch
+            // the now-inactive status and fall back to the inline phone/PIN form.
+            const detail = getErrorDetail(err) || ''
+            if (detail.includes('expired') || detail.includes('reconnect') || detail.includes('No Trade Republic session')) {
+              queryClient.invalidateQueries({ queryKey: ['sync', 'tr'] })
+              setTrAuthStep('phone')
+            }
+          },
+        })
         break
       case 'bourso':
         syncBoursoMutation.mutate(undefined, options(formatGeneric))
@@ -294,6 +306,7 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
     syncBoursoMutation,
     navigate,
     onOpenChange,
+    queryClient,
     t,
   ])
 
