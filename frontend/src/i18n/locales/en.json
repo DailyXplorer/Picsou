@@ -139,6 +139,8 @@
     "noAccounts": "No accounts",
     "balance": "Balance",
     "lastSync": "Last sync",
+    "syncStale": "Synced {{time}}",
+    "syncStaleTooltip": "This account has not synced recently. Run a sync or reconnect the provider.",
     "neverSynced": "Never synced",
     "holdings": "Holdings",
     "transactions": "Transactions",

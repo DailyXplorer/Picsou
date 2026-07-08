@@ -128,6 +128,9 @@ export function usePortfolio() {
       return enriched
     },
     staleTime: QUERY_STALE_TIMES.accountDetail,
+    // Keep live prices actually live in an open tab (refetchOnWindowFocus is
+    // globally off); matches the PriceFreshnessDot 2 min "live" threshold.
+    refetchInterval: QUERY_STALE_TIMES.accountDetail,
   })
 }
 
@@ -184,6 +187,8 @@ export function useHoldingsWithLivePrices(id: number) {
       }
     },
     staleTime: QUERY_STALE_TIMES.accountDetail,
+    // Same rationale as usePortfolio: the "live" dot must not outlive the data.
+    refetchInterval: QUERY_STALE_TIMES.accountDetail,
     enabled: !!id,
   })
 }
