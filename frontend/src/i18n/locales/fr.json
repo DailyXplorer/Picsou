@@ -390,6 +390,7 @@
       "noConnections": "Aucune connexion bancaire",
       "connect": "Connecter",
       "retry": "Réessayer",
+      "reconnect": "Se reconnecter à la banque",
       "delete": "Supprimer",
       "deleteConfirm": "Supprimer cette connexion bancaire ?",
       "callbackCompleting": "Récupération des comptes...",

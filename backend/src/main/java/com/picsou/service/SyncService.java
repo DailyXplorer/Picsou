@@ -89,8 +89,12 @@ public class SyncService {
             throw ex;
         }
 
-        // Store session_id so the scheduler can re-sync later
+        // Store session_id immediately: the OAuth code is consumed at Enable
+        // Banking the moment the exchange succeeds, so losing this id to a later
+        // failure in the same transaction would leave the requisition pointing at
+        // the stale authorization id — a permanently unretryable state.
         requisition.setRequisitionId(sessionId);
+        requisitionRepository.saveAndFlush(requisition);
 
         List<BankConnectorPort.AccountData> accountDataList;
         try {
@@ -167,6 +171,28 @@ public class SyncService {
 
         log.info("Retry sync OK for {}: {} accounts linked", req.getInstitutionName(), responses.size());
         return responses;
+    }
+
+    /**
+     * Re-initiates the Enable Banking OAuth flow for an existing requisition
+     * whose session is dead (failed code exchange, expired/revoked PSD2
+     * consent). The requisition row is reused: status returns to CREATED and
+     * the new authorization id replaces the stale session id. Accounts are
+     * preserved because {@link #upsertAccount} matches on externalAccountId.
+     */
+    public InitiateResponse reconnect(Long id, Long memberId) {
+        Requisition req = requisitionRepository.findByIdAndMemberId(id, memberId)
+            .orElseThrow(() -> new ResourceNotFoundException("Requisition not found"));
+
+        BankConnectorPort.InitiateResult result = bankConnector.initiateConnection(req.getInstitutionId());
+
+        req.setRequisitionId(result.requisitionId());
+        req.setAuthLink(result.authLink());
+        req.setStatus(RequisitionStatus.CREATED);
+        requisitionRepository.save(req);
+
+        log.info("Re-initiated Enable Banking auth for {} (requisition {})", req.getInstitutionName(), id);
+        return new InitiateResponse(result.requisitionId(), result.authLink());
     }
 
     /** Delete a requisition (cancel or remove a bank connection). */

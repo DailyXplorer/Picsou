@@ -92,6 +92,20 @@ export function useRetryBankSync() {
   })
 }
 
+/**
+ * Re-initiates the OAuth flow for a dead requisition. Navigating to the
+ * returned authLink is the caller's concern (same as the initiate flow).
+ */
+export function useReconnectBankSync() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => bankSyncApi.reconnect(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.banks() })
+    },
+  })
+}
+
 export function useDeleteBankConnection() {
   const queryClient = useQueryClient()
   return useMutation({

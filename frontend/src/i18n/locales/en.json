@@ -390,6 +390,7 @@
       "noConnections": "No bank connections",
       "connect": "Connect",
       "retry": "Retry",
+      "reconnect": "Reconnect to bank",
       "delete": "Remove",
       "deleteConfirm": "Remove this bank connection?",
       "callbackCompleting": "Fetching accounts...",

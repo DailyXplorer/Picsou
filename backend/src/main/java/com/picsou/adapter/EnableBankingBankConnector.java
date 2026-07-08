@@ -180,6 +180,8 @@ public class EnableBankingBankConnector implements BankConnectorPort {
                 .timeout(TIMEOUT)
                 .onErrorMap(WebClientResponseException.class,
                     ex -> new SyncException("Failed to fetch session: " + ex.getResponseBodyAsString(), ex))
+                .onErrorMap(ex -> !(ex instanceof SyncException),
+                    ex -> new SyncException("Failed to fetch session: " + ex.getMessage(), ex))
                 .block();
 
             if (session != null && session.accounts() != null && !session.accounts().isEmpty()) {
@@ -251,6 +253,10 @@ public class EnableBankingBankConnector implements BankConnectorPort {
             .retrieve()
             .bodyToMono(BalancesResponse.class)
             .timeout(TIMEOUT)
+            .onErrorMap(WebClientResponseException.class,
+                ex -> new SyncException("Failed to fetch account balances: " + ex.getResponseBodyAsString(), ex))
+            .onErrorMap(ex -> !(ex instanceof SyncException),
+                ex -> new SyncException("Failed to fetch account balances: " + ex.getMessage(), ex))
             .block();
 
         AccountDetailsResponse details = webClient.get()
@@ -259,6 +265,10 @@ public class EnableBankingBankConnector implements BankConnectorPort {
             .retrieve()
             .bodyToMono(AccountDetailsResponse.class)
             .timeout(TIMEOUT)
+            .onErrorMap(WebClientResponseException.class,
+                ex -> new SyncException("Failed to fetch account details: " + ex.getResponseBodyAsString(), ex))
+            .onErrorMap(ex -> !(ex instanceof SyncException),
+                ex -> new SyncException("Failed to fetch account details: " + ex.getMessage(), ex))
             .block();
 
         BigDecimal balance = BigDecimal.ZERO;

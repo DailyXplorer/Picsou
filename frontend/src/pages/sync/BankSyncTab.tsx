@@ -17,6 +17,7 @@ import {
   Loader2,
   CheckCircle,
   AlertTriangle,
+  ExternalLink,
 } from 'lucide-react'
 import type { Institution } from '@/types/api'
 import { extractErrorMessage } from '@/lib/errors'
@@ -134,6 +135,20 @@ export function BankSyncTab() {
     },
     onError: (err: unknown) => {
       setRetryError(extractErrorMessage(err, t('sync.banks.callbackError')))
+    },
+  })
+
+  // Re-initiates the OAuth flow for a dead requisition (failed code exchange,
+  // expired PSD2 consent) — a plain retry can never fix those.
+  const reconnectMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.post<{ authLink: string }>(`/sync/${id}/reconnect`).then(r => r.data),
+    onSuccess: (data) => {
+      setRetryError(null)
+      window.location.href = data.authLink
+    },
+    onError: (err: unknown) => {
+      setRetryError(extractErrorMessage(err, t('sync.banks.initiateError')))
     },
   })
 
@@ -291,14 +306,28 @@ export function BankSyncTab() {
                   </div>
                   <div className="flex items-center gap-2">
                     {conn.status === 'FAILED' && (
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() => retryMutation.mutate(conn.id)}
-                        disabled={retryMutation.isPending}
-                      >
-                        <RefreshCw className="size-4" />
-                      </Button>
+                      <>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          title={t('sync.banks.retry')}
+                          onClick={() => retryMutation.mutate(conn.id)}
+                          disabled={retryMutation.isPending}
+                        >
+                          <RefreshCw className="size-4" />
+                        </Button>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          title={t('sync.banks.reconnect')}
+                          onClick={() => reconnectMutation.mutate(conn.id)}
+                          disabled={reconnectMutation.isPending}
+                        >
+                          {reconnectMutation.isPending
+                            ? <Loader2 className="size-4 animate-spin" />
+                            : <ExternalLink className="size-4" />}
+                        </Button>
+                      </>
                     )}
                     <Button
                       size="icon-sm"

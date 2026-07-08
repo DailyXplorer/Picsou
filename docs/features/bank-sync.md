@@ -26,8 +26,11 @@ Both providers implement the `BankConnectorPort` interface with four operations:
 ### Requisition lifecycle
 
 1. **CREATED** -- `SyncService.initiateConnection()` calls the port and stores a `Requisition` with `authLink`.
-2. **LINKED** -- `SyncService.completeConnection()` exchanges the OAuth callback code, fetches balances, upserts at least one account, and marks the requisition as LINKED.
+2. **LINKED** -- `SyncService.completeConnection()` exchanges the OAuth callback code, fetches balances, upserts at least one account, and marks the requisition as LINKED. The exchanged `session_id` is **flushed onto the requisition immediately** (before the balance fetch): the OAuth code is consumed at Enable Banking the moment the exchange succeeds, so losing the id to a later failure would leave the requisition pointing at the stale authorization id — a permanently unretryable state.
 3. **FAILED** -- If the code exchange or balance fetch fails, or if Enable Banking returns zero accounts after polling, the requisition is marked FAILED and can be retried via `retrySync()`.
+4. **Reconnect** -- `POST /api/sync/{id}/reconnect` (`SyncService.reconnect()`) re-initiates the OAuth flow **on the existing requisition** for the cases a retry can never fix: a failed code exchange (the stored id is an authorization id, not a session) or an expired/revoked PSD2 consent (~90 days). Status returns to CREATED with a fresh `authLink`; accounts survive because `upsertAccount` matches on `externalAccountId`. Exposed in the UI as a "Reconnect to bank" button next to retry on FAILED connections (BankSyncTab and SyncAllModal). Rate-limited like `/initiate` (it triggers an outbound EB `/auth` call).
+
+Every public method of `EnableBankingBankConnector` maps **all** failures (HTTP errors, timeouts, connection errors) to `SyncException` — an invariant the service layer's `catch (SyncException)` / `noRollbackFor` handling depends on. An unmapped raw exception would roll back the completion transaction and lose the freshly exchanged session id.
 
 ### Account type detection
 

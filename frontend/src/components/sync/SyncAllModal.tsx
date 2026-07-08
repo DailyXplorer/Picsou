@@ -50,6 +50,7 @@ import {
   useSyncBourso,
   useInitiateBoursoAuth,
   useCompleteBoursoAuth,
+  useReconnectBankSync,
 } from '@/features/sync/hooks'
 import { useAccounts } from '@/features/accounts/hooks'
 import { formatTimeAgo } from '@/lib/utils'
@@ -128,6 +129,7 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
   const syncBoursoMutation   = useSyncBourso()
   const initiateBoursoMutation = useInitiateBoursoAuth()
   const completeBoursoMutation = useCompleteBoursoAuth()
+  const reconnectBankMutation = useReconnectBankSync()
 
   // Track syncing state per connection
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set())
@@ -518,21 +520,42 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
                           )}
                         </div>
                       </div>
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        disabled={isSyncing}
-                        onClick={() => handleSync(connection)}
-                        title={isFinary ? t('sync.all.openFinary') : undefined}
-                      >
-                        {isSyncing ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : isFinary ? (
-                          <ExternalLink className="size-4" />
-                        ) : (
-                          <RefreshCw className="size-4" />
+                      <div className="flex items-center gap-1">
+                        {connection.providerType === 'bank' && connection.status === 'FAILED' && connection.syncId !== undefined && (
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            title={t('sync.banks.reconnect')}
+                            disabled={reconnectBankMutation.isPending}
+                            onClick={() => reconnectBankMutation.mutate(connection.syncId!, {
+                              onSuccess: (data) => { window.location.href = data.authLink },
+                              onError: (err: unknown) => setRowErrors(prev => ({
+                                ...prev,
+                                [connection.id]: formatApiError(err, t, 'sync.banks.initiateError'),
+                              })),
+                            })}
+                          >
+                            {reconnectBankMutation.isPending
+                              ? <Loader2 className="size-4 animate-spin" />
+                              : <ExternalLink className="size-4" />}
+                          </Button>
                         )}
-                      </Button>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          disabled={isSyncing}
+                          onClick={() => handleSync(connection)}
+                          title={isFinary ? t('sync.all.openFinary') : undefined}
+                        >
+                          {isSyncing ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : isFinary ? (
+                            <ExternalLink className="size-4" />
+                          ) : (
+                            <RefreshCw className="size-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
 
                     {/* BoursoBank inline auth form */}

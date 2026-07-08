@@ -260,4 +260,80 @@ class SyncServiceTest {
         assertThat(requisition.getLastSyncedAt()).isNull();
         verify(requisitionRepository, never()).save(requisition);
     }
+
+    // --- Reconnect: re-initiate OAuth on an existing (dead) requisition ---
+
+    @Test
+    void reconnect_reinitiatesAuthOnExistingRequisition() {
+        Long memberId = 4L;
+        FamilyMember member = FamilyMember.builder().id(memberId).displayName("Owner").build();
+
+        Requisition requisition = Requisition.builder()
+            .id(40L)
+            .member(member)
+            .requisitionId("dead-authorization-id")
+            .institutionId("REVOLUT::FR")
+            .institutionName("Revolut")
+            .status(RequisitionStatus.FAILED)
+            .build();
+
+        when(requisitionRepository.findByIdAndMemberId(40L, memberId)).thenReturn(Optional.of(requisition));
+        when(bankConnector.initiateConnection("REVOLUT::FR"))
+            .thenReturn(new BankConnectorPort.InitiateResult("new-auth-id", "https://auth.example/new"));
+        when(requisitionRepository.save(any(Requisition.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SyncService.InitiateResponse response = syncService.reconnect(40L, memberId);
+
+        assertThat(response.requisitionId()).isEqualTo("new-auth-id");
+        assertThat(response.authLink()).isEqualTo("https://auth.example/new");
+        assertThat(requisition.getRequisitionId()).isEqualTo("new-auth-id");
+        assertThat(requisition.getAuthLink()).isEqualTo("https://auth.example/new");
+        assertThat(requisition.getStatus()).isEqualTo(RequisitionStatus.CREATED);
+        verify(requisitionRepository).save(requisition);
+    }
+
+    @Test
+    void reconnect_unknownRequisition_throwsNotFound() {
+        when(requisitionRepository.findByIdAndMemberId(99L, 1L)).thenReturn(Optional.empty());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> syncService.reconnect(99L, 1L))
+            .isInstanceOf(com.picsou.exception.ResourceNotFoundException.class);
+
+        verify(bankConnector, never()).initiateConnection(any());
+    }
+
+    /**
+     * The exchanged session id must survive a balance-fetch failure: the OAuth
+     * code is consumed at Enable Banking, so if the id were lost the requisition
+     * would keep pointing at the stale authorization id — permanently unretryable.
+     */
+    @Test
+    void completeConnection_persistsSessionIdBeforeFetch() {
+        Long memberId = 1L;
+        FamilyMember member = FamilyMember.builder().id(memberId).displayName("Owner").build();
+
+        Requisition requisition = Requisition.builder()
+            .id(10L)
+            .member(member)
+            .requisitionId("authorization-id")
+            .institutionId("REVOLUT::FR")
+            .institutionName("Revolut")
+            .logoUrl("https://logos.example/revolut.png")
+            .status(RequisitionStatus.CREATED)
+            .build();
+
+        when(requisitionRepository.findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.CREATED, memberId))
+            .thenReturn(List.of(requisition));
+        when(bankConnector.exchangeCode("oauth-code")).thenReturn("sess-1");
+        when(bankConnector.fetchBalances("sess-1"))
+            .thenThrow(new com.picsou.exception.SyncException("Failed to fetch session: boom"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> syncService.completeConnection("oauth-code", memberId))
+            .isInstanceOf(com.picsou.exception.SyncException.class);
+
+        // The session id was flushed before the fetch, and the failure path kept it.
+        verify(requisitionRepository).saveAndFlush(requisition);
+        assertThat(requisition.getRequisitionId()).isEqualTo("sess-1");
+        assertThat(requisition.getStatus()).isEqualTo(RequisitionStatus.FAILED);
+    }
 }

@@ -77,6 +77,17 @@ public class SyncController {
         return ResponseEntity.ok(accounts);
     }
 
+    /** Re-initiate the OAuth flow for a dead requisition (rate-limited: triggers an outbound EB auth call). */
+    @PostMapping("/{id}/reconnect")
+    public ResponseEntity<?> reconnect(@PathVariable Long id, HttpServletRequest httpReq) {
+        if (!checkSyncRateLimit(httpReq)) {
+            ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.TOO_MANY_REQUESTS);
+            detail.setDetail("Too many sync requests. Please wait a moment.");
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(detail);
+        }
+        return ResponseEntity.ok(syncService.reconnect(id, userContext.currentMemberId()));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteRequisition(@PathVariable Long id) {
         syncService.deleteRequisition(id, userContext.currentMemberId());
