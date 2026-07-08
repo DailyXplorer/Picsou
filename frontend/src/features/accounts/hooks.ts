@@ -151,14 +151,9 @@ export function useAccount(id: number) {
   })
 }
 
-export function useAccountHoldings(id: number) {
-  return useQuery({
-    queryKey: ['accounts', id, 'holdings'],
-    queryFn: () => accountsApi.holdings(id),
-    staleTime: QUERY_STALE_TIMES.accountDetail,
-    enabled: !!id,
-  })
-}
+// (useAccountHoldings was removed: it was unused and shared the query key
+// ['accounts', id, 'holdings'] with useHoldingsWithLivePrices while running a
+// different queryFn — a cache-collision trap.)
 
 export function useHoldingsWithLivePrices(id: number) {
   return useQuery({

@@ -31,8 +31,10 @@ export const bankSyncApi = {
       .post<{ requisitionId: string; authLink: string }>('/sync/initiate', { institutionId, institutionName })
       .then(r => r.data),
 
-  complete: (code: string) =>
-    api.post<Account[]>('/sync/complete', { code }).then(r => r.data),
+  complete: (code: string, state?: string | null) =>
+    api
+      .get<Account[]>('/sync/complete', { params: { code, state: state ?? undefined } })
+      .then(r => r.data),
 
   getStatus: () =>
     api
@@ -87,7 +89,7 @@ export const trApi = {
   },
 
   clearSession: () =>
-    api.post('/tr/logout'),
+    api.delete('/tr/session'),
 }
 
 // --- Crypto Exchanges ---
