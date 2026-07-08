@@ -152,9 +152,12 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
             .bodyToMono(JsonNode.class)
             .onErrorResume(WebClientResponseException.class, ex -> {
                 log.error("tr-auth sidecar /refresh failed ({}) : {}", ex.getStatusCode(), ex.getResponseBodyAsString());
-                // Only a 4xx means TR actually rejected the refresh token; a sidecar
-                // 5xx is transient and must not destroy the stored session.
-                if (ex.getStatusCode().is4xxClientError()) {
+                // The sidecar relays TR's status verbatim: only 401/403 mean the
+                // refresh token was actually rejected. Anything else (TR 429
+                // rate-limit, sidecar 5xx) is transient and must not destroy the
+                // stored session.
+                int status = ex.getStatusCode().value();
+                if (status == 401 || status == 403) {
                     return Mono.error(new SyncException("SESSION_EXPIRED"));
                 }
                 return Mono.error(new SyncException(

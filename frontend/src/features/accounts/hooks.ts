@@ -129,7 +129,8 @@ export function usePortfolio() {
     },
     staleTime: QUERY_STALE_TIMES.accountDetail,
     // Keep live prices actually live in an open tab (refetchOnWindowFocus is
-    // globally off); matches the PriceFreshnessDot 2 min "live" threshold.
+    // globally off). PriceFreshnessDot's 3 min "live" threshold deliberately
+    // sits above this 2 min interval (+ latency) so the dot doesn't flicker.
     refetchInterval: QUERY_STALE_TIMES.accountDetail,
   })
 }

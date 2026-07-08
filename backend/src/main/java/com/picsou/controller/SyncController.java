@@ -59,12 +59,17 @@ public class SyncController {
         return ResponseEntity.ok(response);
     }
 
+    /** OAuth callback completion — rate-limited like initiate/reconnect (exchangeCode + fetchBalances hit the provider). */
     @GetMapping("/complete")
-    public List<AccountResponse> complete(
+    public ResponseEntity<?> complete(
         @RequestParam String code,
-        @RequestParam(required = false) String state
+        @RequestParam(required = false) String state,
+        HttpServletRequest httpReq
     ) {
-        return syncService.completeConnection(code, state, userContext.currentMemberId());
+        if (!checkSyncRateLimit(httpReq)) {
+            return rateLimited();
+        }
+        return ResponseEntity.ok(syncService.completeConnection(code, state, userContext.currentMemberId()));
     }
 
     @GetMapping("/status")
