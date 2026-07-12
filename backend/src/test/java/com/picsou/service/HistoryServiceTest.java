@@ -1,10 +1,14 @@
 package com.picsou.service;
 
+import com.picsou.dto.DashboardResponse.NetWorthIntradayPoint;
 import com.picsou.dto.DashboardResponse.NetWorthPoint;
+import com.picsou.dto.PnlResponse;
 import com.picsou.exception.ResourceNotFoundException;
 import com.picsou.model.Account;
+import com.picsou.model.AccountHolding;
 import com.picsou.model.AccountType;
 import com.picsou.model.FamilyMember;
+import com.picsou.model.PriceSnapshot;
 import com.picsou.repository.AccountHoldingRepository;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.BalanceSnapshotRepository;
@@ -18,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -144,6 +149,11 @@ class HistoryServiceTest {
         // Per-account split: loan invested is ZERO regardless of its snapshot column.
         assertThat(point.accounts().get(1L).invested()).isEqualByComparingTo("0");
         assertThat(point.accounts().get(2L).invested()).isEqualByComparingTo("2000");
+        // Debt-neutral pnl (plan 005): the loan contributes 0 to pnl — outstanding
+        // debt is no longer read as an investment loss.
+        assertThat(point.pnl()).isEqualByComparingTo("0");
+        assertThat(point.accounts().get(1L).pnl()).isEqualByComparingTo("0");
+        assertThat(point.accounts().get(2L).pnl()).isEqualByComparingTo("0");
     }
 
     @Test
@@ -228,5 +238,193 @@ class HistoryServiceTest {
         // not a signal to return every requested account unscoped.
         assertThatThrownBy(() -> historyService.buildHistory(List.of(1L), 1, false, null))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // ─── buildPnl characterization ────────────────────────────────────────────
+
+    private static Account loan(long id, String balance) {
+        return Account.builder()
+            .id(id).name("Loan").type(AccountType.LOAN).currency("EUR")
+            .currentBalance(new BigDecimal(balance)).color("#ef4444").member(MEMBER).build();
+    }
+
+    private static Account checking(long id, String balance) {
+        return Account.builder()
+            .id(id).name("Checking").type(AccountType.CHECKING).currency("EUR")
+            .currentBalance(new BigDecimal(balance)).color("#3b82f6").member(MEMBER).build();
+    }
+
+    @Test
+    void buildPnl_loanSubtractsFromTotal_excludedFromInvested() {
+        Account loanAcc = loan(1L, "10000");
+        Account brokerageAcc = brokerage(2L, "CT");
+
+        when(accountRepository.findAllById(List.of(1L, 2L))).thenReturn(List.of(loanAcc, brokerageAcc));
+        when(holdingRepository.findByAccount_Id(1L)).thenReturn(List.of());
+        when(holdingRepository.findByAccount_Id(2L)).thenReturn(List.of());
+        when(accountService.liveBalanceEur(loanAcc)).thenReturn(new BigDecimal("10000"));
+        when(accountService.liveBalanceEur(brokerageAcc)).thenReturn(new BigDecimal("5100"));
+        when(accountService.calculateInvestedAmount(brokerageAcc)).thenReturn(new BigDecimal("4800"));
+
+        PnlResponse result = historyService.buildPnl(List.of(1L, 2L), MEMBER_ID);
+
+        // CHARACTERIZATION (updated by plan 005): pnl is debt-neutral — loans contribute 0,
+        // so pnl reflects only non-loan performance while total stays net worth.
+        assertThat(result.total()).isEqualByComparingTo("-4900");   // 5100 − 10000 (net worth, loan negated)
+        assertThat(result.invested()).isEqualByComparingTo("4800"); // loan excluded from invested
+        assertThat(result.pnl()).isEqualByComparingTo("300");       // 5100 − 4800, loan contributes 0
+        assertThat(result.pnlPercent()).isEqualByComparingTo("6.3"); // 300 × 100 / 4800, HALF_UP scale 1
+    }
+
+    @Test
+    void buildPnl_zeroInvested_returnsNullPercent() {
+        Account loanAcc = loan(1L, "10000");
+
+        when(accountRepository.findAllById(List.of(1L))).thenReturn(List.of(loanAcc));
+        when(holdingRepository.findByAccount_Id(1L)).thenReturn(List.of());
+        when(accountService.liveBalanceEur(loanAcc)).thenReturn(new BigDecimal("10000"));
+
+        PnlResponse result = historyService.buildPnl(List.of(1L), MEMBER_ID);
+
+        // A loan-only selection sums invested to 0 → the compareTo > 0 guard skips the division.
+        assertThat(result.invested()).isEqualByComparingTo("0");
+        assertThat(result.pnl()).isEqualByComparingTo("0"); // Debt-neutral pnl (plan 005): a loan-only selection has zero investment pnl.
+        assertThat(result.pnlPercent()).isNull();
+    }
+
+    @Test
+    void buildPnl_noHistoricalPrices_fallsBackToLivePnl() {
+        LocalDate fromDate = LocalDate.now().minusDays(30);
+        Account brokerageAcc = brokerage(1L, "CT");
+        AccountHolding holding = AccountHolding.builder()
+            .account(brokerageAcc).ticker("AAPL")
+            .quantity(new BigDecimal("10")).averageBuyIn(new BigDecimal("100")).build();
+
+        when(accountRepository.findAllById(List.of(1L))).thenReturn(List.of(brokerageAcc));
+        when(holdingRepository.findByAccount_Id(1L)).thenReturn(List.of(holding));
+        when(accountService.liveBalanceEur(brokerageAcc)).thenReturn(new BigDecimal("5100"));
+        when(accountService.calculateInvestedAmount(brokerageAcc)).thenReturn(new BigDecimal("4800"));
+        when(priceSnapshotRepository.findLatestByTickerBeforeOrOnDate("AAPL", fromDate))
+            .thenReturn(Optional.empty());
+
+        PnlResponse result = historyService.buildPnl(List.of(1L), MEMBER_ID, fromDate);
+
+        // Zero matched prices → the live-only response shape: range fields stay null.
+        assertThat(result.total()).isEqualByComparingTo("5100");
+        assertThat(result.invested()).isEqualByComparingTo("4800");
+        assertThat(result.pnl()).isEqualByComparingTo("300");
+        assertThat(result.valueAtFrom()).isNull();
+        assertThat(result.rangePnl()).isNull();
+        assertThat(result.rangePnlPercent()).isNull();
+    }
+
+    @Test
+    void buildPnl_rangePnl_computedAgainstHoldingsOnlyBaseline() {
+        LocalDate fromDate = LocalDate.now().minusDays(30);
+        Account brokerageAcc = brokerage(1L, "CT");
+        Account cashAcc = checking(2L, "2000");
+        AccountHolding holding = AccountHolding.builder()
+            .account(brokerageAcc).ticker("AAPL")
+            .quantity(new BigDecimal("10")).averageBuyIn(new BigDecimal("100")).build();
+
+        when(accountRepository.findAllById(List.of(1L, 2L))).thenReturn(List.of(brokerageAcc, cashAcc));
+        when(holdingRepository.findByAccount_Id(1L)).thenReturn(List.of(holding));
+        when(holdingRepository.findByAccount_Id(2L)).thenReturn(List.of());
+        when(accountService.liveBalanceEur(brokerageAcc)).thenReturn(new BigDecimal("5100"));
+        when(accountService.liveBalanceEur(cashAcc)).thenReturn(new BigDecimal("2000"));
+        when(accountService.calculateInvestedAmount(brokerageAcc)).thenReturn(new BigDecimal("4800"));
+        when(accountService.calculateInvestedAmount(cashAcc)).thenReturn(new BigDecimal("2000"));
+        when(priceSnapshotRepository.findLatestByTickerBeforeOrOnDate("AAPL", fromDate))
+            .thenReturn(Optional.of(PriceSnapshot.builder()
+                .ticker("AAPL").date(fromDate).priceEur(new BigDecimal("90")).build()));
+        when(priceService.getPriceEur("AAPL")).thenReturn(new BigDecimal("510"));
+
+        PnlResponse result = historyService.buildPnl(List.of(1L, 2L), MEMBER_ID, fromDate);
+
+        // CHARACTERIZATION (updated by plan 005): both sides of the range use the SAME
+        // matched-holdings universe — cash/loans no longer inflate the live side (audit BE-04).
+        // valueAtFrom = 10 × 90 = 900; liveMatchedValue = 10 × 510 = 5100 (cash 2000 excluded).
+        assertThat(result.valueAtFrom()).isEqualByComparingTo("900");
+        assertThat(result.rangePnl()).isEqualByComparingTo("4200"); // 5100 − 900
+    }
+
+    @Test
+    void buildPnl_rangePnl_ignoresHoldingsWithoutSnapshotOnBothSides() {
+        LocalDate fromDate = LocalDate.now().minusDays(30);
+        Account brokerageAcc = brokerage(1L, "CT");
+        AccountHolding matched = AccountHolding.builder()
+            .account(brokerageAcc).ticker("AAPL")
+            .quantity(new BigDecimal("10")).averageBuyIn(new BigDecimal("100")).build();
+        AccountHolding unmatched = AccountHolding.builder()
+            .account(brokerageAcc).ticker("MSFT")
+            .quantity(new BigDecimal("4")).averageBuyIn(new BigDecimal("200")).build();
+
+        when(accountRepository.findAllById(List.of(1L))).thenReturn(List.of(brokerageAcc));
+        when(holdingRepository.findByAccount_Id(1L)).thenReturn(List.of(matched, unmatched));
+        when(accountService.liveBalanceEur(brokerageAcc)).thenReturn(new BigDecimal("6300"));
+        when(accountService.calculateInvestedAmount(brokerageAcc)).thenReturn(new BigDecimal("1800"));
+        when(priceSnapshotRepository.findLatestByTickerBeforeOrOnDate("AAPL", fromDate))
+            .thenReturn(Optional.of(PriceSnapshot.builder()
+                .ticker("AAPL").date(fromDate).priceEur(new BigDecimal("90")).build()));
+        // MSFT has NO snapshot at fromDate → excluded from BOTH sides of the range.
+        when(priceSnapshotRepository.findLatestByTickerBeforeOrOnDate("MSFT", fromDate))
+            .thenReturn(Optional.empty());
+        when(priceService.getPriceEur("AAPL")).thenReturn(new BigDecimal("510"));
+
+        PnlResponse result = historyService.buildPnl(List.of(1L), MEMBER_ID, fromDate);
+
+        // Only AAPL is priced on both sides: valueAtFrom = 10 × 90 = 900,
+        // liveMatchedValue = 10 × 510 = 5100 → rangePnl = 4200. MSFT's live value
+        // never enters the comparison, so an unmatched holding cannot skew the range.
+        assertThat(result.valueAtFrom()).isEqualByComparingTo("900");
+        assertThat(result.rangePnl()).isEqualByComparingTo("4200");
+        assertThat(result.rangePnlPercent()).isEqualByComparingTo("466.7"); // 4200 × 100 / 900
+    }
+
+    @Test
+    void buildPnl_emptyAccountIds_returnsZeros() {
+        when(accountRepository.findAllById(List.of())).thenReturn(List.of());
+
+        PnlResponse result = historyService.buildPnl(List.of(), MEMBER_ID);
+
+        assertThat(result.total()).isEqualByComparingTo("0");
+        assertThat(result.invested()).isEqualByComparingTo("0");
+        assertThat(result.pnl()).isEqualByComparingTo("0");
+        assertThat(result.pnlPercent()).isNull();
+    }
+
+    @Test
+    void buildPnl_foreignAccount_throws() {
+        Account othersAccount = brokerage(1L, "CT"); // belongs to MEMBER (id 99)
+        when(accountRepository.findAllById(List.of(1L))).thenReturn(List.of(othersAccount));
+
+        // A different member must not be able to read account 1's PnL.
+        assertThatThrownBy(() -> historyService.buildPnl(List.of(1L), 7L))
+            .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ─── buildIntradayHistory characterization ────────────────────────────────
+
+    @Test
+    void buildIntradayHistory_loanNegated_cashConstant() {
+        Account loanAcc = loan(1L, "10000");
+        Account cashAcc = checking(2L, "2000");
+
+        when(accountRepository.findAllById(List.of(1L, 2L))).thenReturn(List.of(loanAcc, cashAcc));
+        when(holdingRepository.findByAccount_Id(1L)).thenReturn(List.of());
+        when(holdingRepository.findByAccount_Id(2L)).thenReturn(List.of());
+        when(snapshotRepository.findByAccountIdAndDate(eq(1L), any(LocalDate.class))).thenReturn(Optional.empty());
+        when(snapshotRepository.findByAccountIdAndDate(eq(2L), any(LocalDate.class))).thenReturn(Optional.empty());
+        when(accountService.liveBalanceEur(loanAcc)).thenReturn(new BigDecimal("10000"));
+        when(accountService.liveBalanceEur(cashAcc)).thenReturn(new BigDecimal("2000"));
+
+        List<NetWorthIntradayPoint> result = historyService.buildIntradayHistory(List.of(1L, 2L), MEMBER_ID);
+
+        assertThat(result).isNotEmpty();
+        for (NetWorthIntradayPoint point : result) {
+            // Every hourly point: total = cash 2000 − loan 10000; loan excluded from invested.
+            assertThat(point.total()).isEqualByComparingTo("-8000");
+            assertThat(point.invested()).isEqualByComparingTo("2000");
+        }
     }
 }

@@ -68,7 +68,16 @@ describe('localeFromLanguage', () => {
     expect(localeFromLanguage('fr')).toBe('fr-FR')
     expect(localeFromLanguage('fr-CA')).toBe('fr-FR')
     expect(localeFromLanguage('en')).toBe('en-US')
-    expect(localeFromLanguage(undefined)).toBe('en-US')
+    expect(localeFromLanguage('de')).toBe('de-DE')
+    expect(localeFromLanguage('de-AT')).toBe('de-DE')
+    expect(localeFromLanguage('es')).toBe('es-ES')
+  })
+
+  it('falls back to the app default locale for unknown or missing tags', () => {
+    // The app's fallback language is French (i18n fallbackLng: 'fr'),
+    // so unresolvable tags map to fr-FR — not en-US.
+    expect(localeFromLanguage(undefined)).toBe('fr-FR')
+    expect(localeFromLanguage('it')).toBe('fr-FR')
   })
 })
 

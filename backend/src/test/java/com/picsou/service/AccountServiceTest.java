@@ -6,6 +6,7 @@ import com.picsou.exception.ResourceNotFoundException;
 import com.picsou.model.Account;
 import com.picsou.model.AccountHolding;
 import com.picsou.model.AccountType;
+import com.picsou.model.Debt;
 import com.picsou.repository.AccountHoldingRepository;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.BalanceSnapshotRepository;
@@ -19,12 +20,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -117,5 +121,111 @@ class AccountServiceTest {
             .isInstanceOf(ResourceNotFoundException.class);
         // The cross-member reference must never be persisted.
         verify(debtRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    // ─── liveBalanceEur characterization ──────────────────────────────────────
+
+    private Account loanAccount() {
+        return Account.builder()
+            .id(1L)
+            .name("Mortgage")
+            .type(AccountType.LOAN)
+            .currency("EUR")
+            .currentBalance(new BigDecimal("12000"))
+            .build();
+    }
+
+    @Test
+    void liveBalanceEur_loanWithDebt_returnsPositiveRemainingBalance() {
+        Account loan = loanAccount();
+        Debt debt = Debt.builder().build();
+        when(debtRepository.findByAccountId(1L)).thenReturn(Optional.of(debt));
+        when(loanAmortizationService.computeRemainingBalance(eq(debt), any(LocalDate.class)))
+            .thenReturn(new BigDecimal("8500"));
+
+        BigDecimal result = accountService.liveBalanceEur(loan);
+
+        // computeRemainingBalance returns a POSITIVE outstanding amount and
+        // liveBalanceEur passes it through unnegated — callers negate loans themselves.
+        assertThat(result).isEqualByComparingTo("8500");
+    }
+
+    @Test
+    void liveBalanceEur_loanWithoutDebt_fallsBackToStoredBalance() {
+        Account loan = loanAccount();
+        when(debtRepository.findByAccountId(1L)).thenReturn(Optional.empty());
+        when(priceService.toEur(new BigDecimal("12000"), "EUR", null)).thenReturn(new BigDecimal("12000"));
+
+        BigDecimal result = accountService.liveBalanceEur(loan);
+
+        // No Debt row → plain toEur pass-through of the stored balance, sign untouched.
+        assertThat(result).isEqualByComparingTo("12000");
+    }
+
+    @Test
+    void liveBalanceEur_skipsHoldingsWithoutLivePrice() {
+        Account account = ownedAccount();
+        AccountHolding priced = AccountHolding.builder()
+            .ticker("AAPL").quantity(new BigDecimal("5")).build();
+        AccountHolding unpriced = AccountHolding.builder()
+            .ticker("PHYMF").quantity(new BigDecimal("10")).build();
+        when(holdingRepository.findByAccount_Id(1L)).thenReturn(List.of(priced, unpriced));
+        when(priceService.getPriceEur("AAPL")).thenReturn(new BigDecimal("200"));
+        when(priceService.getPriceEur("PHYMF")).thenReturn(null);
+
+        BigDecimal result = accountService.liveBalanceEur(account);
+
+        // CHARACTERIZATION: unpriced holdings are silently skipped (audit TEST-04).
+        assertThat(result).isEqualByComparingTo("1000"); // 5 × 200; PHYMF contributes nothing
+    }
+
+    @Test
+    void liveBalanceEur_cashAccount_convertsStoredBalance() {
+        Account cash = Account.builder()
+            .id(2L)
+            .name("USD Cash")
+            .type(AccountType.CHECKING)
+            .currency("USD")
+            .currentBalance(new BigDecimal("2500"))
+            .build();
+        when(holdingRepository.findByAccount_Id(2L)).thenReturn(List.of());
+        when(priceService.toEur(new BigDecimal("2500"), "USD", null)).thenReturn(new BigDecimal("2300"));
+
+        BigDecimal result = accountService.liveBalanceEur(cash);
+
+        assertThat(result).isEqualByComparingTo("2300");
+    }
+
+    // ─── signedLiveBalanceEur ─────────────────────────────────────────────────
+
+    @Test
+    void signedLiveBalanceEur_loan_returnsNegativeOutstanding() {
+        Account loan = loanAccount();
+        Debt debt = Debt.builder().build();
+        when(debtRepository.findByAccountId(1L)).thenReturn(Optional.of(debt));
+        when(loanAmortizationService.computeRemainingBalance(eq(debt), any(LocalDate.class)))
+            .thenReturn(new BigDecimal("8500"));
+
+        BigDecimal result = accountService.signedLiveBalanceEur(loan);
+
+        // LOAN accounts are stored positive; the signed helper applies the liability sign.
+        assertThat(result).isEqualByComparingTo("-8500");
+    }
+
+    @Test
+    void signedLiveBalanceEur_checking_returnsBalanceUnchanged() {
+        Account cash = Account.builder()
+            .id(2L)
+            .name("Checking")
+            .type(AccountType.CHECKING)
+            .currency("EUR")
+            .currentBalance(new BigDecimal("2500"))
+            .build();
+        when(holdingRepository.findByAccount_Id(2L)).thenReturn(List.of());
+        when(priceService.toEur(new BigDecimal("2500"), "EUR", null)).thenReturn(new BigDecimal("2500"));
+
+        BigDecimal result = accountService.signedLiveBalanceEur(cash);
+
+        assertThat(result).isEqualByComparingTo("2500");
     }
 }

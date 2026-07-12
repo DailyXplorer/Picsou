@@ -323,23 +323,33 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
                                                     positionsByAccount
                                                         .computeIfAbsent(account.externalId(), key -> new ConcurrentHashMap<>())
                                                         .put(isin, pos);
-                                                    int tid = subIdCounter.incrementAndGet();
-                                                    tickerSubToIsin.put(tid, isin);
-                                                    // compactPortfolioByType positions carry no exchangeId
-                                                    // (unlike the legacy compactPortfolio payload), so this
-                                                    // almost always falls through to the default. LSX (Lang &
-                                                    // Schwarz Exchange) is TR's home exchange for equities/ETFs
-                                                    // — see GH issue #23 (all ticker subs were FORBIDDEN with TRX).
-                                                    // TR-native crypto (see OpenFigiIsinConverter.isTrCryptoIsin,
-                                                    // e.g. XF000BTC0017) is priced on TRD0 instead — LSX doesn't
-                                                    // list it, so using LSX here would still leave every crypto
-                                                    // position FORBIDDEN and silently falling back to averageBuyIn.
-                                                    String exchangeId = pos.path("exchangeId").asText("");
-                                                    String defaultExchange =
-                                                            OpenFigiIsinConverter.isTrCryptoIsin(isin) ? "TRD0" : "LSX";
-                                                    String tickerId = isin + "." + (exchangeId.isEmpty() ? defaultExchange : exchangeId);
-                                                    tickerMsgs.add(subWithId(tid, "ticker",
-                                                            tickerId, sessionToken));
+
+                                                    // Private equity funds (instrumentType "privateFund") are
+                                                    // not publicly traded — TR never sends a price tick for them.
+                                                    // Private equity funds don't have live tickers and will cause the websocket
+                                                    // to hang waiting for an initial price that never comes.
+                                                    String instrumentType = pos.path("instrumentType").asText("");
+                                                    if ("privateFund".equals(instrumentType)) {
+                                                        log.info("TR compactPortfolioByType [{}]: skipping ticker subscription for privateFund {}", account.name(), isin);
+                                                    } else {
+                                                        int tid = subIdCounter.incrementAndGet();
+                                                        tickerSubToIsin.put(tid, isin);
+                                                        // compactPortfolioByType positions carry no exchangeId
+                                                        // (unlike the legacy compactPortfolio payload), so this
+                                                        // almost always falls through to the default. LSX (Lang &
+                                                        // Schwarz Exchange) is TR's home exchange for equities/ETFs
+                                                        // — see GH issue #23 (all ticker subs were FORBIDDEN with TRX).
+                                                        // TR-native crypto (see OpenFigiIsinConverter.isTrCryptoIsin,
+                                                        // e.g. XF000BTC0017) is priced on TRD0 instead — LSX doesn't
+                                                        // list it, so using LSX here would still leave every crypto
+                                                        // position FORBIDDEN and silently falling back to averageBuyIn.
+                                                        String exchangeId = pos.path("exchangeId").asText("");
+                                                        String defaultExchange =
+                                                                OpenFigiIsinConverter.isTrCryptoIsin(isin) ? "TRD0" : "LSX";
+                                                        String tickerId = isin + "." + (exchangeId.isEmpty() ? defaultExchange : exchangeId);
+                                                        tickerMsgs.add(subWithId(tid, "ticker",
+                                                                tickerId, sessionToken));
+                                                    }
                                                 }
                                             }
                                             int prev = expectedTickers.get();

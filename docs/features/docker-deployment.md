@@ -82,7 +82,25 @@ docker tag ghcr.io/zoeille/picsou-finance/tr-auth:1.0.0 docker-tr-auth:latest
 Tag scheme:
 - `main` push → `nightly`
 - other branch push → branch name (e.g. `1.0.0`, `feature-foo`)
-- `v*` git tag → `latest` + semver (`1.0.0`, `1.0`, `1`)
+- version tag (`1.0.0` or `v1.0.0`) → `latest` + semver (`1.0.0`, `1.0`, `1`)
+
+### Build version shown in the app
+
+The published Docker workflow computes `APP_VERSION` from the Git ref and passes
+it to the main image build. Version-tag builds display the normalized tag value
+in Settings → About (for example both `1.0.13` and `v1.0.13` tags display
+`1.0.13`), `main` builds display `nightly-<short-sha>`, and branch builds display
+`<branch-name>-<short-sha>`.
+
+Local source builds fall back to `frontend/package.json` for the frontend About
+screen. Backend runtime metadata (`/actuator/info` and the embedded MCP server
+version) uses `APP_VERSION` when it is set and otherwise falls back to `dev`.
+A single `APP_VERSION` build arg feeds both the frontend and backend. For a
+local release-style build, pass it explicitly:
+
+```bash
+docker build -f docker/Dockerfile --build-arg APP_VERSION=1.0.13 .
+```
 
 ## Technical choices
 

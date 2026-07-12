@@ -39,8 +39,10 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 1MB
-      max-request-size: 1MB
+      # 10MB accommodates multi-year CSV transaction histories; the import endpoint is
+      # member-scoped and IP-throttled, so this does not widen the abuse surface.
+      max-file-size: 10MB
+      max-request-size: 10MB
 
   # Embedded MCP server (Model Context Protocol). Transport is HTTP+SSE — the only transport
   # Spring AI 1.0.3 / MCP SDK 0.10.0 ship (there is no Streamable HTTP on this version). Both
@@ -53,7 +55,7 @@ spring:
         stdio: false
         type: SYNC
         name: picsou
-        version: 1.0.8
+        version: ${APP_VERSION:dev}
         instructions: >-
           Picsou personal-finance MCP server. Every tool operates only on the financial data of
           the member who owns the access-key used to authenticate: it can never read or modify
@@ -94,6 +96,17 @@ management:
   endpoint:
     health:
       show-details: never
+  info:
+    # Expose `info.*` properties (below) via /actuator/info. The env info
+    # contributor is disabled by default since Spring Boot 2.6, so without this
+    # the app.version block would never surface.
+    env:
+      enabled: true
+
+info:
+  app:
+    name: picsou
+    version: ${APP_VERSION:dev}
 
 app:
   admin-recovery:

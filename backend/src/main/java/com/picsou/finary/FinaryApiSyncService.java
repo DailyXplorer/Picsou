@@ -480,15 +480,16 @@ public class FinaryApiSyncService {
      * Adapt a Finary loan entry to the common {@link FinaryAccountDto} so loans flow through
      * the existing preview/execute pipeline (mapping, auto-mapping, account creation).
      *
-     * <p>A loan is a liability, so the outstanding amount is stored as a NEGATIVE balance,
-     * mirroring how LOAN accounts are persisted elsewhere ({@code liveBalanceEur} returns a
-     * negative remaining capital). Only the outstanding balance is carried over; the original
+     * <p>A loan is a liability; the outstanding amount is stored as a POSITIVE balance and
+     * negated at aggregation time (dashboard, history, family view), matching
+     * {@code LoanAmortizationService.computeRemainingBalance} which returns a positive
+     * remaining capital. Only the outstanding balance is carried over; the original
      * principal, interest rate and amortization details are not exposed by the loans payload,
      * so no {@code Debt} is created here — the user can add those later for the amortization view.
      */
-    private FinaryAccountDto toLoanAccountDto(FinaryLoanDto loan) {
-        Double outstanding = loan.outstandingAmount();
-        Double balance = outstanding != null ? -outstanding : null;
+    FinaryAccountDto toLoanAccountDto(FinaryLoanDto loan) {
+        // Stored positive; aggregation negates (see LoanAmortizationService.computeRemainingBalance)
+        Double balance = loan.outstandingAmount();
         return new FinaryAccountDto(
             loan.id(),
             loan.name(),

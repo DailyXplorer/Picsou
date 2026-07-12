@@ -48,7 +48,7 @@ export function SetupStepIntro() {
                   setupStatus?.state === 'IN_PROGRESS' ? '/setup/security' : '/setup/admin'
                 )
               }
-              className="h-10 min-w-44 rounded-full px-8 text-sm"
+              className="h-10 min-w-44 px-8 text-sm"
             >
               {t('setup.intro.cta')}
             </Button>

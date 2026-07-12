@@ -6,6 +6,10 @@
 > This file is the entry point for technical documentation.
 > Read it first to know where to find information.
 
+## Coding rules
+
+- [CODING_RULES.md](./CODING_RULES.md) -- Non-negotiable charter (convention integrity, theme, layers). Read before a large refactor or review.
+
 ## Architecture
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) -- Overview, modules, data flows
@@ -38,16 +42,20 @@
 | 2026-05-31 | [ETF composition from issuer holdings files (no auth)](./decisions/2026-05-31-etf-composition-issuer-holdings.md) | ⚠️ Superseded |
 | 2026-06-01 | [ETF composition via Boursorama (single source)](./decisions/2026-06-01-etf-composition-via-boursorama.md) | Active |
 | 2026-06-05 | [Access-key auth + embedded MCP server](./decisions/2026-06-05-access-key-auth-and-embedded-mcp.md) | Active |
+| 2026-07-11 | [Realized P&L: average-cost, computed on the fly](./decisions/2026-07-11-realized-pnl-average-cost-on-the-fly.md) | Active |
+| 2026-07-12 | [UI controls follow the shadcn theme radius, not a pill shape](./decisions/2026-07-12-ui-controls-follow-shadcn-theme-radius.md) | Active |
 
 ## Feature notes
 
 | Feature | Last updated | Note |
 |---------|-------------|------|
+| Internationalization (FR/EN/DE/ES) | 2026-07-07 | [i18n.md](./features/i18n.md) |
 | MCP server + scoped access-keys | 2026-06-05 | [mcp-server.md](./features/mcp-server.md) |
 | Frontend utilities (lib/utils.ts) | 2026-05-31 | [frontend-utils.md](./features/frontend-utils.md) |
 | Demo mode | 2026-04-08 | [demo-mode.md](./features/demo-mode.md) |
 | Theme (dark / light / system) + theme-adaptive rendering | 2026-06-02 | [theme-persistence.md](./features/theme-persistence.md) |
 | Dashboard — Time range isolation | 2026-04-13 | [dashboard-time-range-isolation.md](./features/dashboard-time-range-isolation.md) |
+| Dashboard — Liabilities separated from performance | 2026-07-08 | [dashboard-liabilities-separation.md](./features/dashboard-liabilities-separation.md) |
 | Bank sync | 2026-06-03 | [bank-sync.md](./features/bank-sync.md) |
 | Trade Republic | 2026-07-07 | [trade-republic.md](./features/trade-republic.md) |
 | Trade Republic — Holdings deduplication | 2026-05-18 | [trade-republic-holding-deduplication.md](./features/trade-republic-holding-deduplication.md) |
@@ -60,12 +68,15 @@
 | Live prices (holdings) | 2026-05-19 | [live-prices-holdings.md](./features/live-prices-holdings.md) |
 | Security Insight (asset type + ETF composition) | 2026-06-02 | [security-insight.md](./features/security-insight.md) |
 | Finary import + auto-sync | 2026-04-21 | [finary-import.md](./features/finary-import.md) |
+| CSV transaction import (investment accounts) | 2026-07-11 | [csv-transaction-import.md](./features/csv-transaction-import.md) |
+| Realized P&L on closed positions | 2026-07-11 | [realized-pnl.md](./features/realized-pnl.md) |
 | Manual transactions + holdings derivation | 2026-04-21 | [manual-transactions.md](./features/manual-transactions.md) |
 | BoursoBank sync ⏸ disabled in 1.0.0 | 2026-04-26 | [bourso-bank.md](./features/bourso-bank.md) |
 | Accounts overview (PnL chart + summary card + filters) | 2026-04-13 | [accounts-overview.md](./features/accounts-overview.md) |
 | Add Account modal (unified sync + manual) | 2026-07-07 | [add-account-modal.md](./features/add-account-modal.md) |
 | Docker deployment | 2026-05-18 | [docker-deployment.md](./features/docker-deployment.md) |
-| Navigation (sidebar + mobile bottom nav) | 2026-07-07 | [sidebar-navigation.md](./features/sidebar-navigation.md) |
+| Navigation (sidebar + mobile bottom nav) | 2026-07-12 | [sidebar-navigation.md](./features/sidebar-navigation.md) |
+| UI control shape (shadcn theme radius) | 2026-07-12 | [ui-control-shape-system.md](./features/ui-control-shape-system.md) |
 | Multi-account family system | 2026-07-07 | [multi-account-family.md](./features/multi-account-family.md) |
 | CORS & cookie security | 2026-06-02 | [security-cors-cookies.md](./features/security-cors-cookies.md) |
 | 24H Intraday net worth chart | 2026-04-18 | [intraday-chart.md](./features/intraday-chart.md) |

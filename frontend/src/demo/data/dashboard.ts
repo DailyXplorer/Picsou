@@ -25,7 +25,7 @@ function generateNetWorthHistory(): { date: string; total: number; invested: num
 
 export const mockDashboard: DashboardData = {
   totalNetWorth: 41862.35,
-  totalLiabilities: 0,
+  totalLiabilities: 8500,
   netWorthHistory: generateNetWorthHistory(),
   distribution: mockAccounts.map(a => ({
     accountId: a.id,
@@ -36,6 +36,17 @@ export const mockDashboard: DashboardData = {
     accountType: a.type,
     hasHoldings: ['PEA', 'COMPTE_TITRES', 'CRYPTO'].includes(a.type),
   })),
-  liabilities: [],
+  // One loan so demo mode exercises the liabilities card (issue #18).
+  liabilities: [
+    {
+      accountId: 100,
+      name: 'Car loan',
+      color: '#ef4444',
+      balanceEur: 8500,
+      percentage: 100,
+      accountType: 'LOAN',
+      hasHoldings: false,
+    },
+  ],
   goalSummaries: mockGoals,
 }

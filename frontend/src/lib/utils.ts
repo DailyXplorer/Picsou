@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { useAppStore, type DateFormat } from "@/stores/app-store"
+import { DEFAULT_LOCALE, resolveLocale } from "@/i18n/locales"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -18,21 +19,23 @@ export function parseAmount(value: string | null | undefined): number {
 
 export function getLocale(): string {
   try {
+    // <html lang> is kept in sync with the active i18next language (see i18n/index.ts).
     return localeFromLanguage(document.documentElement.lang || navigator.language)
   } catch {
-    return 'fr-FR'
+    return DEFAULT_LOCALE.intlLocale
   }
 }
 
+/** Intl locale for a raw language tag, resolved through the SUPPORTED_LOCALES registry. */
 export function localeFromLanguage(language: string | null | undefined): string {
-  return language?.startsWith('fr') ? 'fr-FR' : 'en-US'
+  return resolveLocale(language).intlLocale
 }
 
 function normalizeIntlLocale(locale: string): string {
   try {
-    return Intl.NumberFormat.supportedLocalesOf(locale).length > 0 ? locale : 'fr-FR'
+    return Intl.NumberFormat.supportedLocalesOf(locale).length > 0 ? locale : DEFAULT_LOCALE.intlLocale
   } catch {
-    return 'fr-FR'
+    return DEFAULT_LOCALE.intlLocale
   }
 }
 
@@ -141,21 +144,6 @@ export function formatTimeAgo(dateStr: string | null | undefined, locale = getLo
   if (hours < 24) return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-hours, 'hour')
   const days = Math.floor(hours / 24)
   return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-days, 'day')
-}
-
-export function accountTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    LEP: 'LEP',
-    PEA: 'PEA',
-    COMPTE_TITRES: 'Compte-titres',
-    CRYPTO: 'Crypto',
-    CHECKING: 'Compte courant',
-    SAVINGS: 'Épargne',
-    REAL_ESTATE: 'Immobilier',
-    LOAN: 'Emprunt',
-    OTHER: 'Autre',
-  }
-  return labels[type] ?? type
 }
 
 export function safeRedirect(redirect: string | null, fallback = '/'): string {

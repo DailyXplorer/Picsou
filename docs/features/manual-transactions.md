@@ -1,6 +1,6 @@
 # Feature: Manual Transactions
 
-> Last updated: 2026-06-03
+> Last updated: 2026-07-08
 
 ## Context
 
@@ -24,6 +24,19 @@ CREATE INDEX idx_transaction_account_manual ON transaction(account_id, is_manual
 ```
 
 Existing synced transactions have `is_manual = false`. The original `type` column (Finary raw category string) is untouched.
+
+### Per-trade fees column (V53 migration)
+
+```sql
+ALTER TABLE transaction ADD COLUMN fees NUMERIC(20,8) NULL;  -- null = zero downstream
+```
+
+Optional broker/transaction fees on a BUY/SELL. Fees **fold into the PMP cost basis** (French PEA
+convention: acquisition costs raise the cost basis) — see *Holdings derivation* below. The signed
+`amount` also accounts for fees: BUY `= −(qty·price + fees)`, SELL `= +(qty·price − fees)`,
+centralised in `TransactionAmountCalculator` and mirrored by the frontend modal. Added for the CSV
+importer ([csv-transaction-import.md](csv-transaction-import.md)) and exposed as an optional field on
+the manual add/edit form.
 
 ### Security name column (V36 migration)
 
@@ -55,7 +68,11 @@ A user-supplied "Nom" always wins over the resolved name. The same logic runs fo
 
 ### Balance derivation (cash accounts)
 
-When a manual transaction is added or deleted on a cash account, `ManualTransactionService` recomputes `account.currentBalance` as the sum of all transaction amounts via a single aggregate query (`sumAmountByAccountId`). It then calls `FinaryPersistenceHelper.reconstructSnapshotsFromDb()` to rebuild the balance history from scratch.
+When a manual transaction is added, edited, or deleted on a **manual** cash account (`account.isManual = true`), `ManualTransactionService` recomputes `account.currentBalance` as the sum of all transaction amounts via a single aggregate query (`sumAmountByAccountId`). It then calls `FinaryPersistenceHelper.reconstructSnapshotsFromDb()` to rebuild the balance history from scratch.
+
+### Synced accounts
+
+Manual transactions on a **synced** cash account (`account.isManual = false` — bank-synced via Enable Banking, Trade Republic, wallet, or exchange accounts) are recorded but never drive the account's balance or snapshot history. Only `isManual` accounts get transaction-derived balances; for synced accounts the balance and snapshots are owned by the provider sync, and rebuilding them from the (usually sparse) manual transaction list would overwrite the balance and delete the provider-written snapshot history. Finary-created accounts have `isManual = true`, so they keep the transaction-derived path. Investment accounts are unaffected: `recomputeHoldings` runs after every manual BUY/SELL regardless of account provenance. The MCP `add_transaction` tool goes through the same service, so it inherits the rule.
 
 ### Holdings derivation (investment accounts)
 
@@ -63,7 +80,7 @@ When a manual transaction is added or deleted on a cash account, `ManualTransact
 
 1. Fetches all BUY/SELL transactions for the account, ordered by date ASC.
 2. Groups by ticker: `net quantity = Σ(BUY qty) − Σ(SELL qty)`.
-3. Computes `averageBuyIn` as VWAP across all BUY transactions for each ticker.
+3. Computes `averageBuyIn` as VWAP across all BUY transactions for each ticker, **fees included**: `Σ(qty·price + fees) / Σ(qty)` (null fees treated as zero). SELL rows never affect the average.
 4. Upserts `AccountHolding` for tickers where `qty > 0`.
 5. Deletes `AccountHolding` for tickers where `qty ≤ 0`.
 6. Labels each surviving position with the **most recent** transaction (date ASC, last write wins) that carries a non-blank `name`. The update is guarded by a null check, so a nameless manual transaction never erases a name already set by bank sync (OpenFIGI).
@@ -92,7 +109,7 @@ All sync services (`FinaryPersistenceHelper`, `BoursoSyncService`) now call `tra
 - Date, DEPOSIT/WITHDRAWAL toggle, Description, Amount (always positive — toggle sets sign)
 
 **Investment accounts (PEA, COMPTE_TITRES, CRYPTO):**
-- Date, BUY/SELL toggle, **Ticker ou ISIN** (a ticker like `IWDA.AS` or a 12-char ISIN like `IE00B4L5Y983`), Name (auto-filled from existing holdings when the ticker matches; otherwise resolved from the ISIN backend-side), Quantity, Price per unit, Total (read-only)
+- Date, BUY/SELL toggle, **Ticker ou ISIN** (a ticker like `IWDA.AS` or a 12-char ISIN like `IE00B4L5Y983`), Name (auto-filled from existing holdings when the ticker matches; otherwise resolved from the ISIN backend-side), Quantity, Price per unit, **Fees (optional, folded into the PMP)**, Total (read-only)
 
 The Transactions list shows a "Manuel" badge on manual entries and a delete button (only for manual entries).
 
@@ -106,7 +123,10 @@ After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the 
 | `db/migration/V36__transaction_security_name.sql` | Adds `transaction.name` (position label) |
 | `model/TransactionType.java` | Enum (DEPOSIT, WITHDRAWAL, BUY, SELL, DIVIDEND, FEE) |
 | `service/HoldingComputeService.java` | Derives holdings (qty, VWAP, **name**) from BUY/SELL transactions |
-| `service/ManualTransactionService.java` | Orchestrates add/edit/delete + re-derivation; resolves ISIN and owns the BUY/SELL description (`applyInstrumentFields`) |
+| `service/ManualTransactionService.java` | Orchestrates add/edit/delete + re-derivation; persists `fees`; delegates ISIN/ticker/description to `InstrumentFieldResolver` |
+| `service/InstrumentFieldResolver.java` | Shared ISIN→ticker/name + BUY/SELL description builder (reused by the CSV importer) |
+| `imports/TransactionAmountCalculator.java` | Single source of truth for the signed `amount` incl. fees |
+| `db/migration/V53__transaction_fees.sql` | Adds `transaction.fees` (folds into the PMP) |
 | `adapter/OpenFigiIsinConverter.java` | `isIsin()` detection + `resolve()` ISIN→ticker+name (shared with bank sync) |
 | `controller/AccountController.java` | POST/DELETE `/accounts/{id}/transactions` |
 | `repository/TransactionRepository.java` | `deleteByAccountIdAndIsManualFalse`, `sumAmountByAccountId`, `findByAccountIdAndTxTypeInOrderByDateAsc` |
@@ -133,5 +153,5 @@ After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the 
 ## Tests
 
 - `HoldingComputeServiceTest` — 11 unit tests: BUY-only, multi-BUY VWAP, BUY+SELL, fully-sold position, null ticker/quantity skipping, multiple tickers, existing holding update, plus position name = newest transaction's name and name-preserved-when-transactions-have-none.
-- `ManualTransactionServiceTest` — 8 unit tests: cash add, investment add (holdings recomputed), non-owned account rejection, manual delete, synced-transaction delete rejection, not-found rejection, plus ISIN input → resolved ticker/name/description and plain-ticker uppercased with the user "Nom" winning.
+- `ManualTransactionServiceTest` — 11 unit tests: manual cash add (balance + snapshots recomputed), synced cash add (transaction saved, balance/snapshots untouched), investment add (holdings recomputed, for both manual and synced accounts), non-owned account rejection, manual delete, synced-account delete (no reconstruct), synced-transaction delete rejection, not-found rejection, plus ISIN input → resolved ticker/name/description and plain-ticker uppercased with the user "Nom" winning.
 - `OpenFigiIsinConverterTest` — 4 unit tests for the `isIsin()` detector: valid ISINs, case/whitespace normalization, rejects tickers/non-ISIN strings, rejects null/blank.

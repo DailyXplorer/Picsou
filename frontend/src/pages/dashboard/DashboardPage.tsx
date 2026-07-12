@@ -9,6 +9,7 @@ import { NetWorthChart } from '@/components/shared/NetWorthChart'
 import { DistributionPie } from '@/components/shared/DistributionPie'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { HoldingsCard } from '@/components/shared/HoldingsCard'
+import { LiabilitiesCard } from '@/components/shared/LiabilitiesCard'
 import { SyncAllModal } from '@/components/sync/SyncAllModal'
 import { type TimeRange } from '@/components/shared/TimeRangeSelector'
 import {
@@ -150,7 +151,7 @@ export function DashboardPage() {
           <Button
             variant="outline"
             size="default"
-            className="h-10 min-w-44 rounded-full px-6 text-sm"
+            className="h-10 min-w-44 px-6 text-sm"
             onClick={() => setShowSyncModal(true)}
           >
             <RefreshCw className="mr-2 size-4" />
@@ -225,7 +226,9 @@ export function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="h-[420px]">
           <CardHeader>
-            <CardTitle>{t('dashboard.gainLoss')}</CardTitle>
+            {/* Titled by wealth mode — the curve plots (net/gross/financial) wealth,
+                not gain/loss (issue #18). */}
+            <CardTitle>{t(`dashboard.evolution.${wealthMode}`)}</CardTitle>
           </CardHeader>
           <CardContent className="min-h-0 flex-1">
             <NetWorthChart data={history ?? []} intraday={intraday ?? []} range={range} onRangeChange={setRange} />
@@ -234,6 +237,11 @@ export function DashboardPage() {
 
         <DistributionPie data={data.distribution} />
       </div>
+
+      {/* Liabilities — rendered separately from assets (issue #18) */}
+      {(data.totalLiabilities ?? 0) > 0 && (
+        <LiabilitiesCard liabilities={data.liabilities} totalLiabilities={data.totalLiabilities} />
+      )}
 
       {/* Goals section */}
       <Card>

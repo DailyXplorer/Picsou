@@ -1,4 +1,4 @@
-package com.picsou.service;
+package com.picsou.finary;
 
 import com.picsou.config.CryptoEncryption;
 import com.picsou.dto.FinaryAccountMapping;
@@ -9,8 +9,6 @@ import com.picsou.dto.FinaryMappingAction;
 import com.picsou.dto.FinaryPreviewResponse;
 import com.picsou.dto.NewAccountDetails;
 import com.picsou.exception.ResourceNotFoundException;
-import com.picsou.finary.FinaryApiSyncService;
-import com.picsou.finary.FinaryPersistenceHelper;
 import com.picsou.finary.client.FinaryApiClient;
 import com.picsou.finary.dto.FinaryAccountCurrency;
 import com.picsou.finary.dto.FinaryAccountDto;
@@ -149,8 +147,8 @@ class FinaryApiSyncServiceTest {
         assertThat(loanPreview.finaryId()).isEqualTo("loan-1");
         assertThat(loanPreview.finaryName()).isEqualTo("PRET CONSO Auto");
         assertThat(loanPreview.suggestedType()).isEqualTo(AccountType.LOAN);
-        // A loan is a liability: outstanding amount becomes a negative balance.
-        assertThat(loanPreview.currentBalance()).isEqualTo(-12345.67);
+        // Repo convention: LOAN balances are stored POSITIVE; aggregation negates.
+        assertThat(loanPreview.currentBalance()).isEqualTo(12345.67);
 
         assertThat(response.accounts())
             .anyMatch(a -> "checkings".equals(a.finaryCategory()));
@@ -186,6 +184,29 @@ class FinaryApiSyncServiceTest {
         Account saved = captor.getValue();
         assertThat(saved.getType()).isEqualTo(AccountType.LOAN);
         assertThat(saved.getExternalAccountId()).isEqualTo("finary_loans_loan-1");
-        assertThat(saved.getCurrentBalance()).isEqualByComparingTo("-12345.67");
+        assertThat(saved.getCurrentBalance()).isEqualByComparingTo("12345.67");
+    }
+
+    @Test
+    void toLoanAccountDto_storesOutstandingAmountPositive() {
+        FinaryLoanDto loan = new FinaryLoanDto(
+            "loan-1", "loan", "PRET IMMO", 12000.0, 600.0,
+            "2023-01-01", "2043-01-01", new FinaryAccountCurrency("EUR", "€"), null);
+
+        FinaryAccountDto dto = service.toLoanAccountDto(loan);
+
+        // Repo convention: LOAN balances stored positive; negated only at aggregation.
+        assertThat(dto.balance()).isEqualTo(12000.0);
+    }
+
+    @Test
+    void toLoanAccountDto_keepsNullBalance_whenOutstandingAmountMissing() {
+        FinaryLoanDto loan = new FinaryLoanDto(
+            "loan-2", "loan", "PRET SANS MONTANT", null, null,
+            null, null, new FinaryAccountCurrency("EUR", "€"), null);
+
+        FinaryAccountDto dto = service.toLoanAccountDto(loan);
+
+        assertThat(dto.balance()).isNull();
     }
 }

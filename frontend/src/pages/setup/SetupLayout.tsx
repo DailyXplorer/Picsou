@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useEffect, useMemo } from 'react'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
+import { SUPPORTED_LOCALES, resolveLocale } from '@/i18n/locales'
 
 /**
  * Shell for every setup route. Intentionally minimal — Apple's setup
@@ -51,8 +52,8 @@ export function SetupLayout() {
   }, [])
 
   const progressPct = Math.round((index / total) * 100)
-  const activeLanguage = i18n.language.startsWith('en') ? 'en' : 'fr'
-  const switchLang = (lng: 'fr' | 'en') => {
+  const activeLanguage = resolveLocale(i18n.language).code
+  const switchLang = (lng: string) => {
     i18n.changeLanguage(lng)
   }
 
@@ -70,21 +71,21 @@ export function SetupLayout() {
           aria-label={t('setup.intro.language')}
           className="inline-flex min-h-12 shrink-0 items-center rounded-2xl border border-border/60 bg-background/80 p-1 backdrop-blur-md"
         >
-          {(['fr', 'en'] as const).map((lng) => (
+          {SUPPORTED_LOCALES.map((locale) => (
             <button
-              key={lng}
+              key={locale.code}
               role="radio"
               type="button"
-              aria-checked={activeLanguage === lng}
-              onClick={() => switchLang(lng)}
+              aria-checked={activeLanguage === locale.code}
+              onClick={() => switchLang(locale.code)}
               className={cn(
-                'inline-flex h-10 min-w-16 items-center justify-center rounded-xl px-6 text-sm font-medium transition-[background-color,color]',
-                activeLanguage === lng
+                'inline-flex h-10 min-w-12 items-center justify-center rounded-xl px-4 text-sm font-medium transition-[background-color,color] sm:min-w-14 sm:px-5',
+                activeLanguage === locale.code
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              {lng.toUpperCase()}
+              {locale.label}
             </button>
           ))}
         </div>

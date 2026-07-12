@@ -75,7 +75,8 @@ public class FamilyViewService {
                 }
 
                 for (Account acc : accounts) {
-                    BigDecimal balanceEur = accountService.liveBalanceEur(acc);
+                    // Signed: LOAN accounts count negatively so totalNetWorth below is correct.
+                    BigDecimal balanceEur = accountService.signedLiveBalanceEur(acc);
                     sharedAccounts.add(new SharedAccountInfo(
                         acc.getId(),
                         ownerName,
@@ -107,7 +108,7 @@ public class FamilyViewService {
 
                 for (Goal goal : goals) {
                     BigDecimal currentTotal = goal.getAccounts().stream()
-                        .map(a -> accountService.liveBalanceEur(a))
+                        .map(a -> accountService.signedLiveBalanceEur(a))
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
 
                     // Build contributions per member (from manual contributions)

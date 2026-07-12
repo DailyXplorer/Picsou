@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **PnL no longer counts outstanding debt as an investment loss (#18).** Loans
+  contribute 0 to `pnl` in every aggregation path (history points, live PnL,
+  MCP `get_profit_and_loss`); `rangePnl` compares only holdings priced on both
+  sides of the range; allocation percentages divide by their own side of the
+  balance sheet (assets by total assets, liabilities by total liabilities).
+  Net-worth totals are unchanged — loans remain liabilities. The dashboard
+  chart is now titled by wealth mode instead of "Gain / Loss", its tooltip
+  shows the backend's debt-neutral gain/loss, and a new Liabilities card lists
+  loans separately.
+
 ## [1.0.8] — 2026-06-27
 
 Security release: remediations from a 2026-06-27 security audit, the login

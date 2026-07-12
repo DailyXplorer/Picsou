@@ -109,6 +109,7 @@ public class HistoryService {
         for (LocalDate date : ffData.dates()) {
             BigDecimal aggTotal = BigDecimal.ZERO;
             BigDecimal aggInvested = BigDecimal.ZERO;
+            BigDecimal aggPnl = BigDecimal.ZERO;
             Map<Long, AccountPoint> accountPoints = split ? new HashMap<>() : null;
 
             for (Account account : accounts) {
@@ -132,40 +133,50 @@ public class HistoryService {
                     : (invEntry != null ? invEntry.getValue() : rawBalance);
                 aggInvested = aggInvested.add(accInvested);
 
+                // Debt-neutral pnl (issue #18): loans contribute 0 — outstanding debt
+                // is a liability, not an investment loss.
+                BigDecimal accPnl = isLoan ? BigDecimal.ZERO : accTotal.subtract(accInvested);
+                aggPnl = aggPnl.add(accPnl);
+
                 if (split) {
-                    accountPoints.put(accId, new AccountPoint(accTotal, accInvested, accTotal.subtract(accInvested)));
+                    accountPoints.put(accId, new AccountPoint(accTotal, accInvested, accPnl));
                 }
             }
 
-            BigDecimal pnl = aggTotal.subtract(aggInvested);
-            result.add(new NetWorthPoint(date, aggTotal, aggInvested, pnl, accountPoints));
+            result.add(new NetWorthPoint(date, aggTotal, aggInvested, aggPnl, accountPoints));
         }
 
         // Replace today's point with live-calculated values
         BigDecimal liveTotal = BigDecimal.ZERO;
         BigDecimal liveInvested = BigDecimal.ZERO;
+        BigDecimal livePnl = BigDecimal.ZERO;
         Map<Long, AccountPoint> liveAccountPoints = split ? new HashMap<>() : null;
 
         for (Account account : accounts) {
             BigDecimal accLive = accountService.liveBalanceEur(account);
             BigDecimal accInvested = accountService.calculateInvestedAmount(account);
+            boolean isLoan = account.getType() == AccountType.LOAN;
 
-            if (account.getType() == AccountType.LOAN) {
+            if (isLoan) {
                 liveTotal = liveTotal.subtract(accLive);
             } else {
                 liveTotal = liveTotal.add(accLive);
                 liveInvested = liveInvested.add(accInvested);
             }
 
+            // Debt-neutral pnl (issue #18): loans contribute 0.
+            BigDecimal accPnl = isLoan ? BigDecimal.ZERO : accLive.subtract(accInvested);
+            livePnl = livePnl.add(accPnl);
+
             if (split) {
-                BigDecimal total = account.getType() == AccountType.LOAN ? accLive.negate() : accLive;
-                BigDecimal invested = account.getType() == AccountType.LOAN ? BigDecimal.ZERO : accInvested;
-                liveAccountPoints.put(account.getId(), new AccountPoint(total, invested, total.subtract(invested)));
+                BigDecimal total = isLoan ? accLive.negate() : accLive;
+                BigDecimal invested = isLoan ? BigDecimal.ZERO : accInvested;
+                liveAccountPoints.put(account.getId(), new AccountPoint(total, invested, accPnl));
             }
         }
 
         LocalDate today = LocalDate.now();
-        NetWorthPoint livePoint = new NetWorthPoint(today, liveTotal, liveInvested, liveTotal.subtract(liveInvested), liveAccountPoints);
+        NetWorthPoint livePoint = new NetWorthPoint(today, liveTotal, liveInvested, livePnl, liveAccountPoints);
 
         boolean replaced = false;
         for (int i = result.size() - 1; i >= 0; i--) {
@@ -324,9 +335,11 @@ public class HistoryService {
 
         assertOwnership(accounts, memberId);
 
-        // Live values
+        // Live values. `liveTotal` stays NET WORTH (loans negated); pnl is computed
+        // debt-neutrally from non-loan value only (issue #18).
         BigDecimal liveTotal = BigDecimal.ZERO;
         BigDecimal liveInvested = BigDecimal.ZERO;
+        BigDecimal liveNonLoanValue = BigDecimal.ZERO;
 
         // Collect all holdings for historical lookup
         List<AccountHolding> allHoldings = new ArrayList<>();
@@ -338,12 +351,14 @@ public class HistoryService {
             if (account.getType() == AccountType.LOAN) {
                 liveTotal = liveTotal.subtract(accountService.liveBalanceEur(account));
             } else {
-                liveTotal = liveTotal.add(accountService.liveBalanceEur(account));
+                BigDecimal accLive = accountService.liveBalanceEur(account);
+                liveTotal = liveTotal.add(accLive);
+                liveNonLoanValue = liveNonLoanValue.add(accLive);
                 liveInvested = liveInvested.add(accountService.calculateInvestedAmount(account));
             }
         }
 
-        BigDecimal pnl = liveTotal.subtract(liveInvested);
+        BigDecimal pnl = liveNonLoanValue.subtract(liveInvested);
         BigDecimal pnlPercent = liveInvested.compareTo(BigDecimal.ZERO) > 0
             ? pnl.multiply(BigDecimal.valueOf(100)).divide(liveInvested, 1, java.math.RoundingMode.HALF_UP)
             : null;
@@ -353,16 +368,29 @@ public class HistoryService {
             return new com.picsou.dto.PnlResponse(liveTotal, liveInvested, pnl, pnlPercent);
         }
 
-        // Compute portfolio value at fromDate using historical prices (with weekend/holiday fallback)
+        // Compute the range over holdings priced on BOTH sides (live and at fromDate,
+        // with weekend/holiday fallback). Cash, loans and unmatched holdings are
+        // excluded from both sides so rangePnl is pure portfolio performance.
         BigDecimal valueAtFrom = BigDecimal.ZERO;
+        BigDecimal liveMatchedValue = BigDecimal.ZERO;
         int matchedPrices = 0;
+        // Same ticker can appear across several accounts — look each price up once.
+        Map<String, Optional<PriceSnapshot>> snapByTicker = new HashMap<>();
+        Map<String, BigDecimal> livePriceByTicker = new HashMap<>();
         for (AccountHolding h : allHoldings) {
-            if (h.getTicker() == null) continue;
-            Optional<PriceSnapshot> snap = priceSnapshotRepository.findLatestByTickerBeforeOrOnDate(h.getTicker(), fromDate);
-            if (snap.isPresent()) {
-                valueAtFrom = valueAtFrom.add(h.getQuantity().multiply(snap.get().getPriceEur()));
-                matchedPrices++;
+            String ticker = h.getTicker();
+            if (ticker == null) continue;
+            Optional<PriceSnapshot> snap = snapByTicker.computeIfAbsent(ticker,
+                t -> priceSnapshotRepository.findLatestByTickerBeforeOrOnDate(t, fromDate));
+            if (snap.isEmpty()) continue;
+            if (!livePriceByTicker.containsKey(ticker)) {
+                livePriceByTicker.put(ticker, priceService.getPriceEur(ticker));
             }
+            BigDecimal livePrice = livePriceByTicker.get(ticker);
+            if (livePrice == null) continue;
+            valueAtFrom = valueAtFrom.add(h.getQuantity().multiply(snap.get().getPriceEur()));
+            liveMatchedValue = liveMatchedValue.add(h.getQuantity().multiply(livePrice));
+            matchedPrices++;
         }
 
         if (matchedPrices == 0) {
@@ -370,14 +398,14 @@ public class HistoryService {
             return new com.picsou.dto.PnlResponse(liveTotal, liveInvested, pnl, pnlPercent);
         }
 
-        // Range PnL: live holdings value minus value at from date
-        BigDecimal rangePnl = liveTotal.subtract(valueAtFrom);
+        // Range PnL: matched holdings' live value minus their value at the from date
+        BigDecimal rangePnl = liveMatchedValue.subtract(valueAtFrom);
         BigDecimal rangePnlPercent = valueAtFrom.compareTo(BigDecimal.ZERO) > 0
             ? rangePnl.multiply(BigDecimal.valueOf(100)).divide(valueAtFrom, 1, java.math.RoundingMode.HALF_UP)
             : null;
 
-        log.info("buildPnl: fromDate={} valueAtFrom={} liveTotal={} rangePnl={} rangePnlPercent={}",
-            fromDate, valueAtFrom, liveTotal, rangePnl, rangePnlPercent);
+        log.info("buildPnl: fromDate={} valueAtFrom={} liveMatchedValue={} rangePnl={} rangePnlPercent={}",
+            fromDate, valueAtFrom, liveMatchedValue, rangePnl, rangePnlPercent);
 
         return new com.picsou.dto.PnlResponse(liveTotal, liveInvested, pnl, pnlPercent, valueAtFrom, rangePnl, rangePnlPercent);
     }

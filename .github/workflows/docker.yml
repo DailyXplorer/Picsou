@@ -3,7 +3,7 @@ name: Build & publish Docker images
 on:
   push:
     branches: ['**']
-    tags: ['[0-9]*']
+    tags: ['[0-9]*', 'v[0-9]*']
   workflow_dispatch:
 
 env:
@@ -24,10 +24,12 @@ jobs:
             image: ${{ github.repository }}
             context: .
             dockerfile: docker/Dockerfile
+            versioned: true
           - name: tr-auth
             image: ${{ github.repository }}/tr-auth
             context: services/tr-auth
             dockerfile: services/tr-auth/Dockerfile
+            versioned: false
 
     steps:
       - name: Checkout
@@ -65,6 +67,19 @@ jobs:
             type=semver,pattern={{major}}
             type=sha,format=short
 
+      - name: Compute app version
+        id: app-version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF_NAME" == "main" ]]; then
+            echo "version=nightly-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          else
+            safe_ref="${GITHUB_REF_NAME//\//-}"
+            echo "version=${safe_ref}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -74,5 +89,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ matrix.versioned && format('APP_VERSION={0}', steps.app-version.outputs.version) || '' }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}

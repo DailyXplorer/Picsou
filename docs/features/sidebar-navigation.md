@@ -1,6 +1,6 @@
 # Feature: Navigation (Sidebar + Mobile Bottom Nav)
 
-> Last updated: 2026-07-07
+> Last updated: 2026-07-12
 
 ## Context
 
@@ -15,7 +15,7 @@ The sidebar lives in `AppSidebar.tsx` with two visual sections:
 1. **Primary nav items** — rendered by the `NavItem` internal component, one per route. Uses `react-router-dom`'s `NavLink` with `useLocation` for active detection. Desktop intentionally does not render a separate Settings item because the bottom account link already targets `/settings`.
 2. **Bottom account area** — non-admin and demo sessions keep a bottom-pinned `NavLink` to `/settings`. Admin sessions render a `DropdownMenu` trigger in the same place. The trigger shows the currently scoped profile; the menu lets the admin switch back to their own account, switch into managed profiles from `selectSwitchableMembers()`, or open Settings.
 
-Desktop navigation starts directly with the route list; there is no brand logo in the sidebar.
+Desktop navigation opens with the horizontal Picsou brand logo (`horizontal-white-picsou.svg`, `brightness-0 dark:invert` so the single white SVG renders black in light theme and white in dark), then the route list. The logo sits at the top of the `<nav>`, aligned on the items' `px-4` gutter with `self-start` so it doesn't stretch in the flex column.
 
 ### Admin profile switching
 
@@ -47,6 +47,7 @@ Active nav items keep Lucide icons stroke-only. The item gets `ring-1 ring-borde
 - `frontend/src/components/layout/AppLayout.tsx` — renders sidebar (desktop) + bottom nav (mobile)
 - `frontend/src/components/ui/item.tsx` — `Item` / `ItemMedia` / `ItemContent` primitives (do not edit)
 - `frontend/src/i18n/locales/{fr,en}.json` — `nav.*` keys for labels
+- `frontend/src/assets/horizontal-white-picsou.svg` — horizontal wordmark logo used at the top of the desktop sidebar
 - `frontend/src/assets/picsou_logo_white.svg` — icon-only logo used in mobile nav
 
 ## Technical choices
@@ -69,6 +70,7 @@ Active nav items keep Lucide icons stroke-only. The item gets `ring-1 ring-borde
 - **Admin-only members query**: keep `useFamilyMembers({ enabled: isAdmin })` on the sidebar. Calling `/family/members` for non-admins causes a 403 redirect.
 - **No duplicate desktop Settings item**: desktop settings access is the bottom-pinned account row. Do not add `/settings` back to `NAV_ITEMS`, or the sidebar will show two entries for the same page.
 - **`hidden md:flex` on sidebar**: The sidebar nav element uses `hidden md:flex` — not `md:block` — because it needs flexbox for its internal layout. Changing to `md:block` will break the sidebar layout.
+- **Brand logo regression history**: commit `716228e` (PR #29) silently dropped the sidebar logo while restructuring the `<nav>` (the asset `horizontal-white-picsou.svg` was never deleted — only its usage). Restored on 2026-07-12. If you refactor the sidebar container, keep the logo `<img>` as the first child of `<nav>`.
 
 ## Tests
 

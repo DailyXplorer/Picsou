@@ -69,7 +69,7 @@ class FamilyViewServiceTest {
         when(sharedResourceRepository.findAllByOwnerMemberIdAndResourceType(2L, "ACCOUNT"))
             .thenReturn(List.of(resource));
         when(accountRepository.findByIdInAndMemberId(List.of(10L), 2L)).thenReturn(List.of(account));
-        when(accountService.liveBalanceEur(account)).thenReturn(new BigDecimal("123"));
+        when(accountService.signedLiveBalanceEur(account)).thenReturn(new BigDecimal("123"));
 
         FamilyDashboardResponse response = familyViewService.getFamilyDashboard(1L);
 
@@ -112,5 +112,92 @@ class FamilyViewServiceTest {
         assertThat(response.sharedGoals().getFirst().id()).isEqualTo(20L);
         verify(goalRepository).findByIdInAndMemberId(List.of(20L), 2L);
         verify(goalRepository, never()).findAllById(any());
+    }
+
+    // ─── Loan sign convention: shared loans reduce family net worth ──────────
+
+    @Test
+    void getFamilyDashboard_sharedLoan_countsNegativelyInNetWorth() {
+        FamilyMember viewer = FamilyMember.builder().id(1L).displayName("Viewer").build();
+        FamilyMember owner = FamilyMember.builder().id(2L).displayName("Owner").build();
+        Account checking = Account.builder()
+            .id(10L)
+            .name("Checking")
+            .type(AccountType.CHECKING)
+            .currency("EUR")
+            .currentBalance(new BigDecimal("2000"))
+            .build();
+        Account loan = Account.builder()
+            .id(11L)
+            .name("Mortgage")
+            .type(AccountType.LOAN)
+            .currency("EUR")
+            .currentBalance(new BigDecimal("10000"))
+            .build();
+
+        when(memberRepository.findAllByOrderByCreatedAtAsc()).thenReturn(List.of(viewer, owner));
+        when(sharingSettingsRepository.findByMemberIdAndResourceType(2L, "ACCOUNT"))
+            .thenReturn(Optional.of(new SharingSettings(null, owner, "ACCOUNT", SharingLevel.ALL)));
+        when(sharingSettingsRepository.findByMemberIdAndResourceType(2L, "GOAL"))
+            .thenReturn(Optional.empty());
+        when(accountRepository.findAllByMemberIdOrderByCreatedAtAsc(2L))
+            .thenReturn(List.of(checking, loan));
+        when(accountService.signedLiveBalanceEur(checking)).thenReturn(new BigDecimal("2000"));
+        when(accountService.signedLiveBalanceEur(loan)).thenReturn(new BigDecimal("-10000"));
+
+        FamilyDashboardResponse response = familyViewService.getFamilyDashboard(1L);
+
+        assertThat(response.sharedAccounts()).hasSize(2);
+        FamilyDashboardResponse.SharedAccountInfo loanInfo = response.sharedAccounts().stream()
+            .filter(a -> a.id().equals(11L))
+            .findFirst()
+            .orElseThrow();
+        // The shared loan row shows the debt as negative...
+        assertThat(loanInfo.balanceEur()).isEqualByComparingTo("-10000");
+        // ...so the family net worth is assets minus debts: 2000 − 10000.
+        assertThat(response.totalSharedNetWorth()).isEqualByComparingTo("-8000");
+    }
+
+    @Test
+    void getFamilyDashboard_sharedGoalWithLoan_progressCountsLoanNegatively() {
+        FamilyMember viewer = FamilyMember.builder().id(1L).displayName("Viewer").build();
+        FamilyMember owner = FamilyMember.builder().id(2L).displayName("Owner").build();
+        Account checking = Account.builder()
+            .id(10L)
+            .name("Checking")
+            .type(AccountType.CHECKING)
+            .currency("EUR")
+            .currentBalance(new BigDecimal("2000"))
+            .build();
+        Account loan = Account.builder()
+            .id(11L)
+            .name("Mortgage")
+            .type(AccountType.LOAN)
+            .currency("EUR")
+            .currentBalance(new BigDecimal("10000"))
+            .build();
+        Goal goal = Goal.builder()
+            .id(20L)
+            .name("House")
+            .targetAmount(new BigDecimal("50000"))
+            .deadline(LocalDate.now().plusMonths(6))
+            .accounts(List.of(checking, loan))
+            .member(owner)
+            .build();
+
+        when(memberRepository.findAllByOrderByCreatedAtAsc()).thenReturn(List.of(viewer, owner));
+        when(sharingSettingsRepository.findByMemberIdAndResourceType(2L, "ACCOUNT"))
+            .thenReturn(Optional.empty());
+        when(sharingSettingsRepository.findByMemberIdAndResourceType(2L, "GOAL"))
+            .thenReturn(Optional.of(new SharingSettings(null, owner, "GOAL", SharingLevel.ALL)));
+        when(goalRepository.findAllByMemberIdOrderByCreatedAtAsc(2L)).thenReturn(List.of(goal));
+        when(accountService.signedLiveBalanceEur(checking)).thenReturn(new BigDecimal("2000"));
+        when(accountService.signedLiveBalanceEur(loan)).thenReturn(new BigDecimal("-10000"));
+
+        FamilyDashboardResponse response = familyViewService.getFamilyDashboard(1L);
+
+        assertThat(response.sharedGoals()).hasSize(1);
+        // Goal progress nets the linked loan against the linked asset: 2000 − 10000.
+        assertThat(response.sharedGoals().getFirst().currentTotal()).isEqualByComparingTo("-8000");
     }
 }

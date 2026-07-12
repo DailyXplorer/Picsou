@@ -9,7 +9,9 @@ FROM oven/bun:alpine AS frontend-build
 WORKDIR /build/frontend
 
 ARG VITE_DEMO_MODE=false
+ARG APP_VERSION=dev
 ENV VITE_DEMO_MODE=$VITE_DEMO_MODE
+ENV VITE_APP_VERSION=$APP_VERSION
 
 COPY frontend/package.json frontend/bun.lock ./
 RUN bun install --frozen-lockfile
@@ -30,6 +32,9 @@ RUN mvn package -DskipTests -q
 
 # ---------- Stage 3: Runtime ----------
 FROM eclipse-temurin:21-jre-jammy
+
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 
 # Install Nginx + supervisor + openssl (entrypoint auto-generates secrets on first boot)
 RUN apt-get update && apt-get install -y --no-install-recommends \

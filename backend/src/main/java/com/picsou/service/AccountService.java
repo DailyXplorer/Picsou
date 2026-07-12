@@ -267,6 +267,16 @@ public class AccountService {
         return liveValue;
     }
 
+    /**
+     * Live balance in EUR with liability sign applied: LOAN accounts return a
+     * NEGATIVE value (outstanding debt), all other types return liveBalanceEur as-is.
+     * Use this for any net-worth-style summation.
+     */
+    public BigDecimal signedLiveBalanceEur(Account account) {
+        BigDecimal value = liveBalanceEur(account);
+        return account.getType() == AccountType.LOAN ? value.negate() : value;
+    }
+
     AccountResponse toResponse(Account account) {
         BigDecimal balanceEur = liveBalanceEur(account);
         AccountResponse response = AccountResponse.from(account, balanceEur);

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { createAccount, updateDebtMetadata } = vi.hoisted(() => ({
   createAccount: vi.fn(),
@@ -67,10 +67,21 @@ function fillPhoneAndPin() {
 
 describe('AddAccountModal Trade Republic wizard', () => {
   beforeEach(() => {
+    // The OTP/PIN field (input-otp) schedules an internal setTimeout that it
+    // does not cancel on unmount. With real timers it can fire after jsdom is
+    // torn down, throwing "window is not defined" as an unhandled error that
+    // fails the whole vitest run (all assertions still pass). Fake timers keep
+    // that callback under our control so afterEach can drop it before teardown.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
     createAccount.mockReset()
     updateDebtMetadata.mockReset()
     initiateTrAuth.mockReset()
     completeTrAuth.mockReset()
+  })
+
+  afterEach(() => {
+    vi.clearAllTimers()
+    vi.useRealTimers()
   })
 
   it('keeps the credentials form visible when initiation fails', async () => {
