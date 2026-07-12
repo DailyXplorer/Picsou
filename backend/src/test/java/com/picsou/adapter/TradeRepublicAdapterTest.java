@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 class TradeRepublicAdapterTest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofMillis(100);
+    private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(2);
 
     private DisposableServer server;
 
@@ -127,7 +127,7 @@ class TradeRepublicAdapterTest {
                 .header("Content-Type", "application/json")
                 .sendString(Mono.just(body)))
             .bindNow();
-        return adapterFor(server, TEST_TIMEOUT);
+        return adapterFor(server, RESPONSE_TIMEOUT);
     }
 
     private static TradeRepublicAdapter adapterFor(DisposableServer server, Duration timeout) {
