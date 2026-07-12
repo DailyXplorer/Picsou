@@ -71,6 +71,7 @@ export function BankSyncTab() {
   const [callbackError, setCallbackError] = useState<string | null>(null)
   const [initiateError, setInitiateError] = useState<string | null>(null)
   const [retryError, setRetryError] = useState<string | null>(null)
+  const [retryingIds, setRetryingIds] = useState<Set<number>>(() => new Set())
   const handledCode = useRef<string | null>(null)
 
   const { mutate: completeSync } = useMutation({
@@ -140,6 +141,21 @@ export function BankSyncTab() {
       setRetryError(formatApiError(err, t, 'sync.banks.callbackError'))
     },
   })
+
+  async function handleRetry(id: number) {
+    setRetryingIds((previous) => new Set(previous).add(id))
+    try {
+      await retryMutation.mutateAsync(id)
+    } catch {
+      // The mutation's onError handler renders the translated failure banner.
+    } finally {
+      setRetryingIds((previous) => {
+        const next = new Set(previous)
+        next.delete(id)
+        return next
+      })
+    }
+  }
 
   // Re-initiates the OAuth flow for a dead requisition (failed code exchange,
   // expired PSD2 consent) — a plain retry can never fix those.
@@ -297,8 +313,12 @@ export function BankSyncTab() {
             <p className="text-xs text-muted-foreground">
               {t('sync.banks.psd2ScopeNote')}
             </p>
-            {connections.map(conn => (
-              <Card key={conn.id} size="sm">
+            {connections.map(conn => {
+              const isRetrying = retryingIds.has(conn.id)
+              const isReconnecting =
+                reconnectMutation.isPending && reconnectMutation.variables === conn.id
+
+              return <Card key={conn.id} size="sm">
                 <CardContent className="flex items-center justify-between py-2">
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-medium">{conn.institutionName}</span>
@@ -316,19 +336,21 @@ export function BankSyncTab() {
                           size="icon-sm"
                           variant="ghost"
                           title={t('sync.banks.retry')}
-                          onClick={() => retryMutation.mutate(conn.id)}
-                          disabled={retryMutation.isPending}
+                          onClick={() => void handleRetry(conn.id)}
+                          disabled={isRetrying || isReconnecting}
                         >
-                          <RefreshCw className="size-4" />
+                          {isRetrying
+                            ? <Loader2 className="size-4 animate-spin" />
+                            : <RefreshCw className="size-4" />}
                         </Button>
                         <Button
                           size="icon-sm"
                           variant="ghost"
                           title={t('sync.banks.reconnect')}
                           onClick={() => handleReconnect(conn.id)}
-                          disabled={reconnectMutation.isPending && reconnectMutation.variables === conn.id}
+                          disabled={isRetrying || isReconnecting}
                         >
-                          {reconnectMutation.isPending && reconnectMutation.variables === conn.id
+                          {isReconnecting
                             ? <Loader2 className="size-4 animate-spin" />
                             : <ExternalLink className="size-4" />}
                         </Button>
@@ -344,7 +366,7 @@ export function BankSyncTab() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            })}
           </div>
         )}
       </div>
