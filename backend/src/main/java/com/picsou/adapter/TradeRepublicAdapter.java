@@ -7,6 +7,7 @@ import com.picsou.model.AccountType;
 import com.picsou.port.TradeRepublicPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -69,6 +70,7 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
     private final ObjectMapper objectMapper;
     private final Duration     refreshTimeout;
 
+    @Autowired
     public TradeRepublicAdapter(
         ObjectMapper objectMapper,
         @Value("${app.tr-auth.url:http://tr-auth:8001}") String trAuthUrl

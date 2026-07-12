@@ -7,6 +7,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
 import reactor.netty.http.server.HttpServer;
@@ -21,6 +22,14 @@ class TradeRepublicAdapterTest {
     private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(2);
 
     private DisposableServer server;
+
+    @Test
+    void productionConstructorIsExplicitSpringInjectionPoint() throws NoSuchMethodException {
+        assertThat(TradeRepublicAdapter.class
+            .getConstructor(ObjectMapper.class, String.class)
+            .isAnnotationPresent(Autowired.class))
+            .isTrue();
+    }
 
     @AfterEach
     void stopServer() {
