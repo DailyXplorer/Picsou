@@ -54,6 +54,7 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
 
     private static final String WS_URL     = "wss://api.traderepublic.com/";
     private static final int    WS_VERSION = 31;
+    private static final Duration DEFAULT_REFRESH_TIMEOUT = Duration.ofSeconds(15);
 
     private record SecAccount(
         String wrapper,
@@ -66,15 +67,21 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
 
     private final WebClient    sidecarClient;
     private final ObjectMapper objectMapper;
+    private final Duration     refreshTimeout;
 
     public TradeRepublicAdapter(
         ObjectMapper objectMapper,
         @Value("${app.tr-auth.url:http://tr-auth:8001}") String trAuthUrl
     ) {
+        this(objectMapper, trAuthUrl, DEFAULT_REFRESH_TIMEOUT);
+    }
+
+    TradeRepublicAdapter(ObjectMapper objectMapper, String trAuthUrl, Duration refreshTimeout) {
         this.objectMapper   = objectMapper;
         this.sidecarClient  = WebClient.builder()
             .baseUrl(trAuthUrl)
             .build();
+        this.refreshTimeout = refreshTimeout;
     }
 
     // ─── Auth (delegated to Python sidecar) ───────────────────────────────────
@@ -164,7 +171,7 @@ public class TradeRepublicAdapter implements TradeRepublicPort {
                     "Trade Republic authentication service is unavailable. Please make sure tr-auth is running on port 8001.",
                     ex));
             })
-            .timeout(Duration.ofSeconds(15))
+            .timeout(refreshTimeout)
             .onErrorMap(ex -> !(ex instanceof SyncException), ex -> new SyncException(
                 "Trade Republic authentication service is unavailable. Please make sure tr-auth is running on port 8001.",
                 ex))
