@@ -1,6 +1,6 @@
 # Feature: Bank Sync
 
-> Last updated: 2026-06-03 (Enable Banking: single Application ID field, Key ID derived)
+> Last updated: 2026-07-12
 
 > **Status (1.0.0).** Enable Banking is the only enabled provider. The Powens
 > adapter ships in the codebase but is **experimental and untested** —
@@ -26,11 +26,11 @@ Both providers implement the `BankConnectorPort` interface with four operations:
 ### Requisition lifecycle
 
 1. **CREATED** -- `SyncService.initiateConnection()` calls the port and stores a `Requisition` with `authLink`.
-2. **LINKED** -- `SyncService.completeConnection()` exchanges the OAuth callback code, fetches balances, upserts at least one account, and marks the requisition as LINKED. The exchanged `session_id` is **flushed onto the requisition immediately** (before the balance fetch): the OAuth code is consumed at Enable Banking the moment the exchange succeeds, so losing the id to a later failure would leave the requisition pointing at the stale authorization id — a permanently unretryable state.
-3. **FAILED** -- If the code exchange or balance fetch fails, or if Enable Banking returns zero accounts after polling, the requisition is marked FAILED and can be retried via `retrySync()`.
+2. **LINKED** -- `SyncService.completeConnection()` exchanges the OAuth callback code, fetches balances, upserts at least one account, and marks the requisition as LINKED. Immediately after a successful exchange, `RequisitionLifecycleWriter` commits the `session_id` and clears the spent OAuth nonce in an independent `REQUIRES_NEW` transaction. A later fetch or account-upsert rollback therefore cannot restore the stale authorization id.
+3. **FAILED** -- If the code exchange, balance fetch, or account upsert fails, or if Enable Banking returns zero accounts after polling, `RequisitionLifecycleWriter` marks the requisition FAILED in an independent transaction. Account and snapshot writes are explicitly flushed inside the guarded block so deferred constraints surface before method return; they still roll back atomically, while the session id remains available to `retrySync()`.
 4. **Reconnect** -- `POST /api/sync/{id}/reconnect` (`SyncService.reconnect()`) re-initiates the OAuth flow **on the existing requisition** for the cases a retry can never fix: a failed code exchange (the stored id is an authorization id, not a session) or an expired/revoked PSD2 consent (~90 days). Status returns to CREATED with a fresh `authLink`; accounts survive because `upsertAccount` matches on `externalAccountId`. **Refused for LINKED requisitions** — overwriting a working session id with an unconsumed authorization id would break scheduled syncs if the user abandons the new OAuth flow. Exposed in the UI as a "Reconnect to bank" button next to retry on FAILED connections (BankSyncTab and SyncAllModal). Rate-limited like `/initiate` (it triggers an outbound EB `/auth` call).
 
-Every public method of `EnableBankingBankConnector` maps **all** failures (HTTP errors, timeouts, connection errors) to `SyncException` — an invariant the service layer's `catch (SyncException)` / `noRollbackFor` handling depends on. An unmapped raw exception would roll back the completion transaction and lose the freshly exchanged session id.
+Every public method of `EnableBankingBankConnector` maps **all** provider failures (HTTP errors, timeouts, connection errors) to `SyncException`, keeping the external-error contract stable. `completeConnection()` additionally catches arbitrary runtime failures from account persistence, marks the requisition retryable through the independent lifecycle writer, and lets its main transaction roll back partial account/snapshot work.
 
 ### Account type detection
 
@@ -42,6 +42,7 @@ Every public method of `EnableBankingBankConnector` maps **all** failures (HTTP 
 - `adapter/PowensBankConnector.java` -- Scraping adapter (experimental, OAuth webview; `@Primary` removed in 1.0.0)
 - `port/BankConnectorPort.java` -- Port interface with `AccountData`, `InstitutionData` records
 - `service/SyncService.java` -- Orchestration: initiate, complete, retry, resync, type detection
+- `service/RequisitionLifecycleWriter.java` -- Independent transaction checkpoints for consumed OAuth sessions and retryable failures
 - `controller/SyncController.java` -- REST endpoints under `/api/sync/`
 - `model/Requisition.java` -- Tracks connection lifecycle (CREATED/LINKED/FAILED)
 
@@ -68,6 +69,9 @@ SyncController.complete() --> SyncService.completeConnection()
         |               BankConnectorPort.exchangeCode() --> session_id
         |                         |
         |                         v
+        |               RequisitionLifecycleWriter.checkpointSession()
+        |                         |  (REQUIRES_NEW commit)
+        |                         v
         |               BankConnectorPort.fetchBalances(session_id)
         |                         |
         |                         v
@@ -89,6 +93,7 @@ SchedulerService.dailyBankSync() --> SyncService.resyncAll()
 | Keyword-based type detection | Banks rarely expose a standardized type field; product name is the most reliable signal | Hardcoded institution-to-type mapping |
 | Async polling for Enable Banking accounts | EB links accounts asynchronously after OAuth; polling (8x3s) handles the delay | Webhook (EB does not provide one) |
 | Permanent access token for Powens | Powens tokens do not expire; stored directly as the requisition ID | Refresh token rotation (not needed) |
+| Independent requisition lifecycle checkpoint | OAuth codes are single-use; the exchanged session id and FAILED status must survive rollback of account/snapshot writes | `saveAndFlush` in the outer transaction (flushes SQL but still rolls back with that transaction) |
 
 ## Enable Banking onboarding caveats
 
@@ -131,7 +136,8 @@ Because the text fields (Application ID + Redirect URI) live in Postgres while t
 
 ## Tests
 
-- `SyncServiceTest` -- unit tests for type detection, upsert logic, retry flow
+- `SyncServiceTest` -- unit tests for type detection, upsert logic, retry flow, and checkpoint ordering on fetch/upsert failures
+- `RequisitionLifecycleWriterTest` -- session/nonce transitions and `REQUIRES_NEW` propagation invariant
 - `EnableBankingConfigProviderTest` -- DB/env resolution precedence, and `keyId()` falling back to the Application ID vs honoring an explicitly-configured value
 - `EnableBankingBankConnectorTest` -- JWT build / institution search against a mocked provider
 - `AdminControllerTest` -- `getSettings` reads the resolved provider; `updateEnableBanking` delegates the 2-arg writer

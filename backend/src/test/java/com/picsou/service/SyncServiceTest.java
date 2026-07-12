@@ -17,6 +17,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -37,6 +38,7 @@ class SyncServiceTest {
     @Mock RequisitionRepository requisitionRepository;
     @Mock FamilyMemberRepository familyMemberRepository;
     @Mock AccountService accountService;
+    @Mock RequisitionLifecycleWriter requisitionLifecycleWriter;
 
     @InjectMocks SyncService syncService;
 
@@ -356,10 +358,68 @@ class SyncServiceTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> syncService.completeConnection("oauth-code", null, memberId))
             .isInstanceOf(com.picsou.exception.SyncException.class);
 
-        // The session id was flushed before the fetch, and the failure path kept it.
-        verify(requisitionRepository).saveAndFlush(requisition);
-        assertThat(requisition.getRequisitionId()).isEqualTo("sess-1");
-        assertThat(requisition.getStatus()).isEqualTo(RequisitionStatus.FAILED);
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(
+            bankConnector,
+            requisitionLifecycleWriter
+        );
+        order.verify(bankConnector).exchangeCode("oauth-code");
+        order.verify(requisitionLifecycleWriter).checkpointSession(10L, memberId, "sess-1");
+        order.verify(bankConnector).fetchBalances("sess-1");
+        order.verify(requisitionLifecycleWriter).markFailed(10L, memberId);
+    }
+
+    @Test
+    void completeConnection_upsertFailureKeepsCheckpointAndMarksRetryable() {
+        Long memberId = 1L;
+        FamilyMember member = FamilyMember.builder().id(memberId).displayName("Owner").build();
+        Requisition requisition = createdRequisition(10L, member, "REVOLUT::FR", "Revolut", "state-x");
+        AccountData accountData = new AccountData("ext-1", "Compte", "FR76...", "EUR", new BigDecimal("10"));
+
+        when(requisitionRepository.findByOauthState("state-x")).thenReturn(Optional.of(requisition));
+        when(bankConnector.exchangeCode("oauth-code")).thenReturn("sess-1");
+        when(bankConnector.fetchBalances("sess-1")).thenReturn(List.of(accountData));
+        when(accountRepository.findByExternalAccountIdAndMemberId("ext-1", memberId)).thenReturn(Optional.empty());
+        when(accountRepository.existsSoftDeletedByExternalAccountIdAndMemberId("ext-1", memberId)).thenReturn(false);
+        when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> {
+            Account account = invocation.getArgument(0);
+            account.setId(99L);
+            return account;
+        });
+        when(accountService.toResponse(any(Account.class))).thenAnswer(invocation ->
+            AccountResponse.from(invocation.getArgument(0), new BigDecimal("10")));
+        org.mockito.Mockito.doThrow(new DataIntegrityViolationException("snapshot constraint"))
+            .when(accountRepository).flush();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> syncService.completeConnection("oauth-code", "state-x", memberId)
+        )
+            .isInstanceOf(com.picsou.exception.SyncException.class)
+            .hasMessageContaining("could not be saved")
+            .hasCauseInstanceOf(DataIntegrityViolationException.class);
+
+        verify(requisitionLifecycleWriter).checkpointSession(10L, memberId, "sess-1");
+        verify(requisitionLifecycleWriter).markFailed(10L, memberId);
+        verify(requisitionRepository, never()).save(requisition);
+    }
+
+    @Test
+    void completeConnection_exchangeFailureRetainsNonceAndMarksFailed() {
+        Long memberId = 1L;
+        FamilyMember member = FamilyMember.builder().id(memberId).displayName("Owner").build();
+        Requisition requisition = createdRequisition(10L, member, "REVOLUT::FR", "Revolut", "state-x");
+        when(requisitionRepository.findByOauthState("state-x")).thenReturn(Optional.of(requisition));
+        when(bankConnector.exchangeCode("oauth-code"))
+            .thenThrow(new com.picsou.exception.SyncException("temporary exchange failure"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> syncService.completeConnection("oauth-code", "state-x", memberId)
+        )
+            .isInstanceOf(com.picsou.exception.SyncException.class)
+            .hasMessageContaining("temporary exchange failure");
+
+        verify(requisitionLifecycleWriter).markFailed(10L, memberId);
+        verify(requisitionLifecycleWriter, never()).checkpointSession(any(), any(), any());
+        assertThat(requisition.getOauthState()).isEqualTo("state-x");
     }
 
     // --- OAuth state correlation ---
@@ -392,8 +452,8 @@ class SyncServiceTest {
         // Resolved by state — the latest-CREATED guess must not even be consulted.
         verify(requisitionRepository, never())
             .findByStatusAndMemberIdOrderByCreatedAtDesc(RequisitionStatus.CREATED, memberId);
-        assertThat(revolut.getRequisitionId()).isEqualTo("sess-1");
-        assertThat(revolut.getOauthState()).isNull(); // single-use nonce spent
+        verify(requisitionLifecycleWriter).checkpointSession(10L, memberId, "sess-1");
+        verify(requisitionLifecycleWriter).markFailed(10L, memberId);
     }
 
     @Test
@@ -429,7 +489,8 @@ class SyncServiceTest {
 
         syncService.completeConnection("oauth-code", "picsou-app_1720000000", memberId);
 
-        assertThat(legacy.getRequisitionId()).isEqualTo("sess-1");
+        verify(requisitionLifecycleWriter).checkpointSession(10L, memberId, "sess-1");
+        verify(requisitionLifecycleWriter).markFailed(10L, memberId);
         assertThat(postMigration.getRequisitionId()).isEqualTo("auth-11"); // untouched
     }
 

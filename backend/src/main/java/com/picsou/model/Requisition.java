@@ -53,7 +53,8 @@ public class Requisition extends AuditableEntity {
     /**
      * Random nonce sent as OAuth {@code state} at initiation; Enable Banking
      * echoes it on the redirect, letting the callback resolve this exact
-     * requisition. Single-use: cleared once the session is linked.
+     * requisition. Cleared immediately after a successful code exchange, but
+     * retained when the exchange fails so the callback can be retried.
      */
     @JsonIgnore
     @Column(name = "oauth_state", length = 64)

@@ -76,10 +76,9 @@ public class EnableBankingBankConnector implements BankConnectorPort {
     /**
      * Maps every failure of an Enable Banking call to {@link SyncException}:
      * HTTP errors carry the response body, everything else (timeouts,
-     * connection errors) the exception message. The service layer's
-     * {@code catch (SyncException)} / {@code noRollbackFor} handling depends on
-     * NO raw exception escaping the adapter — an unmapped error would roll back
-     * the completion transaction and lose the freshly exchanged session id.
+     * connection errors) the exception message. This keeps external failures on
+     * the service layer's stable sync-error contract; retry-critical requisition
+     * state is persisted independently by {@code RequisitionLifecycleWriter}.
      */
     private static <T> Mono<T> mapToSyncException(Mono<T> mono, String context) {
         return mono
