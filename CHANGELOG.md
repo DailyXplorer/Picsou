@@ -70,6 +70,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Restoring several tabs at once no longer logs you out everywhere.** When
+  multiple tabs were restored together they each presented the same "Remember
+  Me" token; the first request rotated it and the rest looked like a replayed
+  (stolen) token, so theft detection revoked the whole series and every tab was
+  logged out. `validateAndRotate` now serializes the rotate path with a
+  row-level lock (`findBySeriesIdForUpdate`) and remembers the immediately-previous
+  token hash, accepting it for a short grace window
+  (`app.persistent-session.rotation-grace-seconds`, default 30s). The window is
+  **anchored** to the rotation that opened it — a previous-token acceptance does
+  not advance it — so every tab in the burst is tolerated (not just the first
+  two) and replaying the previous token cannot slide the window forward. A token
+  presented after the window still trips theft detection (migration `V56`).
 - **Wallet sync and removal failures now say why.** Both buttons reported nothing
   at all when they failed — the row simply re-enabled, and the delete dialog sat
   there — so a `422` from an RPC outage was indistinguishable from success. The
