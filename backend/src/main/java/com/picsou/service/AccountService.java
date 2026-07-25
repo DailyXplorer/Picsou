@@ -468,13 +468,12 @@ public class AccountService {
         BigDecimal pnlEur = currentValueEur != null && costBasis != null
             ? currentValueEur.subtract(costBasis)
             : holding.getProviderPnlEur();
-        BigDecimal pnlPercent = (pnlEur != null && costBasis != null && costBasis.signum() != 0)
-            ? pnlEur.divide(costBasis, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
-            : null;
         // abs(): a short position has a negative cost basis, and dividing by it would
         // flip the sign — a winning short would display as a loss. The percentage must
         // carry the sign of the P&L itself, the denominator is only a magnitude.
-        BigDecimal pnlPercent = (pnlEur != null && costBasis.signum() != 0)
+        // The null check on costBasis is required since pnlEur can now fall back to the
+        // provider-reported P&L, which is available even when no cost basis is known.
+        BigDecimal pnlPercent = (pnlEur != null && costBasis != null && costBasis.signum() != 0)
             ? pnlEur.divide(costBasis.abs(), 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
             : null;
 

@@ -43,6 +43,7 @@ export function SyncPage() {
         </TabsContent>
         <TabsContent value="bourse-direct" className="mt-6">
           <BourseDirectTab />
+        </TabsContent>
         <TabsContent value="ibkr" className="mt-6">
           <IbkrTab />
         </TabsContent>
