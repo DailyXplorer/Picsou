@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bourse Direct brokerage sync.** A dedicated read-only Playwright sidecar
+  handles login and the six-digit security code, then imports PEA/CTO positions,
+  average cost, current price, valuation and account cash. Credentials and OTPs
+  are never persisted; only the complete browser session is encrypted at rest.
+  Sessions support manual and daily sync, and accounts remain explicitly typed
+  as PEA or securities accounts. Imports expose queued/running/success/failure
+  progress, reject unreconciled partial portfolios, preserve the last valid
+  holdings on failure, and retain native quote currencies alongside broker EUR
+  valuations. See [feature notes](docs/features/bourse-direct.md) and the
+  [ADR](docs/decisions/2026-07-21-bourse-direct-isolated-atomic-sync.md).
 - **Interactive Brokers (IBKR) sync via the Flex Web Service.** Connect once with a
   read-only Flex token + an "Open Positions" query id; Picsou pulls open positions
   end-of-day and maps them to accounts + holdings (one account per IBKR account id),
@@ -91,6 +101,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not advance it — so every tab in the burst is tolerated (not just the first
   two) and replaying the previous token cannot slide the window forward. A token
   presented after the window still trips theft detection (migration `V56`).
+- **Bourse Direct positions no longer appear at €0 when an ISIN has no live
+  quote.** Dashboard totals now reuse the same atomic account valuation as
+  account cards and history. A guarded migration also restores per-position EUR
+  values from early connector data only when every stored price reconciles with
+  the broker's account total minus cash; ambiguous legacy quotes remain unset.
 - **Wallet sync and removal failures now say why.** Both buttons reported nothing
   at all when they failed — the row simply re-enabled, and the delete dialog sat
   there — so a `422` from an RPC outage was indistinguishable from success. The

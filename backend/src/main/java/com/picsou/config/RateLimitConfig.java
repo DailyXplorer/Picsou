@@ -76,6 +76,10 @@ public class RateLimitConfig {
     }
 
     /**
+     * Per-IP Bourse Direct auth rate limiter: 5 attempts per 15 minutes.
+     */
+    @Bean("bourseDirectAuthBuckets")
+    public Map<String, Bucket> bourseDirectAuthBuckets() {
      * Per-IP IBKR Flex sync rate limiter: 6 requests per minute.
      * IBKR itself enforces a separate per-token limit (~1 request/sec) on the Flex Web
      * Service; this application-level per-IP cap is additive and defensive — it keeps one
@@ -191,6 +195,11 @@ public class RateLimitConfig {
             .build();
     }
 
+    public static Bucket createBourseDirectAuthBucket() {
+        return Bucket.builder()
+            .addLimit(Bandwidth.builder()
+                .capacity(5)
+                .refillIntervally(5, Duration.ofMinutes(15))
     public static Bucket createIbkrSyncBucket() {
         return Bucket.builder()
             .addLimit(Bandwidth.builder()

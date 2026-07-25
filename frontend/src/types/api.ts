@@ -32,6 +32,7 @@ export interface Account {
   currency: string
   currentBalance: number
   currentBalanceEur: number
+  cashBalance?: number | null
   lastSyncedAt: string | null
   isManual: boolean
   color: string
@@ -162,7 +163,7 @@ export interface DashboardData {
     color: string
     balanceEur: number
     percentage: number
-    accountType: string
+    accountType: AccountType
     hasHoldings: boolean
   }[]
   liabilities: {
@@ -171,7 +172,7 @@ export interface DashboardData {
     color: string
     balanceEur: number
     percentage: number
-    accountType: string
+    accountType: AccountType
     hasHoldings: boolean
   }[]
   goalSummaries: GoalProgress[]
@@ -191,6 +192,7 @@ export interface HoldingResponse {
   quantity: number
   averageBuyIn: number | null
   currentPrice: number | null
+  quoteCurrency?: string | null
   currentValueEur: number | null
   costBasisEur: number | null
   pnlEur: number | null
@@ -272,6 +274,40 @@ export interface BoursoAuthInitResponse {
   mfaRequired: boolean
   mfaType: string | null
   contact: string | null
+}
+
+interface BourseDirectSessionStatusBase {
+  isActive: boolean
+  expiresAt: string | null
+  lastSyncStartedAt: string | null
+  lastSyncCompletedAt: string | null
+}
+
+export type BourseDirectSessionStatus =
+  | (BourseDirectSessionStatusBase & {
+      syncStatus: 'FAILED'
+      lastSyncError: BourseDirectErrorCode
+    })
+  | (BourseDirectSessionStatusBase & {
+      syncStatus: 'IDLE' | 'QUEUED' | 'RUNNING' | 'SUCCESS'
+      lastSyncError: null
+    })
+
+export type BourseDirectErrorCode =
+  | 'INVALID_CREDENTIALS'
+  | 'INVALID_OTP'
+  | 'AUTH_ATTEMPT_EXPIRED'
+  | 'SESSION_EXPIRED'
+  | 'PORTFOLIO_INCOMPLETE'
+  | 'UPSTREAM_FORMAT_CHANGED'
+  | 'UPSTREAM_UNAVAILABLE'
+  | 'INVALID_DATA'
+  | 'INTERNAL_ERROR'
+
+export interface BourseDirectAuthInitResponse {
+  processId: string | null
+  mfaRequired: boolean
+  mfaType: string | null
 }
 
 export interface FinaryAccountPreview {
