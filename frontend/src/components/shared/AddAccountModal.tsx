@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { AccountForm } from '@/components/shared/AccountForm'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
+import { BourseDirectPanel } from '@/components/sync/BourseDirectPanel'
 import { ACCOUNT_COLORS, TR_VERIFICATION_CODE_LENGTH } from '@/lib/constants'
 import { extractErrorMessage, formatTrAuthError, getErrorStatus, getErrorDetail } from '@/lib/errors'
 import { useCreateAccount, useUpdateDebtMetadata } from '@/features/accounts/hooks'
@@ -50,8 +51,10 @@ import {
   Upload,
   ShieldCheck,
   RefreshCw,
+  BriefcaseBusiness,
 } from 'lucide-react'
 import type { ExchangeType, ChainType, AccountRequest, FinaryPreviewResponse, FinaryAccountMapping, FinaryMappingAction, FinaryImportResultResponse, AccountType } from '@/types/api'
+import { SUPPORTED_CHAINS } from '@/types/api'
 
 // ---------------------------------------------------------------------------
 // Props & types
@@ -62,7 +65,7 @@ interface AddAccountModalProps {
   onOpenChange: (open: boolean) => void
 }
 
-type WizardStep = 'selector' | 'banks' | 'exchanges' | 'wallets' | 'tr' | 'finary' | 'manual'
+type WizardStep = 'selector' | 'banks' | 'exchanges' | 'wallets' | 'tr' | 'bourseDirect' | 'finary' | 'manual'
 
 /**
  * Masked variant of InputOTPSlot — replaces the typed character with a bullet
@@ -99,6 +102,7 @@ const SOURCES: { key: WizardStep; icon: typeof Landmark; labelKey: string; descK
   { key: 'exchanges', icon: ArrowLeftRight, labelKey: 'sync.exchanges.title', descKey: 'addAccount.desc.exchanges' },
   { key: 'wallets', icon: Wallet, labelKey: 'sync.wallets.title', descKey: 'addAccount.desc.wallets' },
   { key: 'tr', icon: Smartphone, labelKey: 'sync.tr.title', descKey: 'addAccount.desc.tr' },
+  { key: 'bourseDirect', icon: BriefcaseBusiness, labelKey: 'sync.bourseDirect.title', descKey: 'addAccount.desc.bourseDirect' },
   { key: 'finary', icon: FileSpreadsheet, labelKey: 'sync.finary.title', descKey: 'addAccount.desc.finary' },
   { key: 'manual', icon: PenLine, labelKey: 'addAccount.manual', descKey: 'addAccount.desc.manual' },
 ]
@@ -219,6 +223,12 @@ export function AddAccountModal({ open, onOpenChange }: AddAccountModalProps) {
               {step === 'exchanges' && <ExchangeWizard onDone={handleDone} onBack={() => setStep('selector')} />}
               {step === 'wallets' && <WalletWizard onDone={handleDone} onBack={() => setStep('selector')} />}
               {step === 'tr' && <TradeRepublicWizard onDone={handleDone} onBack={() => setStep('selector')} />}
+              {step === 'bourseDirect' && (
+                <>
+                  <BackButton onClick={() => setStep('selector')} />
+                  <BourseDirectPanel onConnected={handleDone} />
+                </>
+              )}
               {step === 'finary' && <FinaryWizard onDone={handleDone} onBack={() => setStep('selector')} />}
             </>
         </DialogContent>
@@ -485,7 +495,7 @@ function ExchangeWizard({ onBack }: { onDone: () => void; onBack: () => void }) 
 
 function WalletWizard({ onBack }: { onDone: () => void; onBack: () => void }) {
   const { t } = useTranslation()
-  const [chain, setChain] = useState<ChainType>('ETHEREUM')
+  const [chain, setChain] = useState<ChainType>('EVM')
   const [address, setAddress] = useState('')
   const [label, setLabel] = useState('')
   const [done, setDone] = useState(false)
@@ -529,7 +539,7 @@ function WalletWizard({ onBack }: { onDone: () => void; onBack: () => void }) {
         <div className="space-y-2">
           <Label>{t('sync.wallets.chain')}</Label>
           <div className="flex gap-2">
-            {(['BITCOIN', 'ETHEREUM', 'SOLANA'] as ChainType[]).map((c) => (
+            {SUPPORTED_CHAINS.map((c) => (
               <Button
                 key={c}
                 type="button"
@@ -541,6 +551,9 @@ function WalletWizard({ onBack }: { onDone: () => void; onBack: () => void }) {
               </Button>
             ))}
           </div>
+          {chain === 'EVM' && (
+            <p className="text-xs text-muted-foreground">{t('sync.wallets.evmHint')}</p>
+          )}
         </div>
 
         <div className="space-y-2">

@@ -1,6 +1,6 @@
 # Feature: Bank Sync
 
-> Last updated: 2026-07-12
+> Last updated: 2026-07-19 (HTTPS callback is mandatory — Docker TLS profile)
 
 > **Status (1.0.0).** Enable Banking is the only enabled provider. The Powens
 > adapter ships in the codebase but is **experimental and untested** —
@@ -38,13 +38,13 @@ Every public method of `EnableBankingBankConnector` maps **all** provider failur
 
 ### Key files
 
-- `adapter/EnableBankingBankConnector.java` -- PSD2 adapter (RSA JWT, async account linking)
-- `adapter/PowensBankConnector.java` -- Scraping adapter (experimental, OAuth webview; `@Primary` removed in 1.0.0)
-- `port/BankConnectorPort.java` -- Port interface with `AccountData`, `InstitutionData` records
-- `service/SyncService.java` -- Orchestration: initiate, complete, retry, resync, type detection
-- `service/RequisitionLifecycleWriter.java` -- Independent transaction checkpoints for consumed OAuth sessions and retryable failures
-- `controller/SyncController.java` -- REST endpoints under `/api/sync/`
-- `model/Requisition.java` -- Tracks connection lifecycle (CREATED/LINKED/FAILED)
+- `backend/src/main/java/com/picsou/adapter/EnableBankingBankConnector.java` -- PSD2 adapter (RSA JWT, async account linking)
+- `backend/src/main/java/com/picsou/adapter/PowensBankConnector.java` -- Scraping adapter (experimental, OAuth webview; `@Primary` removed in 1.0.0)
+- `backend/src/main/java/com/picsou/port/BankConnectorPort.java` -- Port interface with `AccountData`, `InstitutionData` records
+- `backend/src/main/java/com/picsou/service/SyncService.java` -- Orchestration: initiate, complete, retry, resync, type detection
+- `backend/src/main/java/com/picsou/service/RequisitionLifecycleWriter.java` -- Independent transaction checkpoints for consumed OAuth sessions and retryable failures
+- `backend/src/main/java/com/picsou/controller/SyncController.java` -- REST endpoints under `/api/sync/`
+- `backend/src/main/java/com/picsou/model/Requisition.java` -- Tracks connection lifecycle (CREATED/LINKED/FAILED)
 
 ### Flow
 
@@ -91,7 +91,7 @@ SchedulerService.dailyBankSync() --> SyncService.resyncAll()
 | Dual providers with `@Primary` | PSD2 can't access LEP/PEA/livrets; scraping covers all French account types | Single provider only |
 | `@ConditionalOnExpression` for Powens | No-code activation: set env var, adapter appears; unset, it disappears | Feature toggles, profiles |
 | Keyword-based type detection | Banks rarely expose a standardized type field; product name is the most reliable signal | Hardcoded institution-to-type mapping |
-| Async polling for Enable Banking accounts | EB links accounts asynchronously after OAuth; polling (8x3s) handles the delay | Webhook (EB does not provide one) |
+| Async polling for Enable Banking accounts | EB links accounts asynchronously after OAuth; polling (3 x 1.5 s) handles the delay | Webhook (EB does not provide one) |
 | Permanent access token for Powens | Powens tokens do not expire; stored directly as the requisition ID | Refresh token rotation (not needed) |
 | Independent requisition lifecycle checkpoint | OAuth codes are single-use; the exchanged session id and FAILED status must survive rollback of account/snapshot writes | `saveAndFlush` in the outer transaction (flushes SQL but still rolls back with that transaction) |
 
@@ -127,9 +127,12 @@ Because the text fields (Application ID + Redirect URI) live in Postgres while t
 - **Powens is disabled in 1.0.0**: `@Primary` was removed from `PowensBankConnector`, so even setting `POWENS_CLIENT_ID` will NOT activate Powens — Enable Banking stays injected. To re-enable after validating the adapter, restore `@Primary` on `PowensBankConnector` and set `POWENS_CLIENT_ID`.
 - **Enable Banking RSA key**: The private key must be PKCS8 PEM format. The `ENABLEBANKING_PRIVATE_KEY` env var can contain literal `\n` characters -- both formats are handled in `parsePem()`. The key lives on disk, **not** in the DB — see "Enable Banking configuration" above; setting only the text fields (Application ID + Redirect URI) leaves searches failing until a key is generated/imported.
 - **Local dev key path**: the `dev` Spring profile stores the generated key under `backend/.local/keys/enablebanking-private.pem` so bare-metal macOS/Linux runs do not try to create Docker's `/data/keys` directory at filesystem root.
-- **Enable Banking redirect URI must be registered**: `ENABLEBANKING_REDIRECT_URI` defaults to `http://localhost:5173/sync/callback` (dev only). In production, set it to `http://<host>:8080/sync/callback` in `.env`. The same URL must be registered in the Enable Banking developer portal under the application's Redirect URIs. A mismatch causes a `REDIRECT_URI_NOT_ALLOWED` 400 error at auth initiation — it surfaces in the Add Account modal bank wizard.
+- **The callback URI must be HTTPS — a plain-HTTP deployment cannot sync banks.** Enable Banking rejects `http://` redirect URLs for PRODUCTION applications, and PRODUCTION is the only mode that lists real banks (see the SANDBOX pitfall above), so there is no HTTP escape hatch. Docker deployments must therefore terminate TLS: either the bundled `tls` compose profile (`docker compose --profile tls up -d`, see [docker-deployment.md](./docker-deployment.md)) or an existing reverse proxy. Note that Enable Banking never *fetches* the callback URL — the redirect is browser-side only (`window.location.href = authLink`, then the SPA POSTs the `code`) — so a certificate from Caddy's internal CA works fine on a LAN, as long as the family's browsers trust its root.
+- **Enable Banking redirect URI must be registered**: `ENABLEBANKING_REDIRECT_URI` defaults to `https://localhost:5173/sync/callback` for local development, matching Vite's HTTPS dev server. In production, set it to the public frontend callback URL (for example `https://picsou.example.com/sync/callback`). The exact same URL must be registered in the Enable Banking developer portal under the application's Redirect URIs. A mismatch causes a `REDIRECT_URI_NOT_ALLOWED` 400 error at auth initiation — it surfaces in the Add Account modal bank wizard.
 - **ALREADY_AUTHORIZED**: If the OAuth code is reused (e.g. browser back button), `SyncService.completeConnection()` catches the error and falls back to refreshing the latest linked session **of the same institution** instead of failing (a replayed Revolut callback must not resync BNP).
 - **OAuth `state` correlation**: each initiation stores a random single-use nonce on the requisition; the callback resolves the requisition by it (member derived from the row — this is what makes admin-impersonated connections complete correctly). See [ADR 2026-07-08](../decisions/2026-07-08-oauth-state-requisition-correlation.md).
+- **Session identifiers stay out of logs**: Enable Banking session ids are opaque references that still identify a long-lived PSD2 consent. Use the internal requisition id and institution name for log correlation; never print the raw session id.
+- **One bank-status query key**: bank-sync feature hooks own `syncKeys.banks()`, and every complete/retry/reconnect/delete mutation invalidates it. Components must use those hooks rather than introducing a parallel key such as `['sync', 'connections']`, or another sync surface can remain stale until its polling interval elapses.
 - **Type upgrade on resync**: If the user has not customized an account's type, `upsertAccount()` will upgrade it from CHECKING to the detected type on the next sync. Manual user changes are preserved (only CHECKING is auto-upgraded).
 - **Both providers are optional**: The app starts fine without either. No `BankConnectorPort` bean is required at startup.
 - **Bank logos**: `InstitutionData.logoUrl` (Enable Banking only — Powens hardcodes `null`) is captured at connection time and copied onto each `Account`. See [bank-logos.md](./bank-logos.md) for the capture/backfill flow and the account card fallback to `color`.

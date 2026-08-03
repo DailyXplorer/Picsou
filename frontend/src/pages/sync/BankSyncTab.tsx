@@ -1,8 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -19,20 +17,18 @@ import {
   AlertTriangle,
   ExternalLink,
 } from 'lucide-react'
-import type { Institution } from '@/types/api'
 import { extractErrorMessage, formatApiError } from '@/lib/errors'
-import { bankSyncApi } from '@/features/sync/api'
-import { useReconnectBankSync } from '@/features/sync/hooks'
+import {
+  useBankSyncStatus,
+  useCompleteBankSync,
+  useDeleteBankConnection,
+  useInitiateBankSync,
+  useReconnectBankSync,
+  useRetryBankSync,
+  useSearchInstitutions,
+} from '@/features/sync/hooks'
 
 type CallbackStatus = 'completing' | 'done' | 'error'
-
-interface BankConnection {
-  id: number
-  institutionId: string
-  institutionName: string
-  status: string
-  lastSyncedAt: string | null
-}
 
 function statusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
   switch (status) {
@@ -62,7 +58,6 @@ function cleanBankCallbackUrl() {
 
 export function BankSyncTab() {
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -74,78 +69,58 @@ export function BankSyncTab() {
   const [retryingIds, setRetryingIds] = useState<Set<number>>(() => new Set())
   const handledCode = useRef<string | null>(null)
 
-  const { mutate: completeSync } = useMutation({
-    mutationFn: ({ code, state }: { code: string; state: string | null }) =>
-      bankSyncApi.complete(code, state),
-    onSuccess: () => {
-      setCallbackStatus('done')
-      cleanBankCallbackUrl()
-      queryClient.invalidateQueries({ queryKey: ['sync', 'connections'] })
-      queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-    },
-    onError: (err: unknown) => {
-      setCallbackStatus('error')
-      setCallbackError(extractErrorMessage(err))
-    },
-  })
+  const { mutate: completeSync } = useCompleteBankSync()
+
+  const completeCallback = useCallback((code: string, state: string | null) => {
+    completeSync({ code, state }, {
+      onSuccess: () => {
+        setCallbackStatus('done')
+        cleanBankCallbackUrl()
+      },
+      onError: (err: unknown) => {
+        setCallbackStatus('error')
+        setCallbackError(extractErrorMessage(err))
+      },
+    })
+  }, [completeSync])
 
   useEffect(() => {
     const code = searchParams.get('code')
     if (code && code !== handledCode.current) {
       handledCode.current = code
       setCallbackStatus('completing')
-      completeSync({ code, state: searchParams.get('state') })
+      completeCallback(code, searchParams.get('state'))
     }
-  }, [searchParams, completeSync])
+  }, [searchParams, completeCallback])
 
   const searchEnabled = searchQuery.trim().length >= 2
 
-  const { data: institutions, isLoading: searchLoading } = useQuery<Institution[]>({
-    queryKey: ['sync', 'institutions', searchQuery],
-    queryFn: () =>
-      api
-        .get<Institution[]>('/sync/institutions', { params: { query: searchQuery.trim() } })
-        .then(r => r.data),
-    enabled: searchEnabled,
-  })
+  const { data: institutions, isLoading: searchLoading } = useSearchInstitutions(searchQuery.trim())
+  const { data: connections, isLoading: connectionsLoading } = useBankSyncStatus()
+  const initiateMutation = useInitiateBankSync()
+  const retryMutation = useRetryBankSync()
 
-  const { data: connections, isLoading: connectionsLoading } = useQuery<BankConnection[]>({
-    queryKey: ['sync', 'connections'],
-    queryFn: () => api.get<BankConnection[]>('/sync/status').then(r => r.data),
-    refetchInterval: 30_000,
-  })
-
-  const initiateMutation = useMutation({
-    mutationFn: (params: { institutionId: string; institutionName: string }) =>
-      api.post<{ authLink: string }>('/sync/initiate', params).then(r => r.data),
-    onSuccess: (data) => {
-      setInitiateError(null)
-      window.location.href = data.authLink
-    },
-    onError: (err: unknown) => {
-      setInitiateError(extractErrorMessage(err, t('sync.banks.initiateError')))
-    },
-  })
-
-  const retryMutation = useMutation({
-    mutationFn: (id: number) =>
-      api.post(`/sync/${id}/retry`).then(r => r.data),
-    onSuccess: () => {
-      setRetryError(null)
-      queryClient.invalidateQueries({ queryKey: ['sync', 'connections'] })
-      queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-    },
-    onError: (err: unknown) => {
-      setRetryError(formatApiError(err, t, 'sync.banks.callbackError'))
-    },
-  })
+  function handleInitiate(institutionId: string, institutionName: string) {
+    initiateMutation.mutate({ institutionId, institutionName }, {
+      onSuccess: (data) => {
+        setInitiateError(null)
+        window.location.href = data.authLink
+      },
+      onError: (err: unknown) => {
+        setInitiateError(extractErrorMessage(err, t('sync.banks.initiateError')))
+      },
+    })
+  }
 
   async function handleRetry(id: number) {
     setRetryingIds((previous) => new Set(previous).add(id))
     try {
-      await retryMutation.mutateAsync(id)
+      await retryMutation.mutateAsync(id, {
+        onSuccess: () => setRetryError(null),
+        onError: (err: unknown) => {
+          setRetryError(formatApiError(err, t, 'sync.banks.callbackError'))
+        },
+      })
     } catch {
       // The mutation's onError handler renders the translated failure banner.
     } finally {
@@ -173,20 +148,11 @@ export function BankSyncTab() {
     })
   }
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) =>
-      api.delete(`/sync/${id}`).then(r => r.data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sync', 'connections'] })
-      queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      setDeleteId(null)
-    },
-  })
+  const deleteMutation = useDeleteBankConnection()
 
   function handleDelete() {
     if (deleteId !== null) {
-      deleteMutation.mutate(deleteId)
+      deleteMutation.mutate(deleteId, { onSuccess: () => setDeleteId(null) })
     }
   }
 
@@ -278,7 +244,7 @@ export function BankSyncTab() {
                     size="sm"
                     className="justify-self-end"
                     onClick={() =>
-                      initiateMutation.mutate({ institutionId: inst.id, institutionName: inst.name })
+                      handleInitiate(inst.id, inst.name)
                     }
                     disabled={initiateMutation.isPending}
                   >

@@ -175,6 +175,7 @@
     "color": "Farbe",
     "total": "Gesamt",
     "currentBalance": "Aktueller Saldo",
+    "cashBalance": "Bargeld im PEA/Wertpapierkonto",
     "snapshots": "Monatliche Stände",
     "addSnapshot": "Speichern",
     "monthlyHistory": "Saldo zum Monatsende",
@@ -402,8 +403,9 @@
     "desc": {
       "banks": "Verbinde deine Banken per OAuth",
       "exchanges": "Binance, Kraken...",
-      "wallets": "Bitcoin, Ethereum, Solana...",
+      "wallets": "Bitcoin, Ethereum, BNB, Solana...",
       "tr": "Trade Republic",
+      "bourseDirect": "PEA- und Wertpapierkonten synchronisieren",
       "finary": "Aus Finary importieren",
       "manual": "Konto manuell erstellen"
     }
@@ -454,6 +456,29 @@
         "unknownError": "Ein unerwarteter Fehler ist aufgetreten."
       }
     },
+    "ibkr": {
+      "title": "Interactive Brokers",
+      "setupHint": "Erstellen Sie im IBKR Client Portal eine „Open Positions“-Flex-Abfrage und generieren Sie ein Flex-Web-Service-Token, und fügen Sie beide unten ein.",
+      "token": "Flex-Web-Service-Token",
+      "tokenPlaceholder": "z. B. 123456789012345678901234",
+      "queryId": "Flex-Abfrage-ID",
+      "queryIdPlaceholder": "z. B. 987654",
+      "connect": "Verbinden",
+      "sync": "Synchronisieren",
+      "syncing": "Wird synchronisiert…",
+      "disconnect": "Trennen",
+      "disconnectConfirm": "Gespeicherte Interactive-Brokers-Verbindung entfernen?",
+      "connected": "Verbunden",
+      "statusError": "Letzte Synchronisierung fehlgeschlagen",
+      "lastSync": "Letzte Sync",
+      "neverSynced": "Nie synchronisiert",
+      "syncedToast": "Interactive Brokers synchronisiert: {{count}} Konto/Konten",
+      "errors": {
+        "connectFailed": "Verbindung konnte nicht gespeichert werden. Prüfen Sie Token und Abfrage-ID.",
+        "syncFailed": "Interactive-Brokers-Synchronisierung fehlgeschlagen. Prüfen Sie Ihr Token oder versuchen Sie es erneut.",
+        "disconnectFailed": "Verbindung konnte nicht entfernt werden. Bitte versuchen Sie es erneut."
+      }
+    },
     "exchanges": {
       "title": "Exchanges",
       "add": "Exchange hinzufügen",
@@ -476,11 +501,14 @@
       "label": "Bezeichnung",
       "track": "Verfolgen",
       "connectError": "Wallet konnte nicht hinzugefügt werden. Prüfe die Adresse und versuche es erneut.",
+      "syncError": "Synchronisierung fehlgeschlagen. Prüfe die Adresse oder versuche es später erneut.",
+      "removeError": "Wallet konnte nicht entfernt werden. Bitte versuche es erneut.",
       "sync": "Synchronisieren",
       "remove": "Entfernen",
       "removeConfirm": "Dieses Wallet entfernen?",
       "noWallets": "Keine Wallets im Blick",
-      "lastSync": "Letzte Synchronisierung"
+      "lastSync": "Letzte Synchronisierung",
+      "evmHint": "Eine Adresse, alle EVM-Chains — Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base und Avalanche."
     },
     "finary": {
       "title": "Finary",
@@ -554,6 +582,36 @@
         "sessionExpired": "Sitzung abgelaufen. Bitte verbinde dich erneut.",
         "serverError": "BoursoBank-Serverfehler. Bitte versuche es erneut."
       }
+    },
+    "bourseDirect": {
+      "title": "Bourse Direct",
+      "login": "Login",
+      "password": "Passwort",
+      "otpCode": "6-stelliger Sicherheitscode",
+      "otpPrompt": "Gib den von Bourse Direct gesendeten Code ein. Dieses Gerät wird nicht als vertrauenswürdig markiert.",
+      "connect": "Verbinden",
+      "connecting": "Verbindung wird hergestellt…",
+      "validate": "Code bestätigen",
+      "validating": "Code wird geprüft…",
+      "sync": "Synchronisieren",
+      "queued": "Synchronisierung in Warteschlange…",
+      "syncing": "Synchronisierung läuft…",
+      "syncSuccess": "Portfolio synchronisiert.",
+      "clearSession": "Trennen",
+      "noSession": "Keine aktive Sitzung",
+      "sessionActive": "Aktive Sitzung",
+      "scope": "Synchronisiert Positionen, Einstandspreis, Kurs, Bewertung und Bargeld für PEA- und Wertpapierkonten.",
+      "errors": {
+        "tooManyAttempts": "Zu viele Versuche. Bitte warten.",
+        "invalidCredentials": "Ungültige Bourse-Direct-Zugangsdaten.",
+        "invalidCode": "Ungültiger oder abgelaufener Sicherheitscode. Anmeldung erneut starten.",
+        "authAttemptExpired": "Der Anmeldeversuch ist abgelaufen. Anmeldung erneut starten.",
+        "sessionExpired": "Die Bourse-Direct-Sitzung ist abgelaufen. Bitte erneut verbinden.",
+        "portfolioIncomplete": "Bourse Direct hat ein unvollständiges Portfolio geliefert. Deine vorhandenen Daten wurden nicht verändert.",
+        "formatChanged": "Bourse Direct hat sein Portfolioformat geändert. Deine vorhandenen Daten wurden nicht verändert.",
+        "invalidData": "Bourse Direct hat widersprüchliche Portfoliodaten geliefert. Deine vorhandenen Daten wurden nicht verändert.",
+        "serverError": "Bourse Direct konnte nicht erreicht werden. Bitte erneut versuchen."
+      }
     }
   },
   "settings": {
@@ -573,6 +631,9 @@
     "dateFormat": "Datumsformat",
     "dateFormatLocale": "Lokalisiert",
     "dateFormatIso": "TT-MM-JJJJ",
+    "sidebarStyle": "Seitenleisten-Stil",
+    "sidebarStyleCurrent": "Aktuell",
+    "sidebarStyleClassic": "Klassisch",
     "account": "Konto",
     "accountDescription": "Verwalte dein Konto",
     "username": "Benutzername",
@@ -782,6 +843,7 @@
       "description": "Datenkonnektoren aktivieren oder deaktivieren",
       "enablebanking": "Enable Banking",
       "boursobank": "BoursoBank",
+      "boursedirect": "Bourse Direct",
       "traderepublic": "Trade Republic",
       "finary": "Finary",
       "crypto": "Krypto"
@@ -950,6 +1012,10 @@
           "title": "BoursoBank (Sidecar)",
           "description": "Direkte Synchronisierung über den mitgelieferten bourso-auth-Container. Kein externes Konto nötig."
         },
+        "boursedirect": {
+          "title": "Bourse Direct",
+          "description": "PEA- und Wertpapierpositionen direkt mit Zwei-Faktor-Authentifizierung synchronisieren."
+        },
         "traderepublic": {
           "title": "Trade Republic",
           "description": "Synchronisiere dein Trade-Republic-Portfolio mit deinen Login-Daten. Die Zugangsdaten gibst du beim Erstellen des Kontos ein."
@@ -1056,6 +1122,13 @@
       "continue": "Weiter",
       "skip": "Vorerst überspringen"
     },
+    "bourseDirect": {
+      "title": "Bourse Direct ist bereit.",
+      "body": "Melde dich nach der Einrichtung mit deinen Bourse-Direct-Zugangsdaten und dem 6-stelligen Sicherheitscode an.",
+      "tip": "Picsou speichert nur eine verschlüsselte Sitzung. Passwort und 2FA-Code werden nie gespeichert. Importierte Konten bleiben ihrem PEA- oder Wertpapierkonto zugeordnet.",
+      "cta": "Bourse Direct aktivieren",
+      "skip": "Bourse Direct nicht aktivieren"
+    },
     "tr": {
       "title": "Trade Republic ist startklar.",
       "body": "Hier gibt es nichts zu konfigurieren — du meldest dich mit deinen Trade-Republic-Zugangsdaten an, wenn du das Konto in Picsou hinzufügst.",
@@ -1132,5 +1205,10 @@
     "proceeds": "Erlös",
     "avgCost": "Ø-Kosten",
     "qtySold": "Verk. Menge"
+  },
+  "sidebarStylePrompt": {
+    "title": "Wähle deinen Sidebar-Stil",
+    "description": "Zwei Layouts zur Auswahl — du kannst jederzeit wechseln.",
+    "hint": "Jederzeit änderbar unter Einstellungen > Erscheinungsbild."
   }
 }

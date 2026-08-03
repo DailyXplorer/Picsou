@@ -35,27 +35,27 @@ Three security properties are guaranteed structurally (not by per-call checks):
 ### Key files
 
 **Backend — auth & data**
-- `mcp/AccessKeyService.java` — issue / validate / list / revoke keys; SHA-256 hashing, throttled `last_used_at`.
-- `mcp/AccessKeyUsageRecorder.java` — `REQUIRES_NEW` best-effort `last_used_at` writer (off the hot path).
-- `mcp/Scopes.java` — the scope vocabulary (`domain:action`) and the `ALL` allowlist.
-- `mcp/ScopeSetConverter.java` — `Set<String>` ↔ space-delimited column.
-- `config/AccessKeyAuthentication.java` — the `Authentication` a key runs as (principal = owner `AppUser`; authorities = scopes).
-- `config/AccessKeyAuthFilter.java` — validates the Bearer key for `/mcp/**` only; per-key Bucket4j throttle (429).
-- `config/SecurityConfig.java` — registers the filter (4th, anchored to `UsernamePasswordAuthenticationFilter`) and `requestMatchers("/mcp/**").authenticated()`.
-- `service/UserContext.java` — Property B guard at the top of `getMemberIdOverride()`.
-- `model/AccessKey.java` + `repository/AccessKeyRepository.java` + `db/migration/V37__access_keys.sql`.
+- `backend/src/main/java/com/picsou/mcp/AccessKeyService.java` — issue / validate / list / revoke keys; SHA-256 hashing, throttled `last_used_at`.
+- `backend/src/main/java/com/picsou/mcp/AccessKeyUsageRecorder.java` — `REQUIRES_NEW` best-effort `last_used_at` writer (off the hot path).
+- `backend/src/main/java/com/picsou/mcp/Scopes.java` — the scope vocabulary (`domain:action`) and the `ALL` allowlist.
+- `backend/src/main/java/com/picsou/mcp/ScopeSetConverter.java` — `Set<String>` ↔ space-delimited column.
+- `backend/src/main/java/com/picsou/config/AccessKeyAuthentication.java` — the `Authentication` a key runs as (principal = owner `AppUser`; authorities = scopes).
+- `backend/src/main/java/com/picsou/config/AccessKeyAuthFilter.java` — validates the Bearer key for `/mcp/**` only; per-key Bucket4j throttle (429).
+- `backend/src/main/java/com/picsou/config/SecurityConfig.java` — registers the filter (4th, anchored to `UsernamePasswordAuthenticationFilter`) and `requestMatchers("/mcp/**").authenticated()`.
+- `backend/src/main/java/com/picsou/service/UserContext.java` — Property B guard at the top of `getMemberIdOverride()`.
+- `backend/src/main/java/com/picsou/model/AccessKey.java` + `backend/src/main/java/com/picsou/repository/AccessKeyRepository.java` + `backend/src/main/resources/db/migration/V37__access_keys.sql`.
 
 **Backend — MCP surface**
-- `config/McpToolConfig.java` — the single `ToolCallbackProvider` bean; the one place tools are wired.
-- `mcp/tools/{Account,Transaction,Goal,Insight,Sync}Tools.java` — the `@Tool` methods, each gated by `@RequiresScope`.
-- `mcp/RequiresScope.java` + `mcp/ScopeEnforcementAspect.java` + `exception/MissingScopeException.java` — scope enforcement (AOP) and its clean error.
-- `controller/AccessKeyController.java` + `dto/AccessKey{CreateRequest,Response,CreatedResponse}.java` — self-service management REST API under `/api/access-keys`.
-- `config/RateLimitConfig.java` — `mcpKeyBuckets`, `accessKeyCreateBuckets`, and the bucket factories.
-- `resources/application.yml` — `spring.ai.mcp.server.*` (HTTP+SSE, `SYNC`, `/mcp` + `/mcp/message`, `MCP_ENABLED` gate, instructions string).
+- `backend/src/main/java/com/picsou/config/McpToolConfig.java` — the single `ToolCallbackProvider` bean; the one place tools are wired.
+- `backend/src/main/java/com/picsou/mcp/tools/{Account,Transaction,Goal,Insight,Sync}Tools.java` — the `@Tool` methods, each gated by `@RequiresScope`.
+- `backend/src/main/java/com/picsou/mcp/RequiresScope.java` + `backend/src/main/java/com/picsou/mcp/ScopeEnforcementAspect.java` + `backend/src/main/java/com/picsou/exception/MissingScopeException.java` — scope enforcement (AOP) and its clean error.
+- `backend/src/main/java/com/picsou/controller/AccessKeyController.java` + `dto/AccessKey{CreateRequest,Response,CreatedResponse}.java` — self-service management REST API under `/api/access-keys`.
+- `backend/src/main/java/com/picsou/config/RateLimitConfig.java` — `mcpKeyBuckets`, `accessKeyCreateBuckets`, and the bucket factories.
+- `backend/src/main/resources/application.yml` — `spring.ai.mcp.server.*` (HTTP+SSE, `SYNC`, `/mcp` + `/mcp/message`, `MCP_ENABLED` gate, instructions string).
 
 **Frontend**
-- `features/accessKeys/{api,hooks,scopes,status}.ts` — TanStack Query layer + scope/status helpers.
-- `pages/settings/sections/AccessKeysSection.tsx` — the Settings UI (list, create dialog, one-time secret reveal, connect-your-client block, revoke).
+- `frontend/src/features/accessKeys/{api,hooks,scopes,status}.ts` — TanStack Query layer + scope/status helpers.
+- `frontend/src/pages/settings/sections/AccessKeysSection.tsx` — the Settings UI (list, create dialog, one-time secret reveal, connect-your-client block, revoke).
 - `i18n/locales/{en,fr}.json` — the `accessKeys.*` namespace.
 
 The create access-key dialog is intentionally wider than the default dialog
@@ -174,8 +174,8 @@ Backend (H2, `mvn test`):
 - `model/AccessKeyTest` — `isUsable` (revoked / expired / live).
 
 Frontend (`bunx vitest run`):
-- `features/accessKeys/scopes.test.ts` — scope grouping, i18n-key mapping, and a **vocabulary guard** asserting the frontend list equals backend `Scopes.ALL`.
-- `features/accessKeys/status.test.ts` — `keyStatus` (revoked > expired > active, boundary at "now").
+- `frontend/src/features/accessKeys/scopes.test.ts` — scope grouping, i18n-key mapping, and a **vocabulary guard** asserting the frontend list equals backend `Scopes.ALL`.
+- `frontend/src/features/accessKeys/status.test.ts` — `keyStatus` (revoked > expired > active, boundary at "now").
 
 ## Links
 

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { extractErrorMessage, safeBackendMessage, formatApiError, formatTrAuthError } from './errors'
+import {
+  extractErrorMessage,
+  safeBackendMessage,
+  formatApiError,
+  formatTrAuthError,
+  getErrorCode,
+} from './errors'
 
 /** Minimal translator stub: echoes the key so assertions can check which key fired. */
 const t = (key: string, fallback?: string) => fallback ?? key
@@ -31,9 +37,11 @@ describe('extractErrorMessage', () => {
     expect(extractErrorMessage(err)).toBe('Bad redirect URI')
   })
 
-  it('uses err.message as fallback for plain text', () => {
+  it('rejects raw browser network errors', () => {
     const err = new Error('Network error')
-    expect(extractErrorMessage(err)).toBe('Network error')
+    expect(extractErrorMessage(err, 'Custom fallback')).toBe('Custom fallback')
+    expect(extractErrorMessage(new Error('AxiosError'))).toBe('Une erreur est survenue')
+    expect(extractErrorMessage(new Error('Failed to fetch'))).toBe('Une erreur est survenue')
   })
 
   it('skips Axios boilerplate and returns fallback', () => {
@@ -47,6 +55,16 @@ describe('extractErrorMessage', () => {
 
   it('returns default fallback when no fallback provided', () => {
     expect(extractErrorMessage({})).toBe('Une erreur est survenue')
+  })
+})
+
+describe('getErrorCode', () => {
+  it('extracts a stable ProblemDetail code', () => {
+    expect(getErrorCode({ response: { data: { code: 'SESSION_EXPIRED' } } })).toBe('SESSION_EXPIRED')
+  })
+
+  it('ignores non-string codes', () => {
+    expect(getErrorCode({ response: { data: { code: 42 } } })).toBeUndefined()
   })
 })
 

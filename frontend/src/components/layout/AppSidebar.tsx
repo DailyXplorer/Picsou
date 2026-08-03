@@ -1,20 +1,21 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown,
-  LayoutDashboard,
   Settings,
-  Wallet,
-  Target,
   Users,
+  LogOut,
+  Shield,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -25,9 +26,40 @@ import { useFamilyMembers } from '@/features/family/hooks'
 import { selectSwitchableMembers } from '@/features/family/members'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAppStore } from '@/stores/app-store'
+import { useLogout } from '@/features/auth/hooks'
 import { useProfileStore } from '@/stores/profile-store'
 import { cn } from '@/lib/utils'
 import picsouLogo from '@/assets/horizontal-white-picsou.svg'
+import { NAV_ITEMS, CLASSIC_SETTINGS_NAV_ITEM } from './sidebar-nav-items'
+
+function AccountMenuFooterItems({
+  isAdmin,
+  onAdminClick,
+  onLogoutClick,
+  logoutPending,
+}: {
+  isAdmin: boolean
+  onAdminClick: () => void
+  onLogoutClick: () => void
+  logoutPending: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <>
+      {isAdmin && (
+        <DropdownMenuItem onClick={onAdminClick}>
+          <Shield className="size-4" aria-hidden="true" />
+          <span>{t('nav.admin')}</span>
+        </DropdownMenuItem>
+      )}
+
+      <DropdownMenuItem onClick={onLogoutClick} disabled={logoutPending}>
+        <LogOut className="size-4" aria-hidden="true" />
+        <span>{t('settings.logout')}</span>
+      </DropdownMenuItem>
+    </>
+  )
+}
 
 function NavItem({
   to,
@@ -75,21 +107,18 @@ function NavItem({
   )
 }
 
-const NAV_ITEMS = [
-  { path: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard', descKey: 'nav.dashboard.desc' },
-  { path: '/accounts', icon: Wallet, labelKey: 'nav.accounts', descKey: 'nav.accounts.desc' },
-  { path: '/goals', icon: Target, labelKey: 'nav.goals', descKey: 'nav.goals.desc' },
-] as const
-
 export function AppSidebar() {
   const { t } = useTranslation()
   const location = useLocation()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const demoMode = useAppStore((s) => s.demoMode)
+  const sidebarStyle = useAppStore((s) => s.sidebarStyle)
   const activeMemberId = useProfileStore((s) => s.activeMemberId)
   const setActiveMember = useProfileStore((s) => s.setActiveMember)
   const canSwitchProfile = !demoMode && user?.role === 'ADMIN'
+  const isAdmin = user?.role === 'ADMIN'
   const { data: familyMembers = [] } = useFamilyMembers({ enabled: canSwitchProfile })
   const switchableMembers = selectSwitchableMembers(familyMembers)
   const activeMember = switchableMembers.find((member) => member.id === activeMemberId)
@@ -102,6 +131,9 @@ export function AppSidebar() {
   const activeInitial = activeDisplayName.charAt(0).toUpperCase()
   const activeProfileValue = activeMemberId == null ? 'own' : `member-${activeMemberId}`
   const settingsActive = location.pathname.startsWith('/settings')
+  const logoutMutation = useLogout()
+  const isClassic = sidebarStyle === 'classic'
+  const navItems = isClassic ? [...NAV_ITEMS, CLASSIC_SETTINGS_NAV_ITEM] : NAV_ITEMS
 
   function handleProfileValueChange(value: string) {
     const nextMemberId = value === 'own'
@@ -116,16 +148,24 @@ export function AppSidebar() {
   }
 
   return (
-    <nav className="hidden h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] w-72 shrink-0 flex-col rounded-xl bg-background px-3 py-4 md:flex">
+    <nav
+      className={cn(
+        'hidden shrink-0 flex-col rounded-xl bg-background px-3 py-4 md:flex',
+        isClassic ? 'h-fit max-h-[calc(100vh-2rem)] w-60' : 'h-[calc(100vh-2rem)] w-72',
+      )}
+    >
       {/* Logo */}
       <img
         src={picsouLogo}
         alt="Picsou"
-        className="mb-4 h-7 w-auto self-start px-4 opacity-90 brightness-0 dark:invert"
+        className={cn(
+          'h-7 w-auto opacity-90 brightness-0 dark:invert',
+          isClassic ? undefined : 'mb-4 self-start px-4',
+        )}
       />
 
-      <div className="flex flex-col gap-3">
-        {NAV_ITEMS.map((item) => (
+      <div className={cn('flex flex-col gap-3', isClassic && 'mt-[47px] flex-1 justify-evenly')}>
+        {navItems.map((item) => (
           <NavItem
             key={item.path}
             to={item.path}
@@ -145,18 +185,18 @@ export function AppSidebar() {
         />
       </div>
 
-      {canSwitchProfile ? (
+      {isClassic ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Item
               asChild
-              variant={settingsActive ? 'muted' : 'default'}
-              className={cn(
-                'mt-auto min-h-[72px] rounded-xl px-4 py-3 text-left transition-colors hover:bg-muted',
-                settingsActive && 'bg-muted ring-1 ring-border',
-              )}
+              variant="default"
+              className="mt-3 min-h-[72px] rounded-xl px-4 py-3 text-left transition-colors hover:bg-muted"
             >
-              <button type="button" aria-label={t('nav.switchProfile')}>
+              <button
+                type="button"
+                aria-label={canSwitchProfile ? t('nav.switchProfile') : t('nav.account')}
+              >
                 <Avatar className="size-10 shrink-0 rounded-lg">
                   <AvatarFallback
                     className={cn(
@@ -170,9 +210,7 @@ export function AppSidebar() {
                 </Avatar>
                 <ItemContent className="min-w-0">
                   <ItemTitle className="max-w-40 truncate text-sm font-semibold">{activeDisplayName}</ItemTitle>
-                  <ItemDescription className="text-xs">
-                    {activeDescription}
-                  </ItemDescription>
+                  <ItemDescription className="text-xs">{activeDescription}</ItemDescription>
                 </ItemContent>
                 <ChevronDown className="ml-auto size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               </button>
@@ -180,67 +218,131 @@ export function AppSidebar() {
           </DropdownMenuTrigger>
 
           <DropdownMenuContent side="top" align="start" className="w-64">
-            <DropdownMenuRadioGroup value={activeProfileValue} onValueChange={handleProfileValueChange}>
-              <DropdownMenuRadioItem value="own">
-                <Avatar className="size-8 shrink-0 rounded-lg">
-                  <AvatarFallback className="bg-muted text-xs font-bold text-muted-foreground">
-                    {initial}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{displayName}</p>
-                  <p className="truncate text-xs text-muted-foreground">{t('nav.account')}</p>
-                </div>
-              </DropdownMenuRadioItem>
-
-              {switchableMembers.map((member) => (
-                <DropdownMenuRadioItem key={member.id} value={`member-${member.id}`}>
-                  <span
-                    className="size-8 shrink-0 rounded-lg"
-                    style={{ backgroundColor: member.avatarColor }}
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{member.displayName}</p>
-                    <p className="truncate text-xs text-muted-foreground">{t('nav.managedProfile')}</p>
-                  </div>
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-medium leading-none">{displayName}</p>
+                {demoMode && <p className="text-xs text-muted-foreground">{t('auth.demoMode')}</p>}
+              </div>
+            </DropdownMenuLabel>
+            {canSwitchProfile && switchableMembers.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  {t('nav.switchProfile')}
+                </DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={activeProfileValue} onValueChange={handleProfileValueChange}>
+                  <DropdownMenuRadioItem value="own">
+                    <Avatar className="size-6 shrink-0 rounded-md">
+                      <AvatarFallback className="bg-muted text-[10px] font-bold text-muted-foreground">
+                        {initial}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="truncate">{displayName}</span>
+                  </DropdownMenuRadioItem>
+                  {switchableMembers.map((member) => (
+                    <DropdownMenuRadioItem key={member.id} value={`member-${member.id}`}>
+                      <span
+                        className="size-6 shrink-0 rounded-md"
+                        style={{ backgroundColor: member.avatarColor }}
+                        aria-hidden="true"
+                      />
+                      <span className="truncate">{member.displayName}</span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </>
+            )}
 
             <DropdownMenuSeparator />
 
-            <DropdownMenuItem asChild>
-              <NavLink to="/settings">
-                <Settings className="size-4" aria-hidden="true" />
-                <span>{t('nav.settings')}</span>
-              </NavLink>
-            </DropdownMenuItem>
+            <AccountMenuFooterItems
+              isAdmin={isAdmin}
+              onAdminClick={() => navigate('/admin')}
+              onLogoutClick={() => logoutMutation.mutate()}
+              logoutPending={logoutMutation.isPending}
+            />
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
-        <Item
-          asChild
-          variant={settingsActive ? 'muted' : 'default'}
-          className={cn(
-            'mt-auto min-h-[72px] rounded-xl px-4 py-3 transition-colors hover:bg-muted',
-            settingsActive && 'bg-muted ring-1 ring-border',
-          )}
-        >
-          <NavLink to="/settings">
-            <Avatar className="size-10 shrink-0 rounded-lg">
-              <AvatarFallback className="bg-muted text-sm font-bold text-muted-foreground">
-                {initial}
-              </AvatarFallback>
-            </Avatar>
-            <ItemContent>
-              <ItemTitle className="text-sm font-semibold">{displayName}</ItemTitle>
-              <ItemDescription className="text-xs">
-                {demoMode ? 'Demo' : t('nav.account')}
-              </ItemDescription>
-            </ItemContent>
-          </NavLink>
-        </Item>
+        <div className="mt-auto flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Item
+                asChild
+                variant="default"
+                className="min-h-[72px] flex-1 rounded-xl px-4 py-3 text-left transition-colors hover:bg-muted"
+              >
+                <button type="button" aria-label={t('nav.account')}>
+                  <Avatar className="size-10 shrink-0 rounded-lg">
+                    <AvatarFallback
+                      className={cn(
+                        'text-sm font-bold',
+                        activeMember ? 'text-primary-foreground' : 'bg-muted text-muted-foreground',
+                      )}
+                      style={activeMember ? { backgroundColor: activeMember.avatarColor } : undefined}
+                    >
+                      {activeInitial}
+                    </AvatarFallback>
+                  </Avatar>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="max-w-28 truncate text-sm font-semibold">{activeDisplayName}</ItemTitle>
+                    <ItemDescription className="truncate text-xs">{activeDescription}</ItemDescription>
+                  </ItemContent>
+                  <ChevronDown className="ml-auto size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                </button>
+              </Item>
+            </DropdownMenuTrigger>
+
+            <DropdownMenuContent side="top" align="start" className="w-64">
+              {canSwitchProfile && switchableMembers.length > 0 && (
+                <>
+                  <DropdownMenuRadioGroup value={activeProfileValue} onValueChange={handleProfileValueChange}>
+                    <DropdownMenuRadioItem value="own">
+                      <Avatar className="size-8 shrink-0 rounded-lg">
+                        <AvatarFallback className="bg-muted text-xs font-bold text-muted-foreground">
+                          {initial}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{displayName}</p>
+                        <p className="truncate text-xs text-muted-foreground">{t('nav.account')}</p>
+                      </div>
+                    </DropdownMenuRadioItem>
+
+                    {switchableMembers.map((member) => (
+                      <DropdownMenuRadioItem key={member.id} value={`member-${member.id}`}>
+                        <span
+                          className="size-8 shrink-0 rounded-lg"
+                          style={{ backgroundColor: member.avatarColor }}
+                          aria-hidden="true"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{member.displayName}</p>
+                          <p className="truncate text-xs text-muted-foreground">{t('nav.managedProfile')}</p>
+                        </div>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+
+                  <DropdownMenuSeparator />
+                </>
+              )}
+
+              <AccountMenuFooterItems
+                isAdmin={isAdmin}
+                onAdminClick={() => navigate('/admin')}
+                onLogoutClick={() => logoutMutation.mutate()}
+                logoutPending={logoutMutation.isPending}
+              />
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button variant="ghost" size="icon" asChild className={cn(settingsActive && 'bg-muted text-foreground')}>
+            <NavLink to="/settings" aria-label={t('nav.settings')}>
+              <Settings className="size-4" aria-hidden="true" />
+            </NavLink>
+          </Button>
+        </div>
       )}
     </nav>
   )

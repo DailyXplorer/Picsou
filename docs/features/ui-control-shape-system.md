@@ -23,7 +23,7 @@ scale; they never hardcode a pixel radius or a pill shape:
 | Cards / large surfaces | `rounded-xl` … `rounded-4xl` | 14+ |
 | Circular by nature (avatar, switch thumb, badge, status dot, scrollbar) | `rounded-full` | — |
 
-Shape lives in the shadcn primitives (`components/ui/button.tsx`, `tabs.tsx`,
+Shape lives in the shadcn primitives (`frontend/src/components/ui/button.tsx`, `tabs.tsx`,
 `dropdown-menu.tsx`), so a page composes `<Button>` / `<Tabs>` and inherits the correct radius. App
 code must not re-shape a control with a local `rounded-*` className.
 
@@ -56,7 +56,7 @@ code must not re-shape a control with a local `rounded-*` className.
   Reverted 2026-07-12. This is why the convention-integrity rule exists in `CODING_RULES.md`.
 - **`rounded-4xl` on cards is intentional**, not drift — it predates #29. Do not "fix" card radius to
   match controls; cards are deliberately rounder than controls.
-- **Don't hand-edit `components/ui/`** to change radius/sizing. Shape comes from the `--radius` theme
+- **Don't hand-edit `frontend/src/components/ui/`** to change radius/sizing. Shape comes from the `--radius` theme
   token; adjust the token, not the primitives.
 
 ## Tests

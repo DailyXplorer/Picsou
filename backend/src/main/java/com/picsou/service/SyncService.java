@@ -106,7 +106,8 @@ public class SyncService {
 
             if (accountDataList.isEmpty()) {
                 requisitionLifecycleWriter.markFailed(requisition.getId(), targetMemberId);
-                log.info("Enable Banking session {} returned no accounts during completion — marking retryable", sessionId);
+                log.info("Enable Banking requisition {} ({}) returned no accounts during completion — marking retryable",
+                    requisition.getId(), requisition.getInstitutionName());
                 return List.of();
             }
 
@@ -164,7 +165,7 @@ public class SyncService {
         Requisition req = requisitionRepository.findByIdAndMemberId(id, memberId)
             .orElseThrow(() -> new ResourceNotFoundException("Requisition not found"));
 
-        log.info("Retrying sync for {} (session={})", req.getInstitutionName(), req.getRequisitionId());
+        log.info("Retrying sync for {} (requisition={})", req.getInstitutionName(), req.getId());
         ensureLogoUrl(req);
 
         List<BankConnectorPort.AccountData> accountDataList;
@@ -243,8 +244,8 @@ public class SyncService {
             try {
                 retrySync(req.getId(), memberId);
             } catch (Exception ex) {
-                log.warn("Scheduled retry failed for {} (session={}): {}",
-                    req.getInstitutionName(), req.getRequisitionId(), ex.getMessage());
+                log.warn("Scheduled retry failed for {} (requisition={}): {}",
+                    req.getInstitutionName(), req.getId(), ex.getMessage());
             }
         }
     }
@@ -342,15 +343,15 @@ public class SyncService {
         // transient provider gap than a broken link. Demoting it would make the status
         // flap LINKED → FAILED on every scheduled resync — keep it LINKED and just skip.
         if (requisition.getStatus() == RequisitionStatus.LINKED) {
-            log.warn("Enable Banking session {} returned no accounts during {} — keeping LINKED, skipping update",
-                requisition.getRequisitionId(), operation);
+            log.warn("Enable Banking requisition {} ({}) returned no accounts during {} — keeping LINKED, skipping update",
+                requisition.getId(), requisition.getInstitutionName(), operation);
             return true;
         }
 
         requisition.setStatus(RequisitionStatus.FAILED);
         requisitionRepository.save(requisition);
-        log.info("Enable Banking session {} returned no accounts during {} — marking retryable",
-            requisition.getRequisitionId(), operation);
+        log.info("Enable Banking requisition {} ({}) returned no accounts during {} — marking retryable",
+            requisition.getId(), requisition.getInstitutionName(), operation);
         return true;
     }
 

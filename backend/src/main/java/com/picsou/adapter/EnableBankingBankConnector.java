@@ -154,7 +154,7 @@ public class EnableBankingBankConnector implements BankConnectorPort {
             throw new SyncException("Empty session response from Enable Banking /sessions");
         }
 
-        log.info("Enable Banking session created: {}", session.sessionId());
+        log.info("Enable Banking session created");
         return session.sessionId();
     }
 
@@ -195,13 +195,13 @@ public class EnableBankingBankConnector implements BankConnectorPort {
                 .block();
 
             if (session != null && session.accounts() != null && !session.accounts().isEmpty()) {
-                log.info("Session {} has {} accounts (attempt {}, status={})",
-                    sessionId, session.accounts().size(), attempt, session.status());
+                log.info("Enable Banking session has {} accounts (attempt {}, status={})",
+                    session.accounts().size(), attempt, session.status());
                 return session.accounts();
             }
 
-            log.info("Session {} has no accounts yet (attempt {}/{}, status={})",
-                sessionId, attempt, maxAttempts,
+            log.info("Enable Banking session has no accounts yet (attempt {}/{}, status={})",
+                attempt, maxAttempts,
                 session != null ? session.status() : "null");
 
             if (attempt < maxAttempts) {
@@ -209,8 +209,8 @@ public class EnableBankingBankConnector implements BankConnectorPort {
             }
         }
 
-        log.warn("Session {} still has no accounts after {} attempts — returning empty so the caller can retry asynchronously",
-            sessionId, maxAttempts);
+        log.warn("Enable Banking session still has no accounts after {} attempts — returning empty so the caller can retry asynchronously",
+            maxAttempts);
         return List.of();
     }
 
@@ -282,7 +282,11 @@ public class EnableBankingBankConnector implements BankConnectorPort {
         String name = "Account";
         String iban = null;
 
-        log.info("Balances for account {}: {}", accountId, balances);
+        // Keep per-account visibility at INFO (operators need it to diagnose Enable
+        // Banking's async linking), but log only the balance count — never the full
+        // balances object, which carries the account's amounts (financial PII).
+        log.info("Fetched {} balances for account {}",
+            balances != null && balances.balances() != null ? balances.balances().size() : 0, accountId);
         if (balances != null && balances.balances() != null && !balances.balances().isEmpty()) {
             var b = balances.balances().stream()
                 .filter(bl -> "closingBooked".equals(bl.balanceType()) || "expected".equals(bl.balanceType()))
