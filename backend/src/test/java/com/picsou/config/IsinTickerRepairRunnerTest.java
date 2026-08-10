@@ -223,6 +223,25 @@ class IsinTickerRepairRunnerTest {
     }
 
     @Test
+    void repair_keepsGoingWhenOneIsinCannotBeWritten() {
+        // Guarded per ISIN, like SchedulerService guards per account: one instrument that fails to
+        // write must not cost the others their repair. Its rollback leaves the ISIN on the rows,
+        // so the next boot picks it up again.
+        when(transactionRepository.findManualTransactionsWithIsinLengthTicker())
+            .thenReturn(List.of(tx("IE000BI8OT95", null), tx("IE00B4L5Y983", null)));
+        when(transactionRepository.findManualAccountIdsByTickerIn(List.of("IE000BI8OT95")))
+            .thenThrow(new RuntimeException("deadlock"));
+        when(transactionRepository.findManualAccountIdsByTickerIn(List.of("IE00B4L5Y983")))
+            .thenReturn(List.of(1L));
+        when(isinConverter.resolve(anyString())).thenReturn(resolved("MWRD.PA", null));
+        when(accountRepository.findAllById(any())).thenReturn(List.of(PEA));
+
+        assertThatCode(runner::repair).doesNotThrowAnyException();
+
+        verify(holdingComputeService).recomputeHoldings(PEA); // the second ISIN still went through
+    }
+
+    @Test
     void run_neverPreventsTheApplicationFromStarting() {
         when(transactionRepository.findManualTransactionsWithIsinLengthTicker())
             .thenThrow(new RuntimeException("database not reachable yet"));

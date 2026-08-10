@@ -146,7 +146,15 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
                 continue;
             }
 
-            transactions.executeWithoutResult(status -> applyRepair(isin, entry.getValue(), resolved));
+            try {
+                transactions.executeWithoutResult(status -> applyRepair(isin, entry.getValue(), resolved));
+            } catch (Exception ex) {
+                // Guard per ISIN, like SchedulerService guards per account: one instrument that
+                // cannot be written must not cost the others their repair. The rollback left this
+                // ISIN on its rows, so the next boot picks it up again.
+                log.error("Repair of ISIN {} failed and was rolled back; the rest of the pass continues",
+                          isin, ex);
+            }
         }
     }
 
