@@ -1,16 +1,26 @@
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { TriangleAlert } from 'lucide-react'
 import type { Account } from '@/types/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { AccountTypeBadge } from '@/components/shared/AccountTypeBadge'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
-import { formatCurrency, formatDate, localeFromLanguage } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { formatCurrency, formatDate, formatTimeAgo, localeFromLanguage } from '@/lib/utils'
 import { providerLogoUrl } from '@/lib/provider-logos'
 
 interface AccountCardProps {
   account: Account
   onClick?: () => void
 }
+
+/**
+ * Synced accounts whose data is older than this are flagged: live prices keep
+ * the numbers moving, so without an explicit signal a dead provider session
+ * (e.g. Trade Republic) looks perfectly healthy.
+ */
+const SYNC_STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000
 
 /**
  * The provider's own logo when the connector supplied one (Enable Banking), otherwise the
@@ -33,6 +43,19 @@ export function AccountCard({ account, onClick }: AccountCardProps) {
   const locale = localeFromLanguage(i18n.resolvedLanguage ?? i18n.language)
   const isLoan = account.type === 'LOAN'
   const isRealEstate = account.type === 'REAL_ESTATE'
+
+  // Lazy initializer keeps the impure Date.now() out of render; the slow tick
+  // lets a long-lived tab cross the 48h threshold without a remount (the whole
+  // point of the badge is catching sessions that die while the app sits open).
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 5 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [])
+  const isSyncStale =
+    !account.isManual &&
+    account.lastSyncedAt != null &&
+    now - new Date(account.lastSyncedAt).getTime() > SYNC_STALE_THRESHOLD_MS
 
   const pnl = isRealEstate && account.realEstate
     ? account.currentBalanceEur - account.realEstate.purchasePrice
@@ -79,9 +102,23 @@ export function AccountCard({ account, onClick }: AccountCardProps) {
             </p>
           )}
           {account.lastSyncedAt && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t('accounts.lastSync')}: {formatDate(account.lastSyncedAt)}
-            </p>
+            isSyncStale ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className="mt-1 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                      <TriangleAlert className="size-3 shrink-0" />
+                      {t('accounts.syncStale', { time: formatTimeAgo(account.lastSyncedAt) })}
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">{t('accounts.syncStaleTooltip')}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('accounts.lastSync')}: {formatDate(account.lastSyncedAt)}
+              </p>
+            )
           )}
         </div>
       </CardContent>
