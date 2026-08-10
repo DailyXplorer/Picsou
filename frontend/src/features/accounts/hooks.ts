@@ -161,6 +161,13 @@ export function useAccount(id: number) {
 // ['accounts', id, 'holdings'] with useHoldingsWithLivePrices while running a
 // different queryFn — a cache-collision trap.)
 
+export function useAccountPositions(id: number) {
+  return useQuery({
+    queryKey: ['accounts', id, 'positions'],
+    queryFn: () => accountsApi.positions(id),
+  })
+}
+
 export function useHoldingsWithLivePrices(id: number) {
   return useQuery({
     queryKey: ['accounts', id, 'holdings'],
