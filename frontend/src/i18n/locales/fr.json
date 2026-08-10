@@ -200,9 +200,9 @@
     "compteTitres": "Compte titres",
     "crypto": "Crypto",
     "realEstate": "Immobilier",
-    "employeeSavings": "Épargne salariale",
     "loan": "Prêt",
-    "other": "Autre"
+    "other": "Autre",
+    "employeeSavings": "Épargne salariale"
   },
   "realEstate": {
     "purchasePrice": "Prix d'achat",
@@ -416,9 +416,10 @@
       "wallets": "Bitcoin, Ethereum, BNB, Solana...",
       "tr": "Trade Republic",
       "bourseDirect": "Synchroniser vos PEA et CTO",
-      "amundi": "PEE, PEG, PERCO, PER chez Amundi",
+      "degiro": "Synchroniser votre compte-titres DEGIRO",
       "finary": "Importer depuis Finary",
-      "manual": "Créer un compte manuellement"
+      "manual": "Créer un compte manuellement",
+      "amundi": "PEE, PEG, PERCO, PER chez Amundi"
     }
   },
   "sync": {
@@ -428,8 +429,6 @@
       "search": "Rechercher une banque",
       "searchPlaceholder": "Ex: BNP Paribas...",
       "searchError": "Impossible de rechercher les banques pour le moment.",
-      "proBadge": "Pro",
-      "proBadgeTitle": "Compte professionnel — cette banque ne s'adresse qu'aux pros",
       "connected": "Connexions actives",
       "noConnections": "Aucune connexion bancaire",
       "connect": "Connecter",
@@ -440,7 +439,9 @@
       "callbackDone": "Comptes synchronisés !",
       "callbackError": "Erreur de synchronisation",
       "initiateError": "Échec de la connexion",
-      "psd2ScopeNote": "Enable Banking ne synchronise que vos comptes courants (limitation PSD2). Pour vos PEA, AV, Livret A : utilisez Trade Republic, Boursobank, Finary, ou ajoutez-les manuellement."
+      "psd2ScopeNote": "Enable Banking ne synchronise que vos comptes courants (limitation PSD2). Pour vos PEA, AV, Livret A : utilisez Trade Republic, Boursobank, Finary, ou ajoutez-les manuellement.",
+      "proBadge": "Pro",
+      "proBadgeTitle": "Compte professionnel — cette banque ne s'adresse qu'aux pros"
     },
     "tr": {
       "title": "Trade Republic",
@@ -599,6 +600,57 @@
         "serverError": "Erreur serveur BoursoBank. Veuillez réessayer."
       }
     },
+    "degiro": {
+      "title": "DEGIRO",
+      "username": "Identifiant",
+      "password": "Mot de passe",
+      "totpCode": "Code d'authentification",
+      "connect": "Connecter",
+      "sync": "Synchroniser",
+      "clearSession": "Déconnecter",
+      "noSession": "Aucune session active",
+      "sessionActive": "Session active",
+      "reauthRequired": "Reconnexion nécessaire",
+      "lastSyncedAt": "Dernière synchro le",
+      "totpPrompt": "Saisissez le code à 6 chiffres de votre application d'authentification",
+      "errors": {
+        "tooManyAttempts": "Trop de tentatives. Veuillez patienter.",
+        "invalidCredentials": "Identifiants invalides.",
+        "invalidTotpCode": "Code d'authentification invalide ou expiré.",
+        "sessionExpired": "Session expirée. Veuillez vous reconnecter.",
+        "serverError": "Erreur serveur DEGIRO. Veuillez réessayer."
+      }
+    },
+    "bourseDirect": {
+      "title": "Bourse Direct",
+      "login": "Identifiant",
+      "password": "Mot de passe",
+      "otpCode": "Code de sécurité à 6 chiffres",
+      "otpPrompt": "Saisissez le code envoyé par Bourse Direct. Cet appareil ne sera pas déclaré comme appareil de confiance.",
+      "connect": "Se connecter",
+      "connecting": "Connexion en cours…",
+      "validate": "Valider le code",
+      "validating": "Validation en cours…",
+      "sync": "Synchroniser",
+      "queued": "Synchronisation en attente…",
+      "syncing": "Synchronisation en cours…",
+      "syncSuccess": "Portefeuille synchronisé.",
+      "clearSession": "Déconnecter",
+      "noSession": "Aucune session active",
+      "sessionActive": "Session active",
+      "scope": "Synchronise les positions, le PRU, le cours, la valorisation et les liquidités de vos PEA et CTO.",
+      "errors": {
+        "tooManyAttempts": "Trop de tentatives. Veuillez patienter.",
+        "invalidCredentials": "Identifiants Bourse Direct invalides.",
+        "invalidCode": "Code de sécurité invalide ou expiré. Recommencez la connexion.",
+        "authAttemptExpired": "La tentative d’authentification a expiré. Recommencez la connexion.",
+        "sessionExpired": "La session Bourse Direct a expiré. Veuillez vous reconnecter.",
+        "portfolioIncomplete": "Bourse Direct a renvoyé un portefeuille incomplet. Vos données existantes ont été conservées.",
+        "formatChanged": "Le format du portefeuille Bourse Direct a changé. Vos données existantes ont été conservées.",
+        "invalidData": "Bourse Direct a renvoyé des données incohérentes. Vos données existantes ont été conservées.",
+        "serverError": "Impossible de joindre Bourse Direct. Veuillez réessayer."
+      }
+    },
     "amundi": {
       "title": "Amundi",
       "login": "Identifiant",
@@ -631,36 +683,6 @@
         "formatChanged": "Le format du site Amundi a changé. Vos données existantes ont été conservées.",
         "invalidData": "Amundi a renvoyé des données incohérentes. Vos données existantes ont été conservées.",
         "serverError": "Impossible de joindre Amundi. Veuillez réessayer."
-      }
-    },
-    "bourseDirect": {
-      "title": "Bourse Direct",
-      "login": "Identifiant",
-      "password": "Mot de passe",
-      "otpCode": "Code de sécurité à 6 chiffres",
-      "otpPrompt": "Saisissez le code envoyé par Bourse Direct. Cet appareil ne sera pas déclaré comme appareil de confiance.",
-      "connect": "Se connecter",
-      "connecting": "Connexion en cours…",
-      "validate": "Valider le code",
-      "validating": "Validation en cours…",
-      "sync": "Synchroniser",
-      "queued": "Synchronisation en attente…",
-      "syncing": "Synchronisation en cours…",
-      "syncSuccess": "Portefeuille synchronisé.",
-      "clearSession": "Déconnecter",
-      "noSession": "Aucune session active",
-      "sessionActive": "Session active",
-      "scope": "Synchronise les positions, le PRU, le cours, la valorisation et les liquidités de vos PEA et CTO.",
-      "errors": {
-        "tooManyAttempts": "Trop de tentatives. Veuillez patienter.",
-        "invalidCredentials": "Identifiants Bourse Direct invalides.",
-        "invalidCode": "Code de sécurité invalide ou expiré. Recommencez la connexion.",
-        "authAttemptExpired": "La tentative d’authentification a expiré. Recommencez la connexion.",
-        "sessionExpired": "La session Bourse Direct a expiré. Veuillez vous reconnecter.",
-        "portfolioIncomplete": "Bourse Direct a renvoyé un portefeuille incomplet. Vos données existantes ont été conservées.",
-        "formatChanged": "Le format du portefeuille Bourse Direct a changé. Vos données existantes ont été conservées.",
-        "invalidData": "Bourse Direct a renvoyé des données incohérentes. Vos données existantes ont été conservées.",
-        "serverError": "Impossible de joindre Bourse Direct. Veuillez réessayer."
       }
     }
   },
