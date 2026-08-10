@@ -279,6 +279,30 @@ class OpenFigiIsinConverterTest {
     }
 
     @Test
+    void priceable_probesAtMostThreeCandidates() {
+        // resolve() runs inside the transaction of a user saving a transaction or importing a CSV,
+        // so the fan-out is bounded: Yahoo answers in relevance order, and a listing outside the
+        // first few is not the one being looked for. Probing all six would turn a miss into eight
+        // requests on a write path.
+        SymbolCatalogPort catalog = silentCatalog();
+        when(catalog.hasQuote(anyString())).thenReturn(false);
+        when(catalog.searchSymbols("IE000BI8OT95")).thenReturn(List.of(
+            new SymbolCatalogPort.SymbolMatch("A.PA", "a"),
+            new SymbolCatalogPort.SymbolMatch("B.PA", "b"),
+            new SymbolCatalogPort.SymbolMatch("C.PA", "c"),
+            new SymbolCatalogPort.SymbolMatch("D.PA", "d"),
+            new SymbolCatalogPort.SymbolMatch("E.PA", "e")));
+
+        assertThat(converterWith(catalog).priceable("IE000BI8OT95", MWRDF)).isEqualTo(MWRDF);
+
+        verify(catalog).hasQuote("A.PA");
+        verify(catalog).hasQuote("B.PA");
+        verify(catalog).hasQuote("C.PA");
+        verify(catalog, never()).hasQuote("D.PA");
+        verify(catalog, never()).hasQuote("E.PA");
+    }
+
+    @Test
     void priceable_keepsTheOpenFigiPickWhenNothingElseQuotesEither() {
         // Yahoo down, rate-limited, or an instrument it simply does not carry: the result must be
         // exactly what it was before this validation existed, never a downgrade.

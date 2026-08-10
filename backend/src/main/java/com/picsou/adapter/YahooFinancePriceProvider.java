@@ -35,6 +35,18 @@ public class YahooFinancePriceProvider implements PriceProviderPort, SymbolCatal
 
     private static final Logger log = LoggerFactory.getLogger(YahooFinancePriceProvider.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
+
+    /**
+     * Timeout for the {@link SymbolCatalogPort} calls, shorter than the one a price read gets.
+     *
+     * <p>The two are not worth the same wait. A price that fails to arrive leaves a holding with no
+     * value, so it is worth waiting for. A verification that fails to arrive costs nothing — the
+     * caller keeps the ticker it already had — but it is paid on the write path, inside the
+     * transaction of a user saving a transaction or importing a CSV. Three seconds is already an
+     * order of magnitude above what the chart endpoint answers in.
+     */
+    private static final Duration VERIFY_TIMEOUT = Duration.ofSeconds(3);
+
     private static final Duration FX_CACHE_TTL = Duration.ofMinutes(15);
 
     private static final java.util.regex.Pattern SYMBOL_PATTERN =
@@ -128,11 +140,15 @@ public class YahooFinancePriceProvider implements PriceProviderPort, SymbolCatal
      * the caller, which decides between logging a price miss and reporting "no such symbol".
      */
     private Meta fetchMeta(String ticker) {
+        return fetchMeta(ticker, TIMEOUT);
+    }
+
+    private Meta fetchMeta(String ticker, Duration timeout) {
         YahooResponse response = webClient.get()
             .uri("/v8/finance/chart/{ticker}?range=1d&interval=1d", ticker)
             .retrieve()
             .bodyToMono(YahooResponse.class)
-            .timeout(TIMEOUT)
+            .timeout(timeout)
             .block();
 
         if (response == null || response.chart() == null || response.chart().result() == null
@@ -159,7 +175,7 @@ public class YahooFinancePriceProvider implements PriceProviderPort, SymbolCatal
     public boolean hasQuote(String ticker) {
         if (!supports(ticker)) return false;
         try {
-            Meta meta = fetchMeta(ticker);
+            Meta meta = fetchMeta(ticker, VERIFY_TIMEOUT);
             return meta != null && meta.regularMarketPrice() > 0;
         } catch (Exception ex) {
             log.debug("Yahoo quote probe failed for {}: {}", ticker, ex.getMessage());
@@ -186,7 +202,7 @@ public class YahooFinancePriceProvider implements PriceProviderPort, SymbolCatal
                     + "&enableFuzzyQuery=false", query)
                 .retrieve()
                 .bodyToMono(SearchResponse.class)
-                .timeout(TIMEOUT)
+                .timeout(VERIFY_TIMEOUT)
                 .block();
 
             if (response == null || response.quotes() == null) return List.of();

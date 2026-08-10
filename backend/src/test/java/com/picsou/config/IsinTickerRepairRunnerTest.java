@@ -3,9 +3,11 @@ package com.picsou.config;
 import com.picsou.adapter.OpenFigiIsinConverter;
 import com.picsou.model.Account;
 import com.picsou.model.AccountType;
+import com.picsou.model.AppSetting;
 import com.picsou.model.Transaction;
 import com.picsou.repository.AccountHoldingRepository;
 import com.picsou.repository.AccountRepository;
+import com.picsou.repository.AppSettingRepository;
 import com.picsou.repository.TransactionRepository;
 import com.picsou.service.HoldingComputeService;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +23,7 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,6 +50,7 @@ class IsinTickerRepairRunnerTest {
     @Mock TransactionRepository transactionRepository;
     @Mock AccountRepository accountRepository;
     @Mock AccountHoldingRepository accountHoldingRepository;
+    @Mock AppSettingRepository appSettingRepository;
     @Mock OpenFigiIsinConverter isinConverter;
     @Mock HoldingComputeService holdingComputeService;
     @Mock PlatformTransactionManager transactionManager;
@@ -58,6 +62,7 @@ class IsinTickerRepairRunnerTest {
         // The runner applies each ISIN through a TransactionTemplate; lenient because the tests
         // that stop before any write never open one.
         lenient().when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+        lenient().when(appSettingRepository.findByKey(any())).thenReturn(Optional.empty());
     }
 
     private static final Account PEA = Account.builder()
@@ -185,6 +190,60 @@ class IsinTickerRepairRunnerTest {
         ArgumentCaptor<String> attempted = ArgumentCaptor.captor();
         verify(isinConverter, times(25)).resolve(attempted.capture());
         assertThat(attempted.getAllValues()).startsWith("IE0000000000").isSorted();
+    }
+
+    @Test
+    void repair_resumesAfterTheLastIsinAttempted_soPermanentFailuresCannotStarveTheTail() {
+        // The list is ordered the same way on every boot and only a *resolved* ISIN leaves it, so
+        // a fixed window from the front would hand the same permanently-unresolvable ISINs the
+        // same slots forever — a bond or an unlisted fund behind them would never be attempted.
+        List<Transaction> rows = new ArrayList<>(IntStream.range(0, 30)
+            .mapToObj(i -> tx(String.format("IE00000000%02d", i), null))
+            .toList());
+        when(transactionRepository.findManualTransactionsWithIsinLengthTicker()).thenReturn(rows);
+        when(appSettingRepository.findByKey("isin_repair.cursor"))
+            .thenReturn(Optional.of(AppSetting.builder().key("isin_repair.cursor")
+                .value("IE0000000023").build()));
+        when(isinConverter.resolve(anyString())).thenAnswer(inv -> resolved(inv.getArgument(0), null));
+
+        runner.repair();
+
+        ArgumentCaptor<String> attempted = ArgumentCaptor.captor();
+        verify(isinConverter, times(25)).resolve(attempted.capture());
+        // Starts just after the cursor, wraps past the end, and stops before coming back round.
+        assertThat(attempted.getAllValues())
+            .startsWith("IE0000000024", "IE0000000025")
+            .contains("IE0000000029", "IE0000000000")
+            .doesNotContain("IE0000000023");
+    }
+
+    @Test
+    void repair_startsFromTheFront_whenNoCursorHasBeenStoredYet() {
+        when(transactionRepository.findManualTransactionsWithIsinLengthTicker())
+            .thenReturn(List.of(tx("IE00B4L5Y983", null), tx("IE000BI8OT95", null)));
+        when(appSettingRepository.findByKey("isin_repair.cursor")).thenReturn(Optional.empty());
+        when(isinConverter.resolve(anyString())).thenAnswer(inv -> resolved(inv.getArgument(0), null));
+
+        runner.repair();
+
+        ArgumentCaptor<String> attempted = ArgumentCaptor.captor();
+        verify(isinConverter, times(2)).resolve(attempted.capture());
+        assertThat(attempted.getAllValues()).containsExactly("IE000BI8OT95", "IE00B4L5Y983");
+    }
+
+    @Test
+    void repair_recordsWhereItStopped() {
+        when(transactionRepository.findManualTransactionsWithIsinLengthTicker())
+            .thenReturn(List.of(tx("IE000BI8OT95", null), tx("IE00B4L5Y983", null)));
+        when(appSettingRepository.findByKey(any())).thenReturn(Optional.empty());
+        when(isinConverter.resolve(anyString())).thenAnswer(inv -> resolved(inv.getArgument(0), null));
+
+        runner.repair();
+
+        ArgumentCaptor<AppSetting> cursor = ArgumentCaptor.captor();
+        verify(appSettingRepository).save(cursor.capture());
+        assertThat(cursor.getValue().getKey()).isEqualTo("isin_repair.cursor");
+        assertThat(cursor.getValue().getValue()).isEqualTo("IE00B4L5Y983"); // the last one attempted
     }
 
     @Test

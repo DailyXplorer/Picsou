@@ -110,6 +110,16 @@ worse; when resolution still fails, the row is left alone and retried on the nex
   one being looked for; probing the whole `quotesCount=6` response would turn a miss into eight
   requests. A sync of 40 positions pays 40 probes once, against the one request per ticker every
   15 minutes the price refresh already makes. Nothing here is on a read path.
+
+- **Time on the write path.** `resolve()` runs inside the transaction of a user saving a
+  transaction or importing a CSV row, so a bound on the *number* of probes is not a bound on the
+  time they take. The catalog calls get a 3-second timeout rather than the 10 seconds a price read
+  gets — a price that fails to arrive leaves a holding with no value, a verification that fails to
+  arrive costs nothing — and `priceable()` abandons verification after a 10-second budget per ISIN.
+  Worst case per newly-seen ISIN: ~15s including the OpenFIGI call, against ~5s before this feature.
+  A CSV import with N *distinct* unresolvable identifiers still multiplies that by N inside one
+  transaction; that multiplication predates this change (OpenFIGI was already called per row) and
+  is not addressed here.
 - **A dependency from the ISIN converter to a quote source.** Held behind `SymbolCatalogPort`
   rather than the concrete adapter, so the converter states what it needs ("do you carry this
   symbol") instead of naming who provides it. Kept separate from `PriceProviderPort`: `searchSymbols`
@@ -121,11 +131,16 @@ worse; when resolution still fails, the row is left alone and retried on the nex
   symbol is not one. What limits the blast radius is that resolution is cached per process, so the
   next restart re-resolves it correctly.
 - **A repair is capped at 25 ISINs and 60 seconds per boot.** An `ApplicationRunner` runs before
-  `ApplicationReadyEvent`, so the pass delays readiness by whatever it spends; one resolution can
-  block for ~55s if both providers time out on every call. Both limits are checked before starting
-  an ISIN, so a pass can overrun its budget by at most the resolution already in flight. A very
-  large stuck portfolio converges over several restarts rather than holding one up, and what is
-  left over is logged.
+  `ApplicationReadyEvent`, so the pass delays readiness by whatever it spends. Both limits are
+  checked before starting an ISIN, so a pass can overrun its budget by at most the resolution
+  already in flight (~15s). A very large stuck portfolio converges over several restarts rather
+  than holding one up, and what is left over is logged.
+
+  Where the next pass resumes is the part that matters: only an ISIN that *resolves* leaves the
+  candidate list, and some never will (a bond, an unlisted fund). A fixed window from the front of
+  a stably-ordered list would hand those the same slots on every boot and never reach anything
+  behind them. The pass therefore stores its position in `app_setting` — runtime state, not schema,
+  so no migration — and the next boot starts just after it, wrapping at the end.
 
 ## Consequences
 

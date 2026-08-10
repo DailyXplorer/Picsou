@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -43,6 +44,15 @@ public class OpenFigiIsinConverter {
 
     /** How many of Yahoo's own matches for an ISIN are probed before giving up — see {@link #priceable}. */
     private static final int MAX_VERIFIED_CANDIDATES = 3;
+
+    /**
+     * Wall-clock ceiling on verifying one ISIN. {@code resolve()} runs on the write path, inside
+     * the transaction of a user saving a transaction or importing a CSV — a bound on the number of
+     * probes is not a bound on the time they take. Verification is an improvement, never a
+     * requirement: when the budget runs out the OpenFIGI pick is returned as it would have been
+     * without any of this.
+     */
+    private static final Duration VERIFY_BUDGET = Duration.ofSeconds(10);
 
     /**
      * Whether {@code s} looks like an ISIN (2-letter country code + 9 alphanumerics
@@ -248,6 +258,7 @@ public class OpenFigiIsinConverter {
      * and probing the whole list would turn a miss into eight requests.
      */
     TickerResult priceable(String isin, TickerResult figi) {
+        Instant deadline = Instant.now().plus(VERIFY_BUDGET);
         if (figi != null && symbolCatalog.hasQuote(figi.ticker)) {
             return figi;
         }
@@ -256,9 +267,9 @@ public class OpenFigiIsinConverter {
             if (figi != null && match.symbol().equals(figi.ticker)) {
                 continue; // already probed above, and it did not quote
             }
-            if (probed == MAX_VERIFIED_CANDIDATES) {
-                log.debug("ISIN {}: none of the first {} Yahoo matches quote, giving up on the rest",
-                          isin, MAX_VERIFIED_CANDIDATES);
+            if (probed == MAX_VERIFIED_CANDIDATES || Instant.now().isAfter(deadline)) {
+                log.debug("ISIN {}: giving up on the remaining Yahoo matches ({})", isin,
+                          probed == MAX_VERIFIED_CANDIDATES ? "candidate limit" : "verification budget spent");
                 break;
             }
             probed++;

@@ -2,9 +2,11 @@ package com.picsou.config;
 
 import com.picsou.adapter.OpenFigiIsinConverter;
 import com.picsou.model.Account;
+import com.picsou.model.AppSetting;
 import com.picsou.model.Transaction;
 import com.picsou.repository.AccountHoldingRepository;
 import com.picsou.repository.AccountRepository;
+import com.picsou.repository.AppSettingRepository;
 import com.picsou.repository.TransactionRepository;
 import com.picsou.service.HoldingComputeService;
 import org.slf4j.Logger;
@@ -59,16 +61,24 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
     /**
      * Wall-clock budget for the pass. An {@link ApplicationRunner} runs before
      * {@code ApplicationReadyEvent}, so every second spent here is a second the application is not
-     * serving — and one resolution can block for up to ~55s when both providers time out
-     * (OpenFIGI 5s, then the Yahoo probe, the search and up to three candidate probes at 10s each).
+     * serving. One resolution is itself bounded at ~15s (OpenFIGI 5s, then the verification budget in
+     * OpenFigiIsinConverter), so this caps the pass rather than merely the number of ISINs in it.
      * The budget is checked before starting each ISIN, so a pass can overrun by at most the
-     * resolution already in flight. Whatever is left over is logged and retried on the next boot.
+     * resolution already in flight. Whatever is left over is logged and picked up by a later boot,
+     * from the cursor rather than from the front of the list.
      */
     private static final Duration MAX_DURATION = Duration.ofSeconds(60);
+
+    /**
+     * Where the previous boot stopped, in {@code app_setting}. Runtime state rather than schema,
+     * so no migration -- and losing the row costs one pass starting from the front.
+     */
+    private static final String CURSOR_KEY = "isin_repair.cursor";
 
     private final TransactionRepository transactionRepository;
     private final AccountRepository accountRepository;
     private final AccountHoldingRepository accountHoldingRepository;
+    private final AppSettingRepository appSettingRepository;
     private final OpenFigiIsinConverter isinConverter;
     private final HoldingComputeService holdingComputeService;
     private final TransactionTemplate transactions;
@@ -76,12 +86,14 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
     public IsinTickerRepairRunner(TransactionRepository transactionRepository,
                                   AccountRepository accountRepository,
                                   AccountHoldingRepository accountHoldingRepository,
+                                  AppSettingRepository appSettingRepository,
                                   OpenFigiIsinConverter isinConverter,
                                   HoldingComputeService holdingComputeService,
                                   PlatformTransactionManager transactionManager) {
         this.transactionRepository = transactionRepository;
         this.accountRepository = accountRepository;
         this.accountHoldingRepository = accountHoldingRepository;
+        this.appSettingRepository = appSettingRepository;
         this.isinConverter = isinConverter;
         this.holdingComputeService = holdingComputeService;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -105,15 +117,15 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
      * opened after its resolution has returned — see {@link #applyRepair}.
      */
     void repair() {
-        List<Transaction> candidates = transactionRepository.findManualTransactionsWithIsinLengthTicker();
-        if (candidates.isEmpty()) {
+        List<Transaction> rows = transactionRepository.findManualTransactionsWithIsinLengthTicker();
+        if (rows.isEmpty()) {
             return;
         }
 
-        // TreeMap: a stable order makes the per-boot cap deterministic, so a repair that is cut
-        // short resumes where it stopped instead of re-drawing the same subset every boot.
+        // TreeMap: the same order on every boot, which is what makes the cursor below meaningful —
+        // "carry on after this ISIN" only means something against a stable sequence.
         Map<String, List<Transaction>> byIsin = new TreeMap<>();
-        for (Transaction tx : candidates) {
+        for (Transaction tx : rows) {
             if (OpenFigiIsinConverter.isIsin(tx.getTicker())) {
                 byIsin.computeIfAbsent(tx.getTicker(), k -> new ArrayList<>()).add(tx);
             }
@@ -124,37 +136,86 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
 
         log.info("Found {} unresolved ISIN ticker(s) on manual transactions, re-resolving", byIsin.size());
 
+        List<String> candidates = new ArrayList<>(byIsin.keySet());
+        int start = resumePosition(candidates);
         Instant deadline = Instant.now().plus(MAX_DURATION);
         int attempted = 0;
+        String lastAttempted = null;
 
-        for (Map.Entry<String, List<Transaction>> entry : byIsin.entrySet()) {
-            if (attempted == MAX_ISINS_PER_BOOT || Instant.now().isAfter(deadline)) {
-                log.info("Stopping after {} ISIN(s) ({}); the remaining {} are picked up by the next start",
-                         attempted,
-                         attempted == MAX_ISINS_PER_BOOT ? "per-boot limit" : "time budget spent",
-                         byIsin.size() - attempted);
-                break;
-            }
-            attempted++;
+        try {
+            for (int i = 0; i < candidates.size(); i++) {
+                if (attempted == MAX_ISINS_PER_BOOT || Instant.now().isAfter(deadline)) {
+                    log.info("Stopping after {} ISIN(s) ({}); the next start resumes at the one after {}",
+                             attempted,
+                             attempted == MAX_ISINS_PER_BOOT ? "per-boot limit" : "time budget spent",
+                             lastAttempted);
+                    break;
+                }
+                attempted++;
 
-            String isin = entry.getKey();
-            // Outside any transaction: this is the part that can block on two providers.
-            OpenFigiIsinConverter.TickerResult resolved = isinConverter.resolve(isin);
-            if (resolved == null || resolved.ticker() == null
-                || resolved.ticker().equalsIgnoreCase(isin)) {
-                log.debug("ISIN {} still does not resolve to a ticker, leaving it for the next boot", isin);
-                continue;
-            }
+                String isin = candidates.get((start + i) % candidates.size());
+                lastAttempted = isin;
+                // Outside any transaction: this is the part that can block on two providers.
+                OpenFigiIsinConverter.TickerResult resolved = isinConverter.resolve(isin);
+                if (resolved == null || resolved.ticker() == null
+                    || resolved.ticker().equalsIgnoreCase(isin)) {
+                    log.debug("ISIN {} still does not resolve to a ticker, leaving it for a later boot", isin);
+                    continue;
+                }
 
-            try {
-                transactions.executeWithoutResult(status -> applyRepair(isin, entry.getValue(), resolved));
-            } catch (Exception ex) {
-                // Guard per ISIN, like SchedulerService guards per account: one instrument that
-                // cannot be written must not cost the others their repair. The rollback left this
-                // ISIN on its rows, so the next boot picks it up again.
-                log.error("Repair of ISIN {} failed and was rolled back; the rest of the pass continues",
-                          isin, ex);
+                try {
+                    transactions.executeWithoutResult(status -> applyRepair(isin, byIsin.get(isin), resolved));
+                } catch (Exception ex) {
+                    // Guard per ISIN, like SchedulerService guards per account: one instrument that
+                    // cannot be written must not cost the others their repair. The rollback left
+                    // this ISIN on its rows, so a later boot picks it up again.
+                    log.error("Repair of ISIN {} failed and was rolled back; the rest of the pass continues",
+                              isin, ex);
+                }
             }
+        } finally {
+            saveCursor(lastAttempted);
+        }
+    }
+
+    /**
+     * Where in the candidate list this boot starts: just after the last ISIN the previous boot
+     * attempted, wrapping around at the end.
+     *
+     * <p>Without it the pass would starve its own tail. Only an ISIN that <em>resolves</em> leaves
+     * the candidate list, and some never will — a bond, an unlisted fund, an identifier neither
+     * provider carries. Those keep their place in a list ordered the same way on every boot, so a
+     * fixed window from the front would hand the same permanently-failing ISINs the same slots
+     * forever and never reach anything behind them.
+     *
+     * <p>The cursor lives in {@code app_setting}, the key-value table {@code PriceFxCleanupRunner}
+     * already gates itself on — a repair position is runtime state, not schema, so it needs no
+     * migration. Losing it (fresh install, wiped row) costs one pass starting from the front.
+     */
+    private int resumePosition(List<String> candidates) {
+        String cursor = appSettingRepository.findByKey(CURSOR_KEY)
+            .map(AppSetting::getValue)
+            .orElse(null);
+        if (cursor == null) {
+            return 0;
+        }
+        int position = 0;
+        while (position < candidates.size() && candidates.get(position).compareTo(cursor) <= 0) {
+            position++;
+        }
+        // Past the end: the previous boot reached the last ISIN, so this one wraps to the front.
+        return position == candidates.size() ? 0 : position;
+    }
+
+    private void saveCursor(String lastAttempted) {
+        if (lastAttempted == null) {
+            return;
+        }
+        try {
+            appSettingRepository.save(AppSetting.builder().key(CURSOR_KEY).value(lastAttempted).build());
+        } catch (Exception ex) {
+            // A lost cursor costs one pass starting from the front, not a failed boot.
+            log.warn("Could not persist the ISIN repair cursor at {}: {}", lastAttempted, ex.getMessage());
         }
     }
 

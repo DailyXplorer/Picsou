@@ -73,8 +73,14 @@ to quote the pick — a rate-limited Yahoo cannot turn a working ticker into a s
 Cost, per ISIN and once per process (`resolve()` caches by ISIN): **1** Yahoo request when the pick
 quotes, **5 at most** when it does not (probe + search + up to 3 candidate probes,
 `MAX_VERIFIED_CANDIDATES`), 4 when OpenFIGI returned nothing. Matches come back in relevance order,
-so a listing outside the first three is not the one being looked for. None of this is on a read
-path — `resolve()` is only called when writing a holding (sync, manual entry, CSV import).
+so a listing outside the first three is not the one being looked for.
+
+The calls are also bounded in time, because `resolve()` runs on the **write path** — inside the
+transaction of a user saving a transaction or importing a CSV row. The catalog calls use a 3-second
+timeout rather than the 10 seconds a price read gets (a verification that does not arrive costs
+nothing: the caller keeps the ticker it had), and `priceable()` gives up after a 10-second
+`VERIFY_BUDGET` per ISIN. Worst case per newly-seen ISIN is therefore ~15s including the OpenFIGI
+call, against ~5s before this feature and ~55s with the price-read timeout.
 
 Verified live on the three holdings of issue #78:
 
@@ -96,7 +102,12 @@ rewriting it can only improve it. Unresolvable rows are left alone and retried o
 The pass is bounded twice — **25 ISINs** (OpenFIGI's keyless quota) and **60 seconds** — because an
 `ApplicationRunner` runs before `ApplicationReadyEvent`, so whatever it spends is time the
 application is not serving. Both are checked before starting an ISIN, so it can overrun by at most
-the resolution in flight (~55s if every provider call times out). Each ISIN is applied in its own
+the resolution in flight (~15s).
+
+It resumes where it stopped, via a cursor in `app_setting` (runtime state, no migration). That is
+load-bearing rather than cosmetic: only an ISIN that *resolves* leaves the candidate list, so a
+fixed window from the front would hand permanently-unresolvable identifiers — a bond, an unlisted
+fund — the same slots on every boot and never reach anything behind them. Each ISIN is applied in its own
 transaction, opened once its resolution has returned: a half-applied repair is not retryable, since
 renamed rows no longer match the raw-ISIN query.
 
