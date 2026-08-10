@@ -14,7 +14,6 @@ import com.picsou.imports.csv.CsvReader;
 import com.picsou.imports.csv.CsvValueParser;
 import com.picsou.imports.csv.DecimalStyle;
 import com.picsou.model.Account;
-import com.picsou.model.AccountType;
 import com.picsou.model.Transaction;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.TransactionRepository;
@@ -32,7 +31,6 @@ import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -48,9 +46,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TransactionImportService {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionImportService.class);
-
-    private static final Set<AccountType> INVESTMENT_TYPES =
-        Set.of(AccountType.PEA, AccountType.COMPTE_TITRES, AccountType.CRYPTO);
 
     private static final int SAMPLE_ROWS = 15;
 
@@ -142,7 +137,7 @@ public class TransactionImportService {
     private Account getInvestmentAccount(Long accountId, Long memberId) {
         Account account = accountRepository.findByIdAndMemberId(accountId, memberId)
             .orElseThrow(() -> ResourceNotFoundException.account(accountId));
-        if (!INVESTMENT_TYPES.contains(account.getType())) {
+        if (!account.getType().isInvestment()) {
             throw new IllegalArgumentException(
                 "CSV transaction import is only available for investment accounts (PEA, CTO, crypto)");
         }

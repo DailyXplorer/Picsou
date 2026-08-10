@@ -18,6 +18,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * Trade Republic returns ISIN codes (e.g. IE00BYVQ9F29) but Yahoo Finance expects
  * ticker symbols (e.g. IWDA.AS, MC.PA). This adapter fills that gap.
  *
+ * OpenFIGI answers with every listing of an instrument, not with the one Yahoo quotes,
+ * so the pick is verified against Yahoo before it is returned — see {@link #priceable}.
+ *
  * OpenFIGI API: https://www.openfigi.com/api
  * No authentication required. Rate limit: 25 requests/min without API key.
  */
@@ -135,11 +138,13 @@ public class OpenFigiIsinConverter {
 
     private final WebClient webClient;
     private final CoinGeckoPriceProvider coinGecko;
+    private final YahooFinancePriceProvider yahoo;
     // Cache: ISIN → TickerResult. Null value means conversion failed.
     private final Map<String, TickerResult> cache = new ConcurrentHashMap<>();
 
-    public OpenFigiIsinConverter(CoinGeckoPriceProvider coinGecko) {
+    public OpenFigiIsinConverter(CoinGeckoPriceProvider coinGecko, YahooFinancePriceProvider yahoo) {
         this.coinGecko = coinGecko;
+        this.yahoo = yahoo;
         this.webClient = WebClient.builder()
             .baseUrl("https://api.openfigi.com")
             .defaultHeader("Content-Type", "application/json")
@@ -188,26 +193,64 @@ public class OpenFigiIsinConverter {
                      normalized, symbol);
         }
 
+        TickerResult figi;
         try {
-            TickerResult result = fetchFromOpenFigi(normalized);
-            if (result != null) {
-                cache.put(normalized, result);
-                log.info("ISIN {} resolved via OpenFIGI -> {} ({})", normalized, result.ticker, result.name);
-                return result;
-            } else {
-                // Cache a fallback result so we don't retry
-                TickerResult fallback = new TickerResult(normalized, null);
-                cache.put(normalized, fallback);
-                log.warn("OpenFIGI returned no ticker for ISIN {}, will use ISIN as-is", normalized);
-                return fallback;
-            }
+            figi = fetchFromOpenFigi(normalized);
         } catch (Exception ex) {
-            TickerResult fallback = new TickerResult(normalized, null);
-            cache.put(normalized, fallback);
-            log.warn("Failed to convert ISIN {} via OpenFIGI: {}, will use ISIN as-is",
-                     normalized, ex.getMessage());
-            return fallback;
+            figi = null;
+            log.warn("Failed to convert ISIN {} via OpenFIGI: {}", normalized, ex.getMessage());
         }
+
+        TickerResult result = priceable(normalized, figi);
+        if (result == null) {
+            // Cache the fallback too so we don't retry every call
+            result = new TickerResult(normalized, null);
+            log.warn("No Yahoo-quotable ticker for ISIN {} (OpenFIGI: {}), will use ISIN as-is",
+                     normalized, figi == null ? "no result" : figi.ticker());
+        } else if (figi != null && result.ticker.equals(figi.ticker)) {
+            log.info("ISIN {} resolved via OpenFIGI -> {} ({})", normalized, result.ticker, result.name);
+        }
+        cache.put(normalized, result);
+        return result;
+    }
+
+    /**
+     * The ticker to actually persist for {@code isin}: OpenFIGI's pick when Yahoo quotes it, else
+     * the first symbol Yahoo's own search returns for the ISIN that Yahoo quotes, else the
+     * OpenFIGI pick unverified (null when there was none).
+     *
+     * <p>OpenFIGI knows every listing of an instrument but not which one Yahoo carries, and there
+     * is no exchange-code heuristic that predicts it — {@link #pickBest} documents an attempt that
+     * fixed one holding and broke two others. So instead of guessing better, verify: an Irish
+     * UCITS ETF whose US OTC listing is delisted ({@code IE000BI8OT95} → {@code MWRDF}, no Yahoo
+     * data) now resolves to the Paris listing Yahoo does quote ({@code MWRD.PA}), while the two
+     * holdings that the reordering broke keep the US OTC tickers that work for them. Without this,
+     * every position of an all-ETF account can end up unquotable, and since an unpriced holding is
+     * excluded from its account's value, the account itself reads 0 € (GH issues #74, #78).
+     *
+     * <p>The OpenFIGI pick is only ever replaced on a <em>positive</em> quote for a different
+     * symbol, never on a failure to quote the pick: a rate-limited or unreachable Yahoo leaves the
+     * result exactly as it was before this validation existed.
+     */
+    TickerResult priceable(String isin, TickerResult figi) {
+        if (figi != null && yahoo.hasQuote(figi.ticker)) {
+            return figi;
+        }
+        for (YahooFinancePriceProvider.SymbolMatch match : yahoo.searchSymbols(isin)) {
+            if (figi != null && match.symbol().equals(figi.ticker)) {
+                continue; // already probed above, and it did not quote
+            }
+            if (yahoo.hasQuote(match.symbol())) {
+                // OpenFIGI's name is the instrument's official one; Yahoo's is a display label
+                // truncated to ~32 chars ("ISHARES III PLC ISHRS CORE MSCI"), so it is only a
+                // fallback for when OpenFIGI resolved nothing at all.
+                String name = figi != null && figi.name != null ? figi.name : match.name();
+                log.info("ISIN {} -> {} via Yahoo search ({})", isin, match.symbol(),
+                         figi == null ? "OpenFIGI returned nothing" : figi.ticker + " has no Yahoo quote");
+                return new TickerResult(match.symbol(), name);
+            }
+        }
+        return figi;
     }
 
     private TickerResult fetchFromOpenFigi(String isin) {
@@ -269,10 +312,12 @@ public class OpenFigiIsinConverter {
      * code heuristic that reliably predicts which specific ticker variant
      * actually has a live Yahoo quote for a given Irish/Luxembourg ISIN — it
      * varies per instrument, and swapping the global order traded one broken
-     * holding for two different ones. A holding with no live price surfaces as
-     * a missing "Valeur" in the UI (see the FX-conversion ADR) rather than a
-     * wrong one either way, so this is a real but currently-accepted gap, not
-     * a bug to paper over with an unvalidated reordering.
+     * holding for two different ones.
+     *
+     * <p>Which is why the order below is no longer the last word: {@link #priceable}
+     * verifies the pick against Yahoo and falls back to Yahoo's own search for the
+     * ISIN when it has no quote. This method stays a pure, offline heuristic — it
+     * still decides which listing is <em>preferred</em> among those that work.
      */
     TickerResult pickBest(String isin, List<Map<String, Object>> entries) {
         // Build a map: exchCode → (yahooTicker, name)
