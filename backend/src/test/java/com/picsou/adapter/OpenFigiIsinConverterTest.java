@@ -1,5 +1,6 @@
 package com.picsou.adapter;
 
+import com.picsou.port.SymbolCatalogPort;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -20,15 +21,15 @@ class OpenFigiIsinConverterTest {
     }
 
     /**
-     * A Yahoo provider that quotes nothing and finds nothing. The tests that only exercise the
+     * A symbol catalog that quotes nothing and finds nothing. The tests that only exercise the
      * offline paths (ISIN detection, TR crypto, pickBest) never reach it.
      */
-    private static YahooFinancePriceProvider silentYahoo() {
-        return Mockito.mock(YahooFinancePriceProvider.class);
+    private static SymbolCatalogPort silentCatalog() {
+        return Mockito.mock(SymbolCatalogPort.class);
     }
 
-    private static OpenFigiIsinConverter converterWith(YahooFinancePriceProvider yahoo) {
-        return new OpenFigiIsinConverter(new CoinGeckoPriceProvider(), yahoo);
+    private static OpenFigiIsinConverter converterWith(SymbolCatalogPort catalog) {
+        return new OpenFigiIsinConverter(new CoinGeckoPriceProvider(), catalog);
     }
 
     @Test
@@ -76,7 +77,7 @@ class OpenFigiIsinConverterTest {
 
     @Test
     void resolve_parsesTickerAndNameForTradeRepublicCryptoIsins() {
-        OpenFigiIsinConverter converter = converterWith(silentYahoo());
+        OpenFigiIsinConverter converter = converterWith(silentCatalog());
 
         // Ticker is now the parsed symbol (not the fake ISIN), so the holding becomes
         // price-resolvable via CoinGeckoPriceProvider instead of staying stuck on averageBuyIn.
@@ -91,7 +92,7 @@ class OpenFigiIsinConverterTest {
 
     @Test
     void resolve_parsesAnyKnownCryptoSymbolNotJustBtcAndEth() {
-        OpenFigiIsinConverter converter = converterWith(silentYahoo());
+        OpenFigiIsinConverter converter = converterWith(silentCatalog());
 
         // The symbol is parsed generically from the "XF000<SYMBOL><digits>" pattern and
         // validated against CoinGeckoPriceProvider's known tickers -- SOL isn't hardcoded
@@ -109,7 +110,7 @@ class OpenFigiIsinConverterTest {
 
     @Test
     void resolve_normalizesCaseAndWhitespaceConsistently() {
-        OpenFigiIsinConverter converter = converterWith(silentYahoo());
+        OpenFigiIsinConverter converter = converterWith(silentCatalog());
 
         OpenFigiIsinConverter.TickerResult padded = converter.resolve(" xf000btc0017 ");
         assertThat(padded.ticker()).isEqualTo("BTC");
@@ -127,7 +128,7 @@ class OpenFigiIsinConverterTest {
     // preference order; what a dead pick costs is now handled by priceable()
     // below rather than by re-guessing here.
 
-    private final OpenFigiIsinConverter converter = converterWith(silentYahoo());
+    private final OpenFigiIsinConverter converter = converterWith(silentCatalog());
 
     @Test
     void pickBest_prefersUsOtcOverEuExchangeWhenNoHomeExchangeMatches() {
@@ -182,7 +183,7 @@ class OpenFigiIsinConverterTest {
 
     @Test
     void pickBest_rejectsBondDescriptionsThatAreNotSymbols() {
-        OpenFigiIsinConverter converter = converterWith(silentYahoo());
+        OpenFigiIsinConverter converter = converterWith(silentCatalog());
 
         List<Map<String, Object>> entries = List.of(Map.of(
             "ticker", "AIRBAL 14.5 08/14/29 REGS",
@@ -194,7 +195,7 @@ class OpenFigiIsinConverterTest {
 
     @Test
     void pickBest_stillResolvesRealSymbolsOnKnownExchanges() {
-        OpenFigiIsinConverter converter = converterWith(silentYahoo());
+        OpenFigiIsinConverter converter = converterWith(silentCatalog());
 
         List<Map<String, Object>> entries = List.of(Map.of(
             "ticker", "MBG",
@@ -209,7 +210,7 @@ class OpenFigiIsinConverterTest {
 
     @Test
     void pickBest_returnsTheNormalizedSymbol_notTheRawOpenFigiValue() {
-        OpenFigiIsinConverter converter = converterWith(silentYahoo());
+        OpenFigiIsinConverter converter = converterWith(silentCatalog());
 
         List<Map<String, Object>> padded = List.of(Map.of(
             "ticker", " mbg ",
@@ -236,28 +237,28 @@ class OpenFigiIsinConverterTest {
 
     @Test
     void priceable_keepsTheOpenFigiPickWhenYahooQuotesIt() {
-        YahooFinancePriceProvider yahoo = silentYahoo();
-        when(yahoo.hasQuote("IWDA.AS")).thenReturn(true);
+        SymbolCatalogPort catalog = silentCatalog();
+        when(catalog.hasQuote("IWDA.AS")).thenReturn(true);
         var figi = new OpenFigiIsinConverter.TickerResult("IWDA.AS", "ISHARES CORE MSCI WORLD");
 
-        var result = converterWith(yahoo).priceable("IE00B4L5Y983", figi);
+        var result = converterWith(catalog).priceable("IE00B4L5Y983", figi);
 
         assertThat(result).isEqualTo(figi);
         // A portfolio that prices correctly today must not pay for a search it does not need,
         // nor see its tickers churn to a different listing (and a different quote currency).
-        verify(yahoo, never()).searchSymbols(anyString());
+        verify(catalog, never()).searchSymbols(anyString());
     }
 
     @Test
     void priceable_fallsBackToTheSymbolYahooSearchQuotes_whenThePickIsDelisted() {
         // IE000BI8OT95: OpenFIGI's US OTC pick is delisted on Yahoo, its Paris listing is live.
-        YahooFinancePriceProvider yahoo = silentYahoo();
-        when(yahoo.hasQuote("MWRDF")).thenReturn(false);
-        when(yahoo.searchSymbols("IE000BI8OT95")).thenReturn(List.of(
-            new YahooFinancePriceProvider.SymbolMatch("MWRD.PA", "Amundi Core MSCI World UCITS ET")));
-        when(yahoo.hasQuote("MWRD.PA")).thenReturn(true);
+        SymbolCatalogPort catalog = silentCatalog();
+        when(catalog.hasQuote("MWRDF")).thenReturn(false);
+        when(catalog.searchSymbols("IE000BI8OT95")).thenReturn(List.of(
+            new SymbolCatalogPort.SymbolMatch("MWRD.PA", "Amundi Core MSCI World UCITS ET")));
+        when(catalog.hasQuote("MWRD.PA")).thenReturn(true);
 
-        var result = converterWith(yahoo).priceable("IE000BI8OT95", MWRDF);
+        var result = converterWith(catalog).priceable("IE000BI8OT95", MWRDF);
 
         assertThat(result.ticker()).isEqualTo("MWRD.PA");
         // OpenFIGI's name is the official one; Yahoo's is a truncated display label.
@@ -266,39 +267,39 @@ class OpenFigiIsinConverterTest {
 
     @Test
     void priceable_skipsSearchSymbolsYahooDoesNotQuoteEither() {
-        YahooFinancePriceProvider yahoo = silentYahoo();
-        when(yahoo.hasQuote("MWRDF")).thenReturn(false);
-        when(yahoo.searchSymbols("IE000BI8OT95")).thenReturn(List.of(
-            new YahooFinancePriceProvider.SymbolMatch("MWRD.XX", "delisted too"),
-            new YahooFinancePriceProvider.SymbolMatch("MWRD.PA", "Amundi Core MSCI World UCITS ET")));
-        when(yahoo.hasQuote("MWRD.XX")).thenReturn(false);
-        when(yahoo.hasQuote("MWRD.PA")).thenReturn(true);
+        SymbolCatalogPort catalog = silentCatalog();
+        when(catalog.hasQuote("MWRDF")).thenReturn(false);
+        when(catalog.searchSymbols("IE000BI8OT95")).thenReturn(List.of(
+            new SymbolCatalogPort.SymbolMatch("MWRD.XX", "delisted too"),
+            new SymbolCatalogPort.SymbolMatch("MWRD.PA", "Amundi Core MSCI World UCITS ET")));
+        when(catalog.hasQuote("MWRD.XX")).thenReturn(false);
+        when(catalog.hasQuote("MWRD.PA")).thenReturn(true);
 
-        assertThat(converterWith(yahoo).priceable("IE000BI8OT95", MWRDF).ticker()).isEqualTo("MWRD.PA");
+        assertThat(converterWith(catalog).priceable("IE000BI8OT95", MWRDF).ticker()).isEqualTo("MWRD.PA");
     }
 
     @Test
     void priceable_keepsTheOpenFigiPickWhenNothingElseQuotesEither() {
         // Yahoo down, rate-limited, or an instrument it simply does not carry: the result must be
         // exactly what it was before this validation existed, never a downgrade.
-        YahooFinancePriceProvider yahoo = silentYahoo();
-        when(yahoo.hasQuote(anyString())).thenReturn(false);
-        when(yahoo.searchSymbols("IE000BI8OT95")).thenReturn(List.of(
-            new YahooFinancePriceProvider.SymbolMatch("MWRD.PA", "Amundi Core MSCI World UCITS ET")));
+        SymbolCatalogPort catalog = silentCatalog();
+        when(catalog.hasQuote(anyString())).thenReturn(false);
+        when(catalog.searchSymbols("IE000BI8OT95")).thenReturn(List.of(
+            new SymbolCatalogPort.SymbolMatch("MWRD.PA", "Amundi Core MSCI World UCITS ET")));
 
-        assertThat(converterWith(yahoo).priceable("IE000BI8OT95", MWRDF)).isEqualTo(MWRDF);
+        assertThat(converterWith(catalog).priceable("IE000BI8OT95", MWRDF)).isEqualTo(MWRDF);
     }
 
     @Test
     void priceable_doesNotProbeTheSamePickTwice() {
         // Yahoo's search legitimately returns the symbol OpenFIGI picked; it was already probed.
-        YahooFinancePriceProvider yahoo = silentYahoo();
-        when(yahoo.hasQuote("MWRDF")).thenReturn(false);
-        when(yahoo.searchSymbols("IE000BI8OT95")).thenReturn(List.of(
-            new YahooFinancePriceProvider.SymbolMatch("MWRDF", "AMUNDI MSCI WORLD USD ACC")));
+        SymbolCatalogPort catalog = silentCatalog();
+        when(catalog.hasQuote("MWRDF")).thenReturn(false);
+        when(catalog.searchSymbols("IE000BI8OT95")).thenReturn(List.of(
+            new SymbolCatalogPort.SymbolMatch("MWRDF", "AMUNDI MSCI WORLD USD ACC")));
 
-        assertThat(converterWith(yahoo).priceable("IE000BI8OT95", MWRDF)).isEqualTo(MWRDF);
-        verify(yahoo, times(1)).hasQuote("MWRDF");
+        assertThat(converterWith(catalog).priceable("IE000BI8OT95", MWRDF)).isEqualTo(MWRDF);
+        verify(catalog, times(1)).hasQuote("MWRDF");
     }
 
     @Test
@@ -306,12 +307,12 @@ class OpenFigiIsinConverterTest {
         // The other half of GH issue #74: OpenFIGI misses entirely (down, or rate-limited at 25
         // req/min without a key) and the ISIN itself gets persisted as the ticker, which nothing
         // can ever price. Yahoo's own search still knows the instrument.
-        YahooFinancePriceProvider yahoo = silentYahoo();
-        when(yahoo.searchSymbols("FR0000121014")).thenReturn(List.of(
-            new YahooFinancePriceProvider.SymbolMatch("MC.PA", "LVMH Moet Hennessy Louis Vuitton")));
-        when(yahoo.hasQuote("MC.PA")).thenReturn(true);
+        SymbolCatalogPort catalog = silentCatalog();
+        when(catalog.searchSymbols("FR0000121014")).thenReturn(List.of(
+            new SymbolCatalogPort.SymbolMatch("MC.PA", "LVMH Moet Hennessy Louis Vuitton")));
+        when(catalog.hasQuote("MC.PA")).thenReturn(true);
 
-        var result = converterWith(yahoo).priceable("FR0000121014", null);
+        var result = converterWith(catalog).priceable("FR0000121014", null);
 
         assertThat(result.ticker()).isEqualTo("MC.PA");
         assertThat(result.name()).isEqualTo("LVMH Moet Hennessy Louis Vuitton");
@@ -320,8 +321,8 @@ class OpenFigiIsinConverterTest {
     @Test
     void priceable_returnsNullWhenNeitherSideKnowsTheInstrument() {
         // Caller then falls back to the ISIN as the ticker, as before.
-        YahooFinancePriceProvider yahoo = silentYahoo();
+        SymbolCatalogPort catalog = silentCatalog();
 
-        assertThat(converterWith(yahoo).priceable("XS2657412201", null)).isNull();
+        assertThat(converterWith(catalog).priceable("XS2657412201", null)).isNull();
     }
 }

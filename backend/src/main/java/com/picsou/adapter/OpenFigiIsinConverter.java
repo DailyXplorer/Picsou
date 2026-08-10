@@ -1,6 +1,7 @@
 package com.picsou.adapter;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.picsou.port.SymbolCatalogPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -141,13 +142,18 @@ public class OpenFigiIsinConverter {
 
     private final WebClient webClient;
     private final CoinGeckoPriceProvider coinGecko;
-    private final YahooFinancePriceProvider yahoo;
+    /**
+     * The catalog the resolved symbol is verified against — {@link YahooFinancePriceProvider} in
+     * production, behind {@link SymbolCatalogPort} because the only thing this class needs from it
+     * is "do you carry this symbol", not a price source.
+     */
+    private final SymbolCatalogPort symbolCatalog;
     // Cache: ISIN → TickerResult. Null value means conversion failed.
     private final Map<String, TickerResult> cache = new ConcurrentHashMap<>();
 
-    public OpenFigiIsinConverter(CoinGeckoPriceProvider coinGecko, YahooFinancePriceProvider yahoo) {
+    public OpenFigiIsinConverter(CoinGeckoPriceProvider coinGecko, SymbolCatalogPort symbolCatalog) {
         this.coinGecko = coinGecko;
-        this.yahoo = yahoo;
+        this.symbolCatalog = symbolCatalog;
         this.webClient = WebClient.builder()
             .baseUrl("https://api.openfigi.com")
             .defaultHeader("Content-Type", "application/json")
@@ -242,11 +248,11 @@ public class OpenFigiIsinConverter {
      * and probing the whole list would turn a miss into eight requests.
      */
     TickerResult priceable(String isin, TickerResult figi) {
-        if (figi != null && yahoo.hasQuote(figi.ticker)) {
+        if (figi != null && symbolCatalog.hasQuote(figi.ticker)) {
             return figi;
         }
         int probed = 0;
-        for (YahooFinancePriceProvider.SymbolMatch match : yahoo.searchSymbols(isin)) {
+        for (SymbolCatalogPort.SymbolMatch match : symbolCatalog.searchSymbols(isin)) {
             if (figi != null && match.symbol().equals(figi.ticker)) {
                 continue; // already probed above, and it did not quote
             }
@@ -256,7 +262,7 @@ public class OpenFigiIsinConverter {
                 break;
             }
             probed++;
-            if (yahoo.hasQuote(match.symbol())) {
+            if (symbolCatalog.hasQuote(match.symbol())) {
                 // OpenFIGI's name is the instrument's official one; Yahoo's is a display label
                 // truncated to ~32 chars ("ISHARES III PLC ISHRS CORE MSCI"), so it is only a
                 // fallback for when OpenFIGI resolved nothing at all.

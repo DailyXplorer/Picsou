@@ -110,9 +110,11 @@ worse; when resolution still fails, the row is left alone and retried on the nex
   one being looked for; probing the whole `quotesCount=6` response would turn a miss into eight
   requests. A sync of 40 positions pays 40 probes once, against the one request per ticker every
   15 minutes the price refresh already makes. Nothing here is on a read path.
-- **A dependency from the ISIN converter to the Yahoo adapter.** The converter already depends on
-  `CoinGeckoPriceProvider` for the TR-crypto short-circuit, for the same reason: a symbol is only
-  worth returning if the provider that will be asked for its price recognises it.
+- **A dependency from the ISIN converter to a quote source.** Held behind `SymbolCatalogPort`
+  rather than the concrete adapter, so the converter states what it needs ("do you carry this
+  symbol") instead of naming who provides it. Kept separate from `PriceProviderPort`: `searchSymbols`
+  has no meaning for a provider keyed by coin id rather than by listing (CoinGecko), and a port
+  every implementer must stub out is not an abstraction.
 - **A degraded Yahoo degrades to the old behaviour, silently.** A rate-limited probe leaves the
   OpenFIGI pick in place, so an ISIN resolved during an outage can still be persisted with a dead
   ticker. The repair runner does not catch it either — its predicate is "is a raw ISIN", and a dead
@@ -127,10 +129,11 @@ worse; when resolution still fails, the row is left alone and retried on the nex
 
 ## Consequences
 
-- `YahooFinancePriceProvider` gains `hasQuote()` and `searchSymbols()`, both read-only and both
-  reusing the unauthenticated endpoints already in use. `fetchMeta()` is extracted so the price
-  read, the instrument-type read and the probe share one request shape.
-- `OpenFigiIsinConverter` takes `YahooFinancePriceProvider` as a second constructor dependency.
+- New `SymbolCatalogPort` (`hasQuote`, `searchSymbols`), implemented by
+  `YahooFinancePriceProvider` alongside `PriceProviderPort`. Both operations are read-only and
+  reuse the unauthenticated endpoints already in use; `fetchMeta()` is extracted so the price read,
+  the instrument-type read and the probe share one request shape.
+- `OpenFigiIsinConverter` takes `SymbolCatalogPort` as a second constructor dependency.
   `pickBest()` stays a pure offline heuristic and keeps its priority order — it now decides which
   listing is *preferred among those that work*, rather than which one is used.
 - `IsinTickerRepairRunner` (`@Order(2)`) runs after `StartupSyncService` and before

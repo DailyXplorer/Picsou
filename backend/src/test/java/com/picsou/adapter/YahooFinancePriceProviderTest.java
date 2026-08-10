@@ -1,5 +1,6 @@
 package com.picsou.adapter;
 
+import com.picsou.port.SymbolCatalogPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
@@ -377,9 +378,9 @@ class YahooFinancePriceProviderTest {
     void searchSymbols_returnsYahoosOwnSymbolsForAnIsin_inItsRelevanceOrder() {
         var provider = providerWith(url -> url.contains("/v1/finance/search") ? SEARCH_IE000BI8OT95 : null, null);
 
-        List<YahooFinancePriceProvider.SymbolMatch> matches = provider.searchSymbols("IE000BI8OT95");
+        List<SymbolCatalogPort.SymbolMatch> matches = provider.searchSymbols("IE000BI8OT95");
 
-        assertThat(matches).extracting(YahooFinancePriceProvider.SymbolMatch::symbol)
+        assertThat(matches).extracting(SymbolCatalogPort.SymbolMatch::symbol)
             .containsExactly("MWRD.PA", "IE000BI8OT95.SG");
         assertThat(matches.get(0).name()).isEqualTo("Amundi Core MSCI World UCITS ET");
     }
@@ -404,7 +405,7 @@ class YahooFinancePriceProviderTest {
             null);
 
         assertThat(provider.searchSymbols("IE000BI8OT95"))
-            .extracting(YahooFinancePriceProvider.SymbolMatch::symbol)
+            .extracting(SymbolCatalogPort.SymbolMatch::symbol)
             .containsExactly("MWRD.PA");
     }
 

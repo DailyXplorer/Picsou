@@ -2,6 +2,7 @@ package com.picsou.adapter;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.picsou.port.PriceProviderPort;
+import com.picsou.port.SymbolCatalogPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -30,7 +31,7 @@ import java.util.stream.Collectors;
  * Note: This is an unofficial API. For production use consider Alpha Vantage or similar.
  */
 @Component
-public class YahooFinancePriceProvider implements PriceProviderPort {
+public class YahooFinancePriceProvider implements PriceProviderPort, SymbolCatalogPort {
 
     private static final Logger log = LoggerFactory.getLogger(YahooFinancePriceProvider.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
@@ -154,6 +155,7 @@ public class YahooFinancePriceProvider implements PriceProviderPort {
      * "this symbol is dead", since the caller only ever <em>replaces</em> a symbol on a positive
      * quote from a different one.
      */
+    @Override
     public boolean hasQuote(String ticker) {
         if (!supports(ticker)) return false;
         try {
@@ -175,6 +177,7 @@ public class YahooFinancePriceProvider implements PriceProviderPort {
      * returns nothing rather than a fuzzy near-match ({@code enableFuzzyQuery=false}), so a miss
      * stays a miss.
      */
+    @Override
     public List<SymbolMatch> searchSymbols(String query) {
         if (query == null || query.isBlank()) return List.of();
         try {
@@ -306,9 +309,6 @@ public class YahooFinancePriceProvider implements PriceProviderPort {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record Meta(double regularMarketPrice, String currency, String instrumentType) {}
-
-    /** A symbol Yahoo Finance returns for a search query, with the name it displays for it. */
-    public record SymbolMatch(String symbol, String name) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record SearchResponse(List<SearchQuote> quotes) {}

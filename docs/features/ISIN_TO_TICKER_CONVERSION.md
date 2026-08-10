@@ -18,7 +18,8 @@ The converter is shared by several callers: the **Trade Republic sync** (its ori
 - `backend/src/main/java/com/picsou/service/TradeRepublicSyncService.java` — calls `resolve()` during sync, stores ticker and name
 - `backend/src/main/java/com/picsou/service/ManualTransactionService.java` — calls `isIsin()` + `resolve()` when a user enters an instrument by ISIN in the *Add transaction* form (`applyInstrumentFields`)
 - `backend/src/main/java/com/picsou/service/DegiroSyncService.java` — calls `resolve()` for each DEGIRO position's ISIN during sync
-- `backend/src/main/java/com/picsou/adapter/YahooFinancePriceProvider.java` — rejects unconvertible ISINs via regex in `supports()`; `hasQuote()` probes a candidate symbol and `searchSymbols()` asks Yahoo what *it* knows for an ISIN
+- `backend/src/main/java/com/picsou/port/SymbolCatalogPort.java` — "do you carry this symbol, and what do you know for this identifier", the contract the resolved ticker is verified against
+- `backend/src/main/java/com/picsou/adapter/YahooFinancePriceProvider.java` — rejects unconvertible ISINs via regex in `supports()`; implements `SymbolCatalogPort` (`hasQuote()` probes a candidate symbol, `searchSymbols()` asks Yahoo what *it* knows for an ISIN)
 - `backend/src/main/java/com/picsou/config/IsinTickerRepairRunner.java` — startup pass that re-resolves manual transactions still carrying a raw ISIN as their ticker
 - `frontend/src/components/shared/HoldingsCard.tsx` — displays name in title, ticker in square badge
 
@@ -56,10 +57,10 @@ a different question — "which listing does Yahoo carry" — and no exchange-co
 it (see Gotchas for the reordering that fixed one holding and broke two). `priceable()` therefore
 verifies rather than guesses:
 
-1. **Probe the pick.** `yahoo.hasQuote(ticker)` — a chart request, no FX conversion (an unavailable
+1. **Probe the pick.** `symbolCatalog.hasQuote(ticker)` — a chart request, no FX conversion (an unavailable
    EUR rate says nothing about whether the symbol exists). Quoted → returned unchanged, which is
    every portfolio that already works today: no ticker churn, no extra search.
-2. **Ask Yahoo.** `yahoo.searchSymbols(isin)` returns the symbols Yahoo indexes for that ISIN, in
+2. **Ask Yahoo.** `symbolCatalog.searchSymbols(isin)` returns the symbols Yahoo indexes for that ISIN, in
    its own relevance order, filtered to `isYahooFinance` entries that `supports()` accepts. The
    first one that quotes wins. `enableFuzzyQuery=false`, so an ISIN Yahoo does not know returns
    nothing rather than a near-match.
