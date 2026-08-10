@@ -5,7 +5,7 @@
 
 ## Overview
 
-Picsou is a self-hosted personal-finance dashboard for an individual or a small family. It aggregates accounts from banks (PSD2/scraping), brokers (Trade Republic), crypto exchanges (Binance), and on-chain wallets (BTC/ETH/SOL); tracks balances over time, computes net worth, and helps members set savings goals, manage debts, and export their data. Each authenticated `AppUser` is linked to a `FamilyMember`, and every financial row is scoped by `member_id` with optional sharing.
+Picsou is a self-hosted personal-finance dashboard for an individual or a small family. It aggregates accounts from banks (PSD2/scraping), brokers (Trade Republic), crypto exchanges (Binance, Meria), and on-chain wallets (BTC/ETH/SOL); tracks balances over time, computes net worth, and helps members set savings goals, manage debts, and export their data. Each authenticated `AppUser` is linked to a `FamilyMember`, and every financial row is scoped by `member_id` with optional sharing.
 
 ## Backend modules
 
@@ -52,7 +52,7 @@ com.picsou/
 │   ├── TradeRepublicAdapter (broker)
 │   ├── BourseDirectAdapter (broker sidecar)
 │   ├── AmundiAdapter (employee-savings sidecar)
-│   ├── BinanceAdapter (crypto exchange)
+│   ├── BinanceAdapter, MeriaAdapter (crypto exchanges)
 │   ├── BitcoinWalletAdapter, EvmWalletAdapter, SolanaWalletAdapter (on-chain)
 │   └── util/BitcoinKeyUtils (BIP32 key derivation, Base58Check, Bech32)
 ├── finary/         Finary import + API-sync subsystem (client, DTOs, SyncSessionData,
@@ -102,10 +102,12 @@ Enable Banking (PSD2) is the canonical `BankConnectorPort` in 1.0.0. The Powens 
 ### 2. Price refresh
 
 ```
-SchedulerService (cron) → PriceService → PriceProviderPort → CoinGecko / Yahoo Finance → 15-min cache
+SchedulerService (hourly) → PriceService → PriceProviderPort → CoinGecko / Yahoo Finance
+                                        ↘ 15-min in-memory cache
+                                        ↘ price_snapshot (last known price, ≤ 7 days)
 ```
 
-`SchedulerService` triggers daily refresh. `PriceService` holds a 15-minute in-memory cache. CoinGecko for crypto, Yahoo Finance for stocks/ETFs.
+`SchedulerService.refreshPrices` runs hourly over one global ticker set (account tickers ∪ holding tickers). CoinGecko for crypto, Yahoo Finance for stocks/ETFs. On-demand reads resolve a whole set in one call and degrade in three steps — cache, batched provider call, last recorded price — so a rate-limited provider makes prices *older*, not absent. See [ADR 2026-08-01](./decisions/2026-08-01-last-known-price-fallback.md).
 
 ### 3. Trade Republic
 
@@ -148,10 +150,12 @@ Encrypted session and job status live in `AmundiSession`. See the
 ### 6. Crypto exchange
 
 ```
-Client → CryptoExchangeController → CryptoSyncService → BinanceAdapter → Binance API
+Client → CryptoExchangeController → CryptoExchangeSyncService → CryptoExchangePort → exchange API
+                                                                  ├── BinanceAdapter → Binance API
+                                                                  └── MeriaAdapter   → Meria API
 ```
 
-Binance API credentials encrypted at rest with AES-256-GCM (`CryptoEncryption`). `CRYPTO_ENCRYPTION_KEY` env var required.
+Exchange API credentials are encrypted at rest with AES-256-GCM (`CryptoEncryption`); `CRYPTO_ENCRYPTION_KEY` env var required. Which credentials an exchange needs is declared by its adapter: Binance signs each request with an HMAC over an API secret, Meria authenticates with a single read-only API key and stores a `NULL` secret (`CryptoExchangePort.requiresApiSecret()`).
 
 ### 7. Wallet sync
 
@@ -235,7 +239,7 @@ Computed on the fly from `Debt` (principal, rate, term, fees) — no per-month r
 | Service | Usage | Config |
 |---------|-------|--------|
 | PostgreSQL 16 | Persistence | `SPRING_DATASOURCE_URL` |
-| Flyway | Schema migrations | `db/migration/` (latest V70) |
+| Flyway | Schema migrations | `db/migration/` (latest V74) |
 | Enable Banking | PSD2 bank sync (optional) | `ENABLEBANKING_*` |
 | Powens / Budget Insight | Scraping bank sync (**experimental, disabled in 1.0.0**) | `POWENS_*` |
 | Trade Republic | Broker sync via Python microservice | `TR_AUTH_URL` |
@@ -243,6 +247,7 @@ Computed on the fly from `Debt` (principal, rate, term, fees) — no per-month r
 | Amundi Épargne Salariale | PEE/PEG/PERCO/PER sync via internal Python sidecar | `AMUNDI_AUTH_URL` |
 | BoursoBank | Bank sync via Python sidecar (**disabled in 1.0.0**) | `BOURSO_AUTH_URL` |
 | Binance | Crypto exchange balances | Via CryptoExchangePort |
+| Meria | Crypto exchange balances (wallets + staking + lending) | Via CryptoExchangePort |
 | CoinGecko | Crypto prices (free) | No config |
 | Yahoo Finance | Stock/ETF prices (free) | No config |
 | PublicNode EVM RPCs | EVM wallet balances (Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche) — native + curated ERC-20 | No config (keyless) |
