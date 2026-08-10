@@ -1,12 +1,49 @@
 # Feature: Accounts Overview (PnL chart + summary card + asset type filters)
 
-> Last updated: 2026-04-13
+> Last updated: 2026-08-10
 
 ## Context
 
 The Accounts page (`/accounts`) shows a grid of account cards. Users need a visual overview of PnL evolution over time, with the ability to filter by asset type (stocks, savings, crypto, etc.). A summary card at top shows the total balance and PnL for the current filter, similar to the Dashboard hero card.
 
 ## How it works
+
+### Account card anatomy
+
+`AccountCard` renders every account to the same five-line shape, so the grid stays on one
+rhythm whatever the asset:
+
+| Line | Bank / broker / crypto account | Property (`REAL_ESTATE`) |
+|---|---|---|
+| Mark | wallet logo key, connector logo, bundled brand asset, or color circle — see [bank-logos.md](./bank-logos.md) | the property-kind glyph on a tint of the account color |
+| Name | `name` + type badge + co-ownership share | same |
+| Subtitle | `provider` | property kind and city, joined by ` · ` |
+| Balance | `currentBalanceEur` (negated and red for a `LOAN`) | same |
+| Freshness | `lastSyncedAt`, amber with a warning glyph past the 48h staleness threshold | `realEstate.lastValuedAt` |
+
+A property is a manual account: it has no `provider` and nothing ever writes its
+`lastSyncedAt`, so before this shape it rendered two lines shorter than its neighbours *and*
+carried an unrealized-gain line no other type showed. The gain now lives only on the account
+detail page and in `RealEstateSummaryCard`; the kind, the city and the valuation date fill
+the two slots that were empty.
+
+Every line is still conditional — an account with no provider and no sync date (a manual
+`OTHER` account, or a property described but never valued) renders short, as it always has.
+Only the property case, where the data existed but was not surfaced, was fixed.
+
+The freshness line doubles as the staleness warning: a synced account whose `lastSyncedAt`
+is more than `SYNC_STALE_THRESHOLD_MS` (48h) old turns amber with a `TriangleAlert` and a
+tooltip, because live prices keep the numbers moving and a dead provider session otherwise
+looks perfectly healthy. That check reads the *sync* date only. A valuation date belongs to
+a manual account, which the badge excludes anyway, and an estimate a few months old is not a
+broken connection to warn about — so the freshness object carries its own `stale` flag,
+false by construction on the valuation branch, rather than re-deriving staleness from
+whichever date the line ended up showing.
+
+The glyphs come from `frontend/src/lib/property-icons.ts` (`PROPERTY_KIND_ICONS`), which
+`AddPropertyModal`'s kind picker shares so a property looks the same wherever it is shown.
+They are keyed on `RealEstateMetadata.propertyKind` — the backend's `PropertyKind.parse` of
+the free-text `property_type` column — never on the raw string.
 
 ### Summary card
 
@@ -36,7 +73,7 @@ Six asset categories defined in `AccountsPage.tsx`:
 | SAVINGS | LEP, SAVINGS | `#22c55e` |
 | CHECKING | CHECKING | `#0ea5e9` |
 | CRYPTO | CRYPTO | `#f97316` |
-| REAL_ESTATE | *(none yet)* | `#a855f7` |
+| REAL_ESTATE | REAL_ESTATE | `#a855f7` |
 
 The filter affects the summary card, chart, and account card grid simultaneously.
 
@@ -49,6 +86,8 @@ It also injects each account's current balance at today's date if no snapshot ex
 ### Key files
 
 - `frontend/src/pages/accounts/AccountsPage.tsx` — page with summary card, PnL chart, and grid
+- `frontend/src/components/shared/AccountCard.tsx` — one card; `AccountAvatar` / `PropertyAvatar`
+- `frontend/src/lib/property-icons.ts` — `PROPERTY_KIND_ICONS`, shared with `AddPropertyModal`
 - `frontend/src/components/shared/AccountsStackedChart.tsx` — PnL line chart component
 - `frontend/src/features/accounts/hooks.ts` — `useAllAccountsHistory` hook (returns `AccountsHistoryData`)
 - `frontend/src/demo/index.ts` — mock history data (12 months per account)
@@ -87,8 +126,19 @@ AccountsPage
 
 ## Gotchas / Pitfalls
 
+- **A new `PropertyKind` needs an entry in `PROPERTY_KIND_ICONS`.** The map is typed
+  `Record<PropertyKind, LucideIcon>`, so a missing key fails the build rather than silently
+  dropping the glyph — but the enum lives in the backend, and adding a value there without
+  adding it to `PropertyKind.parse` leaves `propertyKind` null and the card back on the color
+  circle.
+- **The property glyph tints itself with relative color syntax.** `PropertyAvatar` sets
+  `--account-color` inline and derives both the disc and the glyph from it, darkening the
+  glyph in light mode and brightening it in dark (see the
+  [CSS relative color ADR](../decisions/2026-04-08-css-relative-color-syntax.md)). The
+  account palette runs from indigo to yellow; a raw yellow-500 glyph on its own pale tint is
+  barely visible in light mode.
 - **`TYPE_TO_GROUP` must cover every `AccountType`** — if a new type is added to the enum but not to this map, those accounts silently disappear from the ALL chart.
-- **`REAL_ESTATE` maps to no `AccountType`** — placeholder category. The filter pill shows but the grid/chart will be empty.
+- **`currentBalanceEur` is the account's full value, not the viewer's share.** Co-owned accounts carry `sharePercent` alongside it (see [account-ownership-shares.md](account-ownership-shares.md)); anything summing balances on this page must apply it, because the server only weights its own aggregates.
 - **`Account.id` cast to `number`** — virtual group accounts use string keys (`'STOCKS'`, `'CRYPTO'`) cast as `number` via `as unknown as number`. This works because Recharts uses `dataKey` as a string lookup, but it's fragile.
 - **`totalInvested` relies on the last invested point** — if an account has no snapshots at all, its invested amount is 0 and PnL equals its full balance. This is correct for newly created accounts where balance = invested.
 - **Cash accounts have `investedAmount = balance`** — set by `AccountService.calculateInvestedAmount()` which returns `currentBalance` for accounts without holdings. This means their PnL = 0.
@@ -97,11 +147,19 @@ AccountsPage
 
 ## Tests
 
-No dedicated test files for this feature yet.
+- `frontend/src/components/shared/AccountCard.test.tsx` — a property renders its kind glyph
+  instead of the color circle, each kind gets its own glyph, an unparseable `property_type`
+  falls back to the circle, kind and city stand in for the provider line (and either half
+  may be missing), the valuation date replaces the sync date, and the unrealized gain is
+  gone. Glyph assertions match lucide's own `lucide-<icon>` class. A second block covers the
+  stale badge: flagged past 48h, the plain last-sync line below it, never on a manual account.
+- Nothing covers the PnL chart, the summary card or the filters yet.
 
 ## Links
 
-- i18n keys: `accounts.pnl`, `accounts.total`, `accounts.filters.*`, `dashboard.netWorthChange` in `en.json` / `fr.json`
+- i18n keys: `accounts.pnl`, `accounts.total`, `accounts.filters.*`, `accounts.lastSync`,
+  `accounts.lastValuation`, `property.kind.*`, `dashboard.netWorthChange`
 - Related: [dashboard-time-range-isolation.md](./dashboard-time-range-isolation.md) — Dashboard PnL chart
 - Related: [live-prices-holdings.md](./live-prices-holdings.md) — per-holding PnL calculation
 - Related: [bank-logos.md](./bank-logos.md) — account card avatar (bank logo, falls back to `color`)
+- Related: [real-estate-valuation.md](./real-estate-valuation.md) — where `propertyKind` and `lastValuedAt` come from

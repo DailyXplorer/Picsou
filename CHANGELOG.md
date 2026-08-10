@@ -36,6 +36,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   into the net-worth history. The account page groups its positions by product —
   Spot / Staking / Lending — and shows principal, accrued interest and total for
   each yield-bearing line. See [feature notes](docs/features/crypto-tracking.md).
+- **Automatic real-estate valuation from open data.** Properties now describe themselves
+  (type, category, geocoded address, living and land area, rooms, construction year, floor
+  and lift, garage/parking, garden/terrace/balcony, energy rating, and acquisition costs)
+  and are re-valued monthly from **free, unauthenticated, Licence Ouverte 2.0** sources:
+  DGFiP transaction data via the Cerema DV3F indicators, address geocoding via the IGN
+  Géoplateforme, and re-indexing on the INSEE housing price index. No API key and no
+  subscription — the estimate writes the account balance, so net worth and the gain curve
+  follow automatically, and a MANUAL mode freezes a user's own figure. Every heuristic
+  applied to the commune median is disclosed in the UI, along with the confidence band,
+  sample size and data vintage. Alsace-Moselle and Mayotte are explicitly reported as
+  uncovered rather than given a plausible-looking wrong number. See
+  [feature notes](docs/features/real-estate-valuation.md) and the
+  [ADR](docs/decisions/2026-08-01-open-data-property-valuation.md).
+- **Ownership shares on properties and loans.** A house or a mortgage can be split between
+  family members; each member's net worth, history and goals count only their share, and the
+  family view stops double-counting a jointly-owned property. A split may total under 100%,
+  with the remainder reported as held outside Picsou. Reading a co-owned account is allowed,
+  editing it stays with the owner. See
+  [feature notes](docs/features/account-ownership-shares.md) and the
+  [ADR](docs/decisions/2026-08-01-account-ownership-shares.md).
+- **A guided "Immobilier" flow for adding a property.** A dedicated entry in "Ajouter un
+  compte" replaces hunting for your house under "Manuel", and with the Immobilier filter
+  active the page's primary button targets it directly. Three steps — what it is, where it is,
+  what it cost — then the account, its description and its first estimate are created in one
+  pass. Bathroom count is now recorded too, and feeds a small declared heuristic.
+- **Mortgage-to-property linking.** A loan can be attached to the property it finances,
+  giving gross property value, outstanding debt and net equity, both per property and across
+  the portfolio.
 - **Bourse Direct brokerage sync.** A dedicated read-only Playwright sidecar
   handles login and the six-digit security code, then imports PEA/CTO positions,
   average cost, current price, valuation and account cash. Credentials and OTPs
@@ -147,6 +175,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the connection flow so the consent page presents the right login, and
   business-only banks are marked with a **Pro** badge in both bank pickers.
   See [feature notes](docs/features/bank-sync.md).
+- **Property valuation failed for every commune.** The Cerema response is ~265 KB, just past
+  the HTTP client's 256 KB default buffer, so the body was never assembled. Worse, the error
+  was swallowed and reported as "no comparable transactions in this municipality" — pointing
+  at the address rather than at the transport. The buffer is raised, and a source that cannot
+  be reached now says so instead of impersonating an empty market.
+- **A property with no valuation showed 0 € and a 100% loss.** It now falls back to its cost
+  basis until an estimate succeeds; the fallback only ever lifts a zero.
+- **Real-estate gain/loss ignored acquisition costs.** Account cards measured the gain against
+  the purchase price alone; French notary fees alone run 7-8% of a purchase, so every property
+  overstated its gain by that much. It is now measured against the full cost basis.
+- **Saving real-estate metadata on a property that had none violated a NOT NULL constraint**
+  (`real_estate_metadata.member_id`). Never surfaced because no client called the endpoint.
 - **A price provider outage no longer blanks positions, invents a loss, or writes
   a zero into your history.** After a restart, a rate-limited CoinGecko left the
   largest lines of a crypto account with no price: they dropped out of the account's

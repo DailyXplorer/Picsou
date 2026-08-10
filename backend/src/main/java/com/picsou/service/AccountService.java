@@ -18,11 +18,14 @@ import com.picsou.model.AccountType;
 import com.picsou.model.BalanceSnapshot;
 import com.picsou.model.Debt;
 import com.picsou.model.FamilyMember;
+import com.picsou.model.PropertyValuation;
 import com.picsou.model.RealEstateMetadata;
+import com.picsou.model.ValuationMode;
 import com.picsou.repository.AccountHoldingRepository;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.BalanceSnapshotRepository;
 import com.picsou.repository.DebtRepository;
+import com.picsou.repository.PropertyValuationRepository;
 import com.picsou.repository.RealEstateMetadataRepository;
 import com.picsou.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
@@ -60,9 +63,11 @@ public class AccountService {
     private final AccountHoldingRepository holdingRepository;
     private final TransactionRepository transactionRepository;
     private final RealEstateMetadataRepository realEstateMetadataRepository;
+    private final PropertyValuationRepository propertyValuationRepository;
     private final DebtRepository debtRepository;
     private final PriceService priceService;
     private final LoanAmortizationService loanAmortizationService;
+    private final AccountAccessResolver accessResolver;
 
     public AccountService(
         AccountRepository accountRepository,
@@ -70,28 +75,43 @@ public class AccountService {
         AccountHoldingRepository holdingRepository,
         TransactionRepository transactionRepository,
         RealEstateMetadataRepository realEstateMetadataRepository,
+        PropertyValuationRepository propertyValuationRepository,
         DebtRepository debtRepository,
         PriceService priceService,
-        LoanAmortizationService loanAmortizationService
+        LoanAmortizationService loanAmortizationService,
+        AccountAccessResolver accessResolver
     ) {
         this.accountRepository = accountRepository;
         this.snapshotRepository = snapshotRepository;
         this.holdingRepository = holdingRepository;
         this.transactionRepository = transactionRepository;
         this.realEstateMetadataRepository = realEstateMetadataRepository;
+        this.propertyValuationRepository = propertyValuationRepository;
         this.debtRepository = debtRepository;
         this.priceService = priceService;
         this.loanAmortizationService = loanAmortizationService;
+        this.accessResolver = accessResolver;
     }
 
+    /**
+     * Every account the member can see, co-owned ones included.
+     *
+     * <p>Balances here are the account's <em>full</em> value, with {@code sharePercent}
+     * alongside — a half-owned house is still a €400k house, and the edit form must load the
+     * real figure. Weighting belongs to the places that total things up (dashboard, history,
+     * real-estate summary), not to the listing.
+     */
     public List<AccountResponse> findAll(Long memberId) {
-        return accountRepository.findAllByMemberIdOrderByCreatedAtAsc(memberId).stream()
-            .map(this::toResponse)
+        List<Account> accounts = accessResolver.readableAccounts(memberId);
+        Map<Long, BigDecimal> shares = accessResolver.sharesFor(accounts, memberId);
+        return accounts.stream()
+            .map(a -> toResponse(a, shares.get(a.getId()), memberId))
             .toList();
     }
 
     public AccountResponse findById(Long id, Long memberId) {
-        return toResponse(getOrThrow(id, memberId));
+        Account account = accessResolver.requireReadable(id, memberId);
+        return toResponse(account, accessResolver.shareFor(account, memberId), memberId);
     }
 
     @Transactional
@@ -520,12 +540,32 @@ public class AccountService {
     }
 
     AccountResponse toResponse(Account account) {
+        return toResponse(account, null, null);
+    }
+
+    /**
+     * @param sharePercent the viewer's stake; anything but a full 100% is reported so the UI
+     *                     can badge the account as co-owned
+     * @param viewerId     who is asking, used to say whether they administer the account
+     */
+    AccountResponse toResponse(Account account, BigDecimal sharePercent, Long viewerId) {
         BigDecimal balanceEur = liveBalanceEur(account);
         AccountResponse response = AccountResponse.from(account, balanceEur);
 
+        BigDecimal reportedShare =
+            sharePercent != null && sharePercent.compareTo(new BigDecimal("100")) != 0
+                ? sharePercent
+                : null;
+        Boolean isOwner = viewerId != null && account.getMember() != null
+            ? viewerId.equals(account.getMember().getId())
+            : null;
+        if (reportedShare != null || isOwner != null) {
+            response = response.withViewer(reportedShare, isOwner);
+        }
+
         if (account.getType() == AccountType.REAL_ESTATE) {
             Optional<RealEstateMetadataResponse> meta = realEstateMetadataRepository.findByAccountId(account.getId())
-                .map(RealEstateMetadataResponse::from);
+                .map(m -> RealEstateMetadataResponse.from(m, lastValuedAt(account.getId())));
             if (meta.isPresent()) {
                 response = response.withRealEstate(meta.get());
             }
@@ -571,16 +611,97 @@ public class AccountService {
         Account account = getOrThrow(accountId, memberId);
 
         RealEstateMetadata metadata = realEstateMetadataRepository.findByAccountId(accountId)
-            .orElseGet(() -> RealEstateMetadata.builder().account(account).build());
+            // member is NOT NULL (V22); building without it violated the constraint on the
+            // very first save. Never surfaced because no client called this endpoint until now.
+            .orElseGet(() -> RealEstateMetadata.builder()
+                .account(account)
+                .member(account.getMember())
+                .build());
 
+        // Acquisition
         metadata.setPurchasePrice(req.purchasePrice());
         metadata.setPurchaseDate(req.purchaseDate());
-        metadata.setSurfaceArea(req.surfaceArea());
-        metadata.setAddress(req.address());
+        metadata.setAgencyFees(req.agencyFees());
+        metadata.setNotaryFees(req.notaryFees());
+        metadata.setWorksCost(req.worksCost());
+
+        // Classification
         metadata.setPropertyType(req.propertyType());
+        metadata.setCategory(req.category());
+        metadata.setDescription(req.description());
+
+        // Address — geocoding is derived from these, so it is invalidated below if they move.
+        boolean addressChanged = addressChanged(metadata, req);
+        metadata.setAddress(req.address());
+        metadata.setPostalCode(req.postalCode());
+        metadata.setCity(req.city());
+        metadata.setCountry(req.country() != null ? req.country().toUpperCase(Locale.ROOT) : "FR");
+        if (addressChanged) {
+            // Clearing the INSEE code is what makes the next valuation re-geocode. Keeping a
+            // stale code would silently value the new address against the old commune.
+            metadata.setInseeCode(null);
+            metadata.setLatitude(null);
+            metadata.setLongitude(null);
+            metadata.setBanId(null);
+            metadata.setGeocodeScore(null);
+            metadata.setGeocodedAt(null);
+        }
+
+        // Characteristics
+        metadata.setSurfaceArea(req.surfaceArea());
+        metadata.setLandArea(req.landArea());
+        metadata.setConstructionYear(req.constructionYear());
+        metadata.setRooms(req.rooms());
+        metadata.setBedrooms(req.bedrooms());
+        metadata.setBathrooms(req.bathrooms());
+        metadata.setFloorNumber(req.floorNumber());
+        metadata.setFloorsTotal(req.floorsTotal());
+        metadata.setHasElevator(req.hasElevator());
+        metadata.setGarageCount(req.garageCount() != null ? req.garageCount() : 0);
+        metadata.setParkingCount(req.parkingCount() != null ? req.parkingCount() : 0);
+        metadata.setHasGarden(Boolean.TRUE.equals(req.hasGarden()));
+        metadata.setHasTerrace(Boolean.TRUE.equals(req.hasTerrace()));
+        metadata.setHasBalcony(Boolean.TRUE.equals(req.hasBalcony()));
+        metadata.setEnergyClass(req.energyClass());
+
+        // Valuation & income
+        metadata.setValuationMode(req.valuationMode() != null ? req.valuationMode() : ValuationMode.ESTIMATED);
         metadata.setRentalIncome(req.rentalIncome() != null ? req.rentalIncome() : BigDecimal.ZERO);
 
-        return RealEstateMetadataResponse.from(realEstateMetadataRepository.save(metadata));
+        // A property described but never valued would otherwise sit at 0 € and report a 100%
+        // loss against its own purchase price. What the user paid is the honest starting
+        // point; the first successful estimate replaces it.
+        BigDecimal costBasis = metadata.costBasis();
+        if (account.getCurrentBalance() == null || account.getCurrentBalance().signum() == 0) {
+            if (costBasis.signum() > 0) {
+                account.setCurrentBalance(costBasis);
+                accountRepository.save(account);
+            }
+        }
+
+        return RealEstateMetadataResponse.from(
+            realEstateMetadataRepository.save(metadata), lastValuedAt(accountId));
+    }
+
+    /**
+     * When the property was last valued, or null if it never was.
+     *
+     * <p>Read from {@code property_valuation} rather than tracked on the account, so a
+     * property valued before this was surfaced reports its real date instead of waiting for
+     * the next monthly refresh. Manual accounts have no {@code lastSyncedAt} to fall back on
+     * and would otherwise show no date at all.
+     */
+    private LocalDate lastValuedAt(Long accountId) {
+        return propertyValuationRepository.findFirstByAccountIdOrderByValuedAtDesc(accountId)
+            .map(PropertyValuation::getValuedAt)
+            .orElse(null);
+    }
+
+    /** Whether any component the geocoder consumes differs from what is stored. */
+    private static boolean addressChanged(RealEstateMetadata metadata, RealEstateMetadataRequest req) {
+        return !java.util.Objects.equals(metadata.getAddress(), req.address())
+            || !java.util.Objects.equals(metadata.getPostalCode(), req.postalCode())
+            || !java.util.Objects.equals(metadata.getCity(), req.city());
     }
 
     @Transactional

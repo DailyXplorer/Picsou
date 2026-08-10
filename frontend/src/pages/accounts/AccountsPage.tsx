@@ -5,6 +5,7 @@ import { useAccounts, useUpdateAccount, useDeleteAccount, useUpdateDebtMetadata 
 import { useHistory } from '@/features/history/hooks'
 import { AccountForm } from '@/components/shared/AccountForm'
 import { AddAccountModal } from '@/components/shared/AddAccountModal'
+import { AddPropertyModal } from '@/components/property/AddPropertyModal'
 import { AccountCard } from '@/components/shared/AccountCard'
 import { AccountsStackedChart } from '@/components/shared/AccountsStackedChart'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -75,6 +76,7 @@ type AccountFormData = {
   fileFees?: number
   startDate?: string
   endDate?: string
+  linkedAccountId?: number
 }
 
 export function AccountsPage() {
@@ -87,6 +89,7 @@ export function AccountsPage() {
   const deleteAccount = useDeleteAccount()
 
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showPropertyModal, setShowPropertyModal] = useState(false)
   const [showEditForm, setShowEditForm] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
@@ -203,7 +206,15 @@ export function AccountsPage() {
       })
   }, [historyData, accounts, filter])
 
+  // With the Immobilier filter on, "add an account" almost certainly means "add a property",
+  // so the primary action goes straight to the guided flow instead of the generic picker.
+  const addingProperty = filter === 'REAL_ESTATE'
+
   function handleOpenCreate() {
+    if (addingProperty) {
+      setShowPropertyModal(true)
+      return
+    }
     setShowCreateModal(true)
   }
 
@@ -245,6 +256,9 @@ export function AccountsPage() {
           lenderName: data.provider || undefined,
           startDate: data.startDate || undefined,
           endDate: data.endDate || undefined,
+          // null, not undefined: an omitted key would leave a previously linked property
+          // attached when the user picks "no linked asset".
+          linkedAccountId: data.linkedAccountId ?? null,
         },
       })
     }
@@ -280,6 +294,7 @@ export function AccountsPage() {
             fileFees: debt.fileFees ?? undefined,
             startDate: debt.startDate ?? '',
             endDate: debt.endDate ?? '',
+            linkedAccountId: debt.linkedAccountId ?? undefined,
           }
         : {}),
     }
@@ -294,7 +309,7 @@ export function AccountsPage() {
         actions={
           <Button onClick={handleOpenCreate} size="sm">
             <Plus className="size-4" />
-            {t('accounts.addAccount')}
+            {addingProperty ? t('property.add.action') : t('accounts.addAccount')}
           </Button>
         }
       />
@@ -371,7 +386,10 @@ export function AccountsPage() {
           className="min-h-[calc(100vh-14rem)]"
           icon={<Wallet className="size-12" />}
           title={t('accounts.noAccounts')}
-          action={{ label: t('accounts.addAccount'), onClick: handleOpenCreate }}
+          action={{
+            label: addingProperty ? t('property.add.action') : t('accounts.addAccount'),
+            onClick: handleOpenCreate,
+          }}
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -409,6 +427,10 @@ export function AccountsPage() {
         </div>
       )}
 
+      {showPropertyModal && (
+        <AddPropertyModal open onOpenChange={setShowPropertyModal} />
+      )}
+
       <AddAccountModal
         open={showCreateModal}
         onOpenChange={setShowCreateModal}
@@ -419,6 +441,7 @@ export function AccountsPage() {
         onOpenChange={handleEditFormOpenChange}
         onSubmit={handleEditSubmit}
         defaultValues={defaultValues}
+        accounts={accounts}
         title={t('accounts.editAccount')}
         loading={isMutating}
       />
