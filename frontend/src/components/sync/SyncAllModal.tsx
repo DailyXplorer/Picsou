@@ -258,7 +258,8 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
       delete next[connection.id]
       return next
     })
-    const options = (formatError: (err: unknown) => string) => ({
+    /** Row-scoped mutation callbacks: clear the spinner, and show the row's error on failure. */
+    const rowCallbacks = (formatError: (err: unknown) => string) => ({
       onSettled: clearSyncing,
       onSuccess: clearRowError,
       onError: (err: unknown) => setRowErrors(prev => ({ ...prev, [connection.id]: formatError(err) })),
@@ -267,13 +268,13 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
 
     switch (connection.providerType) {
       case 'bank':
-        if (connection.syncId !== undefined) retryBankMutation.mutate(connection.syncId, options(formatGeneric))
+        if (connection.syncId !== undefined) retryBankMutation.mutate(connection.syncId, rowCallbacks(formatGeneric))
         break
       case 'exchange':
-        if (connection.syncId !== undefined) syncExchangeMutation.mutate(connection.syncId, options(formatGeneric))
+        if (connection.syncId !== undefined) syncExchangeMutation.mutate(connection.syncId, rowCallbacks(formatGeneric))
         break
       case 'wallet':
-        if (connection.syncId !== undefined) syncWalletMutation.mutate(connection.syncId, options(formatGeneric))
+        if (connection.syncId !== undefined) syncWalletMutation.mutate(connection.syncId, rowCallbacks(formatGeneric))
         break
       case 'tr':
         syncTrMutation.mutate(undefined, {
@@ -291,7 +292,7 @@ export function SyncAllModal({ open, onOpenChange }: SyncAllModalProps) {
         })
         break
       case 'bourso':
-        syncBoursoMutation.mutate(undefined, options(formatGeneric))
+        syncBoursoMutation.mutate(undefined, rowCallbacks(formatGeneric))
         break
       case 'finary':
         navigate('/sync?tab=finary')
