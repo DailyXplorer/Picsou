@@ -121,7 +121,10 @@ worse; when resolution still fails, the row is left alone and retried on the nex
   `pickBest()` stays a pure offline heuristic and keeps its priority order — it now decides which
   listing is *preferred among those that work*, rather than which one is used.
 - `IsinTickerRepairRunner` (`@Order(2)`) runs after `StartupSyncService` and before
-  `PriceBackfillRunner`, so the history backfill requests repaired tickers rather than ISINs.
+  `PriceBackfillRunner`, so the history backfill requests repaired tickers rather than ISINs. It
+  deletes the holdings keyed by the old ISIN before recomputing: `recomputeHoldings` rebuilds a
+  holding for every ticker its transactions mention but leaves alone one whose ticker they no
+  longer mention — correct for a synced account, and exactly what a rename creates otherwise.
 - No schema change: the repair pass is keyed on data shape, not on a migration-provided flag.
 - Synced accounts need no repair pass — their adapters call `resolve()` on every sync, so they pick
   up the verified ticker on their own.

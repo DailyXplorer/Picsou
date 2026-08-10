@@ -4,17 +4,17 @@ import com.picsou.adapter.OpenFigiIsinConverter;
 import com.picsou.model.Account;
 import com.picsou.model.AccountType;
 import com.picsou.model.Transaction;
+import com.picsou.repository.AccountHoldingRepository;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.TransactionRepository;
 import com.picsou.service.HoldingComputeService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -37,11 +38,11 @@ import static org.mockito.Mockito.when;
  * not touch.
  */
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class IsinTickerRepairRunnerTest {
 
     @Mock TransactionRepository transactionRepository;
     @Mock AccountRepository accountRepository;
+    @Mock AccountHoldingRepository accountHoldingRepository;
     @Mock OpenFigiIsinConverter isinConverter;
     @Mock HoldingComputeService holdingComputeService;
 
@@ -78,6 +79,25 @@ class IsinTickerRepairRunnerTest {
         // Holdings are keyed by ticker and derived from transactions: without this the repaired
         // rows would still aggregate under the old ISIN-keyed holding.
         verify(holdingComputeService).recomputeHoldings(PEA);
+    }
+
+    @Test
+    void repair_dropsTheHoldingStillKeyedByTheOldIsin() {
+        // recomputeHoldings creates the row for the new ticker but does not remove one whose
+        // ticker no longer appears in any transaction — leaving the account with the repaired
+        // position *and* an orphan that nothing can price, shown with a quantity and no value.
+        Transaction row = tx("IE000BI8OT95", null);
+        when(transactionRepository.findManualTransactionsWithIsinLengthTicker()).thenReturn(List.of(row));
+        when(transactionRepository.findManualAccountIdsByTickerIn(any())).thenReturn(List.of(1L));
+        when(isinConverter.resolve("IE000BI8OT95")).thenReturn(resolved("MWRD.PA", null));
+        when(accountRepository.findAllById(any())).thenReturn(List.of(PEA));
+
+        runner.repair();
+
+        InOrder inOrder = inOrder(accountHoldingRepository, holdingComputeService);
+        inOrder.verify(accountHoldingRepository)
+            .deleteByAccountIdInAndTickerIn(List.of(1L), List.of("IE000BI8OT95"));
+        inOrder.verify(holdingComputeService).recomputeHoldings(PEA);
     }
 
     @Test
@@ -150,7 +170,7 @@ class IsinTickerRepairRunnerTest {
 
         // And the batch handed to the account lookup is the same 25 — recomputing an account whose
         // rows were not touched would be wasted work.
-        ArgumentCaptor<List<String>> batch = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<String>> batch = ArgumentCaptor.captor();
         verify(transactionRepository).findManualAccountIdsByTickerIn(batch.capture());
         assertThat(batch.getValue()).hasSize(25).startsWith("IE0000000000");
     }

@@ -87,6 +87,13 @@ its next sync) and needs no gate flag: a raw-ISIN ticker cannot be priced by con
 rewriting it can only improve it. Unresolvable rows are left alone and retried on the next boot;
 the pass stops after 25 ISINs per boot, OpenFIGI's keyless quota.
 
+It deletes the holdings keyed by the old ISIN before recomputing, and that order matters:
+`HoldingComputeService.recomputeHoldings` rebuilds a holding for every ticker its transactions
+mention but deliberately leaves one alone when no transaction mentions its ticker at all (a synced
+account owns holdings no transaction backs). A rename turns the old key into exactly that kind of
+orphan, so the account would otherwise carry both the repaired position and an unpriceable
+duplicate — listed with a quantity and no value.
+
 ## TR-native crypto ISIN short-circuit
 
 Trade Republic's on-platform crypto (Bitcoin, Ethereum, etc. held directly, not via an ETC) uses internal ISINs of the form `XF000<SYMBOL><digits>` (e.g. `XF000BTC0017`, `XF000SOL0042`) that are not real market instruments — OpenFIGI never resolves them. `resolve()` checks the cache, then detects this pattern before the OpenFIGI call, parses `<SYMBOL>` out generically (not a hardcoded per-coin list — see GH issue #22), and validates it against the injected `CoinGeckoPriceProvider.supports()`. If known it returns `TickerResult(symbol, coinGecko.displayName(symbol))` and caches it. Returning the parsed symbol as the **ticker** (not just the name) is what makes the holding price-resolvable via `CoinGeckoPriceProvider` afterwards — the earlier version only fixed the display name and left the ticker as the fake ISIN. An unrecognized symbol logs one warning and falls through to the normal OpenFIGI path (which will still miss, same as before this feature); because that miss is cached, the warning fires once per holding, not on every `resolve()`.

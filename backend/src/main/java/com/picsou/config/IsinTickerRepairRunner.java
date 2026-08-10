@@ -3,6 +3,7 @@ package com.picsou.config;
 import com.picsou.adapter.OpenFigiIsinConverter;
 import com.picsou.model.Account;
 import com.picsou.model.Transaction;
+import com.picsou.repository.AccountHoldingRepository;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.TransactionRepository;
 import com.picsou.service.HoldingComputeService;
@@ -55,15 +56,18 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
 
     private final TransactionRepository transactionRepository;
     private final AccountRepository accountRepository;
+    private final AccountHoldingRepository accountHoldingRepository;
     private final OpenFigiIsinConverter isinConverter;
     private final HoldingComputeService holdingComputeService;
 
     public IsinTickerRepairRunner(TransactionRepository transactionRepository,
                                   AccountRepository accountRepository,
+                                  AccountHoldingRepository accountHoldingRepository,
                                   OpenFigiIsinConverter isinConverter,
                                   HoldingComputeService holdingComputeService) {
         this.transactionRepository = transactionRepository;
         this.accountRepository = accountRepository;
+        this.accountHoldingRepository = accountHoldingRepository;
         this.isinConverter = isinConverter;
         this.holdingComputeService = holdingComputeService;
     }
@@ -115,7 +119,7 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
         // could not be found by it.
         List<Long> accountIds = transactionRepository.findManualAccountIdsByTickerIn(batch);
 
-        int repaired = 0;
+        List<String> renamed = new ArrayList<>();
         for (String isin : batch) {
             OpenFigiIsinConverter.TickerResult resolved = isinConverter.resolve(isin);
             if (resolved == null || resolved.ticker() == null
@@ -134,21 +138,32 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
                 }
             }
             transactionRepository.saveAll(rows);
-            repaired++;
+            renamed.add(isin);
             log.info("Repaired {} transaction(s): ISIN {} -> {}", rows.size(), isin, resolved.ticker());
         }
 
-        if (repaired == 0) {
+        if (renamed.isEmpty()) {
             return;
         }
 
-        // Holdings are derived from transactions, so this is what turns the repaired tickers into
-        // priceable positions. Restricted to investment accounts on the same rule the manual entry
-        // and CSV import paths use: deriving holdings for anything else would give an account that
-        // is valued from its balance one that is valued from positions instead.
+        // Holdings are derived from transactions, so recomputing is what turns the repaired tickers
+        // into priceable positions. Restricted to investment accounts on the same rule the manual
+        // entry and CSV import paths use: deriving holdings for anything else would give an account
+        // that is valued from its balance one that is valued from positions instead.
         List<Account> accounts = accountRepository.findAllById(accountIds).stream()
             .filter(account -> account.getType() != null && account.getType().isInvestment())
             .toList();
+        if (accounts.isEmpty()) {
+            return;
+        }
+
+        // First drop the holdings still keyed by the old ISIN. recomputeHoldings creates the row
+        // for the new ticker but does not remove one whose ticker no longer appears in any
+        // transaction, so without this the account would carry both: the repaired position and an
+        // orphan that no provider can price, listed with a quantity and no value.
+        accountHoldingRepository.deleteByAccountIdInAndTickerIn(
+            accounts.stream().map(Account::getId).toList(), renamed);
+
         accounts.forEach(holdingComputeService::recomputeHoldings);
         log.info("Recomputed holdings for {} account(s) after ISIN ticker repair", accounts.size());
     }
