@@ -48,6 +48,7 @@
 | 2026-07-19 | [Caddy as an opt-in TLS terminator for the Docker stack](./decisions/2026-07-19-caddy-opt-in-tls-profile.md) | Active |
 | 2026-07-21 | [Bourse Direct isolated browser sidecar and atomic complete snapshots](./decisions/2026-07-21-bourse-direct-isolated-atomic-sync.md) | Active |
 | 2026-07-19 | [Interactive Brokers via the Flex Web Service (read-only, EOD)](./decisions/2026-07-19-ibkr-flex-web-service.md) | Active |
+| 2026-08-09 | [Amundi Épargne Salariale through an isolated browser sidecar](./decisions/2026-08-09-amundi-epargne-salariale-sidecar.md) | Active |
 
 ## Feature notes
 
@@ -64,6 +65,7 @@
 | Trade Republic | 2026-07-07 | [trade-republic.md](./features/trade-republic.md) |
 | Bourse Direct | 2026-07-21 | [bourse-direct.md](./features/bourse-direct.md) |
 | Interactive Brokers (IBKR) sync | 2026-07-19 | [ibkr-sync.md](./features/ibkr-sync.md) |
+| Amundi Épargne Salariale sync | 2026-08-09 | [amundi-epargne-salariale.md](./features/amundi-epargne-salariale.md) |
 | Trade Republic — Holdings deduplication | 2026-05-18 | [trade-republic-holding-deduplication.md](./features/trade-republic-holding-deduplication.md) |
 | ISIN → Ticker conversion | 2026-04-13 | [ISIN_TO_TICKER_CONVERSION.md](./features/ISIN_TO_TICKER_CONVERSION.md) |
 | Encryption at rest | 2026-04-08 | [encryption-at-rest.md](./features/encryption-at-rest.md) |
@@ -79,7 +81,7 @@
 | Manual transactions + holdings derivation | 2026-04-21 | [manual-transactions.md](./features/manual-transactions.md) |
 | BoursoBank sync ⏸ disabled in 1.0.0 | 2026-04-26 | [bourso-bank.md](./features/bourso-bank.md) |
 | Accounts overview (PnL chart + summary card + filters) | 2026-04-13 | [accounts-overview.md](./features/accounts-overview.md) |
-| Bank logos on account cards | 2026-07-01 | [bank-logos.md](./features/bank-logos.md) |
+| Logos on account cards (connector-supplied + bundled) | 2026-08-09 | [bank-logos.md](./features/bank-logos.md) |
 | Add Account modal (unified sync + manual) | 2026-07-07 | [add-account-modal.md](./features/add-account-modal.md) |
 | Docker deployment | 2026-07-19 | [docker-deployment.md](./features/docker-deployment.md) |
 | Navigation (sidebar + mobile bottom nav) | 2026-07-12 | [sidebar-navigation.md](./features/sidebar-navigation.md) |
