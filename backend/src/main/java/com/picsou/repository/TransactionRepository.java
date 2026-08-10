@@ -41,6 +41,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
      *
      * <p>Synced transactions and synced accounts are excluded on purpose: their adapters re-resolve
      * every ISIN on each sync, so they repair themselves without rewriting rows a provider owns.
+     *
+     * <p>No {@code member_id} predicate, unlike every request-scoped query: this feeds a startup
+     * maintenance pass with no caller and no member context, in the same family as
+     * {@code PriceFxCleanupRunner} (purges {@code price_snapshot} wholesale) and
+     * {@code SchedulerService.dailySnapshots} (iterates every member). The tenant-isolation rule
+     * protects paths where a caller's identity decides what may be read; a member loop here would
+     * iterate all members and touch exactly the same rows.
      */
     @Query("SELECT t FROM Transaction t "
         + "WHERE t.isManual = true AND t.account.isManual = true AND LENGTH(t.ticker) = 12")

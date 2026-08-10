@@ -98,9 +98,18 @@ worse; when resolution still fails, the row is left alone and retried on the nex
 
 ## Trade-offs accepted
 
-- **One extra Yahoo request per newly resolved ISIN.** Bounded by the number of distinct ISINs in a
-  portfolio and cached per process. A sync of 40 positions pays 40 probes once, against the one
-  request per ticker every 15 minutes the price refresh already makes.
+- **Yahoo requests per newly resolved ISIN**, once per process (the converter caches by ISIN):
+
+  | Case | Requests |
+  |------|----------|
+  | The OpenFIGI pick quotes (the common case) | 1 probe |
+  | It does not | 1 probe + 1 search + up to 3 candidate probes = **5 max** |
+  | OpenFIGI returned nothing | 1 search + up to 3 candidate probes = 4 max |
+
+  Yahoo returns matches in relevance order, so a listing that is not in the first three is not the
+  one being looked for; probing the whole `quotesCount=6` response would turn a miss into eight
+  requests. A sync of 40 positions pays 40 probes once, against the one request per ticker every
+  15 minutes the price refresh already makes. Nothing here is on a read path.
 - **A dependency from the ISIN converter to the Yahoo adapter.** The converter already depends on
   `CoinGeckoPriceProvider` for the TR-crypto short-circuit, for the same reason: a symbol is only
   worth returning if the provider that will be asked for its price recognises it.
@@ -109,8 +118,12 @@ worse; when resolution still fails, the row is left alone and retried on the nex
   ticker. The repair runner does not catch it either — its predicate is "is a raw ISIN", and a dead
   symbol is not one. What limits the blast radius is that resolution is cached per process, so the
   next restart re-resolves it correctly.
-- **A repair is capped at 25 ISINs per boot** (OpenFIGI's keyless quota), so a very large stuck
-  portfolio converges over several restarts rather than holding one up. What is left is logged.
+- **A repair is capped at 25 ISINs and 60 seconds per boot.** An `ApplicationRunner` runs before
+  `ApplicationReadyEvent`, so the pass delays readiness by whatever it spends; one resolution can
+  block for ~55s if both providers time out on every call. Both limits are checked before starting
+  an ISIN, so a pass can overrun its budget by at most the resolution already in flight. A very
+  large stuck portfolio converges over several restarts rather than holding one up, and what is
+  left over is logged.
 
 ## Consequences
 
@@ -125,6 +138,16 @@ worse; when resolution still fails, the row is left alone and retried on the nex
   deletes the holdings keyed by the old ISIN before recomputing: `recomputeHoldings` rebuilds a
   holding for every ticker its transactions mention but leaves alone one whose ticker they no
   longer mention — correct for a synced account, and exactly what a rename creates otherwise.
+- Each ISIN is applied in **its own transaction**, opened after its resolution returns
+  (`TransactionTemplate`, not `@Transactional` on the pass): a half-applied repair is not
+  retryable, because renamed rows no longer match the raw-ISIN query and nothing would find their
+  stale holdings again. Rolling back restores the ISIN, which is what the next boot looks for.
+- The repair queries carry **no `member_id` predicate**, unlike every request-scoped query. It is a
+  maintenance pass with no caller and no member context, in the same family as
+  `PriceFxCleanupRunner` (purges `price_snapshot` wholesale), `PriceBackfillRunner` and
+  `SchedulerService.dailySnapshots` (iterate every member). A member loop here would iterate all
+  members anyway and touch exactly the same rows; the isolation rule protects request paths, where
+  a caller's identity decides what may be read.
 - No schema change: the repair pass is keyed on data shape, not on a migration-provided flag.
 - Synced accounts need no repair pass — their adapters call `resolve()` on every sync, so they pick
   up the verified ticker on their own.

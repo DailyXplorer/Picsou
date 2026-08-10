@@ -8,6 +8,7 @@ import com.picsou.repository.AccountHoldingRepository;
 import com.picsou.repository.AccountRepository;
 import com.picsou.repository.TransactionRepository;
 import com.picsou.service.HoldingComputeService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -15,6 +16,8 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -45,8 +49,16 @@ class IsinTickerRepairRunnerTest {
     @Mock AccountHoldingRepository accountHoldingRepository;
     @Mock OpenFigiIsinConverter isinConverter;
     @Mock HoldingComputeService holdingComputeService;
+    @Mock PlatformTransactionManager transactionManager;
 
     @InjectMocks IsinTickerRepairRunner runner;
+
+    @BeforeEach
+    void openTransactionsForReal() {
+        // The runner applies each ISIN through a TransactionTemplate; lenient because the tests
+        // that stop before any write never open one.
+        lenient().when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+    }
 
     private static final Account PEA = Account.builder()
         .id(1L).name("PEA").type(AccountType.PEA).isManual(true).build();
@@ -120,7 +132,6 @@ class IsinTickerRepairRunnerTest {
         // OpenFIGI still down / still no Yahoo listing: resolve() hands back the ISIN itself.
         Transaction stuck = tx("IE000BI8OT95", null);
         when(transactionRepository.findManualTransactionsWithIsinLengthTicker()).thenReturn(List.of(stuck));
-        when(transactionRepository.findManualAccountIdsByTickerIn(any())).thenReturn(List.of(1L));
         when(isinConverter.resolve("IE000BI8OT95")).thenReturn(resolved("IE000BI8OT95", null));
 
         runner.repair();
@@ -155,7 +166,8 @@ class IsinTickerRepairRunnerTest {
 
     @Test
     void repair_stopsAtThePerBootLimit_soAStartupIsNotHeldBehindTheProviderRateLimit() {
-        // 30 distinct ISINs, OpenFIGI allows 25/min without an API key.
+        // 30 distinct ISINs, OpenFIGI allows 25/min without an API key — and every resolution
+        // happens before ApplicationReadyEvent, so the pass is bounded rather than open-ended.
         List<Transaction> rows = new ArrayList<>(IntStream.range(0, 30)
             .mapToObj(i -> tx(String.format("IE00000000%02d", i), null))
             .toList());
@@ -168,11 +180,28 @@ class IsinTickerRepairRunnerTest {
 
         verify(isinConverter, times(25)).resolve(anyString());
 
-        // And the batch handed to the account lookup is the same 25 — recomputing an account whose
-        // rows were not touched would be wasted work.
-        ArgumentCaptor<List<String>> batch = ArgumentCaptor.captor();
-        verify(transactionRepository).findManualAccountIdsByTickerIn(batch.capture());
-        assertThat(batch.getValue()).hasSize(25).startsWith("IE0000000000");
+        // In sorted order, so a truncated pass resumes where it stopped instead of re-drawing the
+        // same subset on every boot.
+        ArgumentCaptor<String> attempted = ArgumentCaptor.captor();
+        verify(isinConverter, times(25)).resolve(attempted.capture());
+        assertThat(attempted.getAllValues()).startsWith("IE0000000000").isSorted();
+    }
+
+    @Test
+    void repair_appliesEachIsinInItsOwnTransaction() {
+        // Per ISIN, not per pass: renamed rows no longer match the raw-ISIN query, so a failure
+        // between the rename and the recompute would strand those holdings with nothing to find
+        // them by. Rolling back puts the ISIN back, which is what the next boot looks for.
+        when(transactionRepository.findManualTransactionsWithIsinLengthTicker())
+            .thenReturn(List.of(tx("IE000BI8OT95", null), tx("IE00B4L5Y983", null)));
+        when(transactionRepository.findManualAccountIdsByTickerIn(any())).thenReturn(List.of(1L));
+        when(isinConverter.resolve(anyString())).thenReturn(resolved("MWRD.PA", null));
+        when(accountRepository.findAllById(any())).thenReturn(List.of(PEA));
+
+        runner.repair();
+
+        verify(transactionManager, times(2)).getTransaction(any());
+        verify(transactionManager, times(2)).commit(any());
     }
 
     @Test

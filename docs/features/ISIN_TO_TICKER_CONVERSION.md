@@ -69,6 +69,12 @@ verifies rather than guesses:
 The pick is only ever replaced on a **positive** quote for a different symbol, never on a failure
 to quote the pick — a rate-limited Yahoo cannot turn a working ticker into a search result.
 
+Cost, per ISIN and once per process (`resolve()` caches by ISIN): **1** Yahoo request when the pick
+quotes, **5 at most** when it does not (probe + search + up to 3 candidate probes,
+`MAX_VERIFIED_CANDIDATES`), 4 when OpenFIGI returned nothing. Matches come back in relevance order,
+so a listing outside the first three is not the one being looked for. None of this is on a read
+path — `resolve()` is only called when writing a holding (sync, manual entry, CSV import).
+
 Verified live on the three holdings of issue #78:
 
 | ISIN | OpenFIGI pick | Verified result |
@@ -84,8 +90,14 @@ the transaction — where nothing ever revisits it, since `supports()` rejects I
 `IsinTickerRepairRunner` re-resolves those rows at startup and recomputes the holdings derived from
 them. It is scoped to **manual transactions of manual accounts** (a synced account re-resolves on
 its next sync) and needs no gate flag: a raw-ISIN ticker cannot be priced by construction, so
-rewriting it can only improve it. Unresolvable rows are left alone and retried on the next boot;
-the pass stops after 25 ISINs per boot, OpenFIGI's keyless quota.
+rewriting it can only improve it. Unresolvable rows are left alone and retried on the next boot.
+
+The pass is bounded twice — **25 ISINs** (OpenFIGI's keyless quota) and **60 seconds** — because an
+`ApplicationRunner` runs before `ApplicationReadyEvent`, so whatever it spends is time the
+application is not serving. Both are checked before starting an ISIN, so it can overrun by at most
+the resolution in flight (~55s if every provider call times out). Each ISIN is applied in its own
+transaction, opened once its resolution has returned: a half-applied repair is not retryable, since
+renamed rows no longer match the raw-ISIN query.
 
 It deletes the holdings keyed by the old ISIN before recomputing, and that order matters:
 `HoldingComputeService.recomputeHoldings` rebuilds a holding for every ticker its transactions

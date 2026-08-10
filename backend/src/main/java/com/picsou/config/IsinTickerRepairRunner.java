@@ -13,7 +13,11 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -47,29 +51,40 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(IsinTickerRepairRunner.class);
 
     /**
-     * Distinct ISINs resolved per boot. OpenFIGI allows 25 requests/min without an API key and
-     * this runs while the application is starting, so the work is bounded rather than allowed to
-     * hold up a boot behind an arbitrarily long queue of network calls. What is left over is
-     * logged and picked up by the next boot.
+     * Distinct ISINs resolved per boot. OpenFIGI allows 25 requests/min without an API key, so
+     * asking for more in one pass mostly buys rate-limit errors.
      */
     private static final int MAX_ISINS_PER_BOOT = 25;
+
+    /**
+     * Wall-clock budget for the pass. An {@link ApplicationRunner} runs before
+     * {@code ApplicationReadyEvent}, so every second spent here is a second the application is not
+     * serving — and one resolution can block for up to ~55s when both providers time out
+     * (OpenFIGI 5s, then the Yahoo probe, the search and up to three candidate probes at 10s each).
+     * The budget is checked before starting each ISIN, so a pass can overrun by at most the
+     * resolution already in flight. Whatever is left over is logged and retried on the next boot.
+     */
+    private static final Duration MAX_DURATION = Duration.ofSeconds(60);
 
     private final TransactionRepository transactionRepository;
     private final AccountRepository accountRepository;
     private final AccountHoldingRepository accountHoldingRepository;
     private final OpenFigiIsinConverter isinConverter;
     private final HoldingComputeService holdingComputeService;
+    private final TransactionTemplate transactions;
 
     public IsinTickerRepairRunner(TransactionRepository transactionRepository,
                                   AccountRepository accountRepository,
                                   AccountHoldingRepository accountHoldingRepository,
                                   OpenFigiIsinConverter isinConverter,
-                                  HoldingComputeService holdingComputeService) {
+                                  HoldingComputeService holdingComputeService,
+                                  PlatformTransactionManager transactionManager) {
         this.transactionRepository = transactionRepository;
         this.accountRepository = accountRepository;
         this.accountHoldingRepository = accountHoldingRepository;
         this.isinConverter = isinConverter;
         this.holdingComputeService = holdingComputeService;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
     @Override
@@ -84,10 +99,10 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
     }
 
     /**
-     * Deliberately not {@code @Transactional}: resolution is a network call per ISIN, and holding
-     * one transaction open across all of them would keep a connection busy for the length of the
-     * slowest provider. Each write below is atomic on its own — {@code saveAll} per ISIN, then the
-     * already-transactional holdings recompute per account.
+     * Deliberately not {@code @Transactional} as a whole: resolution is a network call per ISIN,
+     * and holding one transaction open across all of them would keep a connection busy for the
+     * length of the slowest provider. Each ISIN is instead applied in its own short transaction,
+     * opened after its resolution has returned — see {@link #applyRepair}.
      */
     void repair() {
         List<Transaction> candidates = transactionRepository.findManualTransactionsWithIsinLengthTicker();
@@ -109,18 +124,21 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
 
         log.info("Found {} unresolved ISIN ticker(s) on manual transactions, re-resolving", byIsin.size());
 
-        List<String> batch = byIsin.keySet().stream().limit(MAX_ISINS_PER_BOOT).toList();
-        if (batch.size() < byIsin.size()) {
-            log.info("Repairing {} ISIN(s) this boot; the remaining {} are picked up by the next start",
-                     batch.size(), byIsin.size() - batch.size());
-        }
+        Instant deadline = Instant.now().plus(MAX_DURATION);
+        int attempted = 0;
 
-        // Read the accounts before the rename: afterwards these rows no longer carry the ISIN and
-        // could not be found by it.
-        List<Long> accountIds = transactionRepository.findManualAccountIdsByTickerIn(batch);
+        for (Map.Entry<String, List<Transaction>> entry : byIsin.entrySet()) {
+            if (attempted == MAX_ISINS_PER_BOOT || Instant.now().isAfter(deadline)) {
+                log.info("Stopping after {} ISIN(s) ({}); the remaining {} are picked up by the next start",
+                         attempted,
+                         attempted == MAX_ISINS_PER_BOOT ? "per-boot limit" : "time budget spent",
+                         byIsin.size() - attempted);
+                break;
+            }
+            attempted++;
 
-        List<String> renamed = new ArrayList<>();
-        for (String isin : batch) {
+            String isin = entry.getKey();
+            // Outside any transaction: this is the part that can block on two providers.
             OpenFigiIsinConverter.TickerResult resolved = isinConverter.resolve(isin);
             if (resolved == null || resolved.ticker() == null
                 || resolved.ticker().equalsIgnoreCase(isin)) {
@@ -128,30 +146,41 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
                 continue;
             }
 
-            List<Transaction> rows = byIsin.get(isin);
-            for (Transaction tx : rows) {
-                tx.setTicker(resolved.ticker());
-                // The name is what the UI shows; only fill it when the row has none, so a name the
-                // user typed themselves is never overwritten by the provider's.
-                if (tx.getName() == null && resolved.name() != null) {
-                    tx.setName(resolved.name());
-                }
-            }
-            transactionRepository.saveAll(rows);
-            renamed.add(isin);
-            log.info("Repaired {} transaction(s): ISIN {} -> {}", rows.size(), isin, resolved.ticker());
+            transactions.executeWithoutResult(status -> applyRepair(isin, entry.getValue(), resolved));
         }
+    }
 
-        if (renamed.isEmpty()) {
-            return;
+    /**
+     * Renames one ISIN's rows and rebuilds what derives from them, in a single transaction.
+     *
+     * <p>Atomic per ISIN rather than per pass, because a half-applied repair is not retryable: the
+     * renamed rows no longer match the raw-ISIN query, so a failure between the rename and the
+     * recompute would leave holdings stale for good, with nothing to find them by. Rolling back
+     * puts the ISIN back on the rows, which is exactly what the next boot looks for.
+     */
+    private void applyRepair(String isin, List<Transaction> rows,
+                             OpenFigiIsinConverter.TickerResult resolved) {
+        // Read the accounts before the rename: afterwards these rows no longer carry the ISIN and
+        // could not be found by it.
+        List<Long> accountIds = transactionRepository.findManualAccountIdsByTickerIn(List.of(isin));
+
+        for (Transaction tx : rows) {
+            tx.setTicker(resolved.ticker());
+            // The name is what the UI shows; only fill it when the row has none, so a name the
+            // user typed themselves is never overwritten by the provider's.
+            if (tx.getName() == null && resolved.name() != null) {
+                tx.setName(resolved.name());
+            }
         }
+        transactionRepository.saveAll(rows);
+        log.info("Repaired {} transaction(s): ISIN {} -> {}", rows.size(), isin, resolved.ticker());
 
         // Holdings are derived from transactions, so recomputing is what turns the repaired tickers
         // into priceable positions. Restricted to investment accounts on the same rule the manual
         // entry and CSV import paths use: deriving holdings for anything else would give an account
         // that is valued from its balance one that is valued from positions instead.
         List<Account> accounts = accountRepository.findAllById(accountIds).stream()
-            .filter(account -> account.getType() != null && account.getType().isInvestment())
+            .filter(account -> account.getType().isInvestment())
             .toList();
         if (accounts.isEmpty()) {
             return;
@@ -162,9 +191,9 @@ public class IsinTickerRepairRunner implements ApplicationRunner {
         // transaction, so without this the account would carry both: the repaired position and an
         // orphan that no provider can price, listed with a quantity and no value.
         accountHoldingRepository.deleteByAccountIdInAndTickerIn(
-            accounts.stream().map(Account::getId).toList(), renamed);
+            accounts.stream().map(Account::getId).toList(), List.of(isin));
 
         accounts.forEach(holdingComputeService::recomputeHoldings);
-        log.info("Recomputed holdings for {} account(s) after ISIN ticker repair", accounts.size());
+        log.debug("Recomputed holdings for {} account(s) after repairing {}", accounts.size(), isin);
     }
 }

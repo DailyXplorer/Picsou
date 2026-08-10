@@ -40,6 +40,9 @@ public class OpenFigiIsinConverter {
     private static final java.util.regex.Pattern SYMBOL_PATTERN =
         java.util.regex.Pattern.compile("[A-Z0-9][A-Z0-9.-]{0,14}");
 
+    /** How many of Yahoo's own matches for an ISIN are probed before giving up — see {@link #priceable}. */
+    private static final int MAX_VERIFIED_CANDIDATES = 3;
+
     /**
      * Whether {@code s} looks like an ISIN (2-letter country code + 9 alphanumerics
      * + 1 check digit = 12 chars). Case-insensitive; trims surrounding whitespace.
@@ -231,15 +234,28 @@ public class OpenFigiIsinConverter {
      * <p>The OpenFIGI pick is only ever replaced on a <em>positive</em> quote for a different
      * symbol, never on a failure to quote the pick: a rate-limited or unreachable Yahoo leaves the
      * result exactly as it was before this validation existed.
+     *
+     * <p>Cost, per ISIN and once per process (the caller caches): <b>1</b> Yahoo request when the
+     * pick quotes, which is the common case; <b>at most 5</b> otherwise — the probe, the search,
+     * and up to {@link #MAX_VERIFIED_CANDIDATES} candidate probes. Yahoo returns its matches in
+     * relevance order, so a listing that is not in the first few is not the one being looked for,
+     * and probing the whole list would turn a miss into eight requests.
      */
     TickerResult priceable(String isin, TickerResult figi) {
         if (figi != null && yahoo.hasQuote(figi.ticker)) {
             return figi;
         }
+        int probed = 0;
         for (YahooFinancePriceProvider.SymbolMatch match : yahoo.searchSymbols(isin)) {
             if (figi != null && match.symbol().equals(figi.ticker)) {
                 continue; // already probed above, and it did not quote
             }
+            if (probed == MAX_VERIFIED_CANDIDATES) {
+                log.debug("ISIN {}: none of the first {} Yahoo matches quote, giving up on the rest",
+                          isin, MAX_VERIFIED_CANDIDATES);
+                break;
+            }
+            probed++;
             if (yahoo.hasQuote(match.symbol())) {
                 // OpenFIGI's name is the instrument's official one; Yahoo's is a display label
                 // truncated to ~32 chars ("ISHARES III PLC ISHRS CORE MSCI"), so it is only a
