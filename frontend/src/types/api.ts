@@ -330,6 +330,25 @@ export interface BoursoAuthInitResponse {
   contact: string | null
 }
 
+export type DegiroSessionStatusValue = 'ACTIVE' | 'REAUTH_REQUIRED' | 'FAILED'
+
+export interface DegiroSessionStatus {
+  isActive: boolean
+  /** `null` when no session has ever been stored for this member. */
+  status: DegiroSessionStatusValue | null
+  lastSyncedAt: string | null
+}
+
+/**
+ * A discriminated union rather than `{ processId: string | null; totpRequired: boolean }`:
+ * the /complete endpoint cannot work without a processId, so the TOTP branch must not
+ * type-check with a null one. The no-TOTP branch keeps it nullable — the backend has
+ * nothing useful to send there and the client never reads it.
+ */
+export type DegiroAuthInitResponse =
+  | { totpRequired: true; processId: string }
+  | { totpRequired: false; processId: string | null }
+
 interface BourseDirectSessionStatusBase {
   isActive: boolean
   expiresAt: string | null

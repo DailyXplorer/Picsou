@@ -202,9 +202,9 @@
     "compteTitres": "Wertpapierdepot",
     "crypto": "Krypto",
     "realEstate": "Immobilie",
-    "employeeSavings": "Mitarbeitersparplan",
     "loan": "Kredit",
-    "other": "Sonstiges"
+    "other": "Sonstiges",
+    "employeeSavings": "Mitarbeitersparplan"
   },
   "realEstate": {
     "purchasePrice": "Kaufpreis",
@@ -418,9 +418,10 @@
       "wallets": "Bitcoin, Ethereum, BNB, Solana...",
       "tr": "Trade Republic",
       "bourseDirect": "PEA- und Wertpapierkonten synchronisieren",
-      "amundi": "PEE, PEG, PERCO, PER bei Amundi",
+      "degiro": "DEGIRO-Wertpapierkonto synchronisieren",
       "finary": "Aus Finary importieren",
-      "manual": "Konto manuell erstellen"
+      "manual": "Konto manuell erstellen",
+      "amundi": "PEE, PEG, PERCO, PER bei Amundi"
     }
   },
   "sync": {
@@ -428,10 +429,10 @@
     "banks": {
       "title": "Banken",
       "search": "Bank suchen",
+      "country": "Land",
+      "countriesLoadError": "Nicht alle Länder konnten geladen werden — nur Frankreich verfügbar.",
       "searchPlaceholder": "z. B. BNP Paribas...",
       "searchError": "Die Bankensuche ist derzeit nicht möglich.",
-      "proBadge": "Pro",
-      "proBadgeTitle": "Geschäftskonto — diese Bank richtet sich nur an Geschäftskunden",
       "connected": "Aktive Verbindungen",
       "noConnections": "Keine Bankverbindungen",
       "connect": "Verbinden",
@@ -443,7 +444,9 @@
       "callbackDone": "Konten synchronisiert!",
       "callbackError": "Synchronisierungsfehler",
       "initiateError": "Verbindung fehlgeschlagen",
-      "psd2ScopeNote": "Enable Banking synchronisiert nur Girokonten (PSD2-Einschränkung). Für PEA, Lebensversicherung, Sparkonten: nutze Trade Republic, Boursobank, Finary oder füge sie manuell hinzu."
+      "psd2ScopeNote": "Enable Banking synchronisiert nur Girokonten (PSD2-Einschränkung). Für PEA, Lebensversicherung, Sparkonten: nutze Trade Republic, Boursobank, Finary oder füge sie manuell hinzu.",
+      "proBadge": "Pro",
+      "proBadgeTitle": "Geschäftskonto — diese Bank richtet sich nur an Geschäftskunden"
     },
     "tr": {
       "title": "Trade Republic",
@@ -602,6 +605,57 @@
         "serverError": "BoursoBank-Serverfehler. Bitte versuche es erneut."
       }
     },
+    "degiro": {
+      "title": "DEGIRO",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "totpCode": "Authenticator-Code",
+      "connect": "Verbinden",
+      "sync": "Synchronisieren",
+      "clearSession": "Trennen",
+      "noSession": "Keine aktive Sitzung",
+      "sessionActive": "Aktive Sitzung",
+      "reauthRequired": "Erneute Anmeldung erforderlich",
+      "lastSyncedAt": "Zuletzt synchronisiert am",
+      "totpPrompt": "Gib den 6-stelligen Code aus deiner Authenticator-App ein",
+      "errors": {
+        "tooManyAttempts": "Zu viele Versuche. Bitte warte einen Moment.",
+        "invalidCredentials": "Ungültige Zugangsdaten.",
+        "invalidTotpCode": "Ungültiger oder abgelaufener Authenticator-Code.",
+        "sessionExpired": "Sitzung abgelaufen. Bitte verbinde dich erneut.",
+        "serverError": "DEGIRO-Serverfehler. Bitte versuche es erneut."
+      }
+    },
+    "bourseDirect": {
+      "title": "Bourse Direct",
+      "login": "Login",
+      "password": "Passwort",
+      "otpCode": "6-stelliger Sicherheitscode",
+      "otpPrompt": "Gib den von Bourse Direct gesendeten Code ein. Dieses Gerät wird nicht als vertrauenswürdig markiert.",
+      "connect": "Verbinden",
+      "connecting": "Verbindung wird hergestellt…",
+      "validate": "Code bestätigen",
+      "validating": "Code wird geprüft…",
+      "sync": "Synchronisieren",
+      "queued": "Synchronisierung in Warteschlange…",
+      "syncing": "Synchronisierung läuft…",
+      "syncSuccess": "Portfolio synchronisiert.",
+      "clearSession": "Trennen",
+      "noSession": "Keine aktive Sitzung",
+      "sessionActive": "Aktive Sitzung",
+      "scope": "Synchronisiert Positionen, Einstandspreis, Kurs, Bewertung und Bargeld für PEA- und Wertpapierkonten.",
+      "errors": {
+        "tooManyAttempts": "Zu viele Versuche. Bitte warten.",
+        "invalidCredentials": "Ungültige Bourse-Direct-Zugangsdaten.",
+        "invalidCode": "Ungültiger oder abgelaufener Sicherheitscode. Anmeldung erneut starten.",
+        "authAttemptExpired": "Der Anmeldeversuch ist abgelaufen. Anmeldung erneut starten.",
+        "sessionExpired": "Die Bourse-Direct-Sitzung ist abgelaufen. Bitte erneut verbinden.",
+        "portfolioIncomplete": "Bourse Direct hat ein unvollständiges Portfolio geliefert. Deine vorhandenen Daten wurden nicht verändert.",
+        "formatChanged": "Bourse Direct hat sein Portfolioformat geändert. Deine vorhandenen Daten wurden nicht verändert.",
+        "invalidData": "Bourse Direct hat widersprüchliche Portfoliodaten geliefert. Deine vorhandenen Daten wurden nicht verändert.",
+        "serverError": "Bourse Direct konnte nicht erreicht werden. Bitte erneut versuchen."
+      }
+    },
     "amundi": {
       "title": "Amundi",
       "login": "Benutzername",
@@ -634,36 +688,6 @@
         "formatChanged": "Das Format der Amundi-Website hat sich geändert. Ihre vorhandenen Daten wurden beibehalten.",
         "invalidData": "Amundi hat inkonsistente Daten zurückgegeben. Ihre vorhandenen Daten wurden beibehalten.",
         "serverError": "Amundi ist nicht erreichbar. Bitte erneut versuchen."
-      }
-    },
-    "bourseDirect": {
-      "title": "Bourse Direct",
-      "login": "Login",
-      "password": "Passwort",
-      "otpCode": "6-stelliger Sicherheitscode",
-      "otpPrompt": "Gib den von Bourse Direct gesendeten Code ein. Dieses Gerät wird nicht als vertrauenswürdig markiert.",
-      "connect": "Verbinden",
-      "connecting": "Verbindung wird hergestellt…",
-      "validate": "Code bestätigen",
-      "validating": "Code wird geprüft…",
-      "sync": "Synchronisieren",
-      "queued": "Synchronisierung in Warteschlange…",
-      "syncing": "Synchronisierung läuft…",
-      "syncSuccess": "Portfolio synchronisiert.",
-      "clearSession": "Trennen",
-      "noSession": "Keine aktive Sitzung",
-      "sessionActive": "Aktive Sitzung",
-      "scope": "Synchronisiert Positionen, Einstandspreis, Kurs, Bewertung und Bargeld für PEA- und Wertpapierkonten.",
-      "errors": {
-        "tooManyAttempts": "Zu viele Versuche. Bitte warten.",
-        "invalidCredentials": "Ungültige Bourse-Direct-Zugangsdaten.",
-        "invalidCode": "Ungültiger oder abgelaufener Sicherheitscode. Anmeldung erneut starten.",
-        "authAttemptExpired": "Der Anmeldeversuch ist abgelaufen. Anmeldung erneut starten.",
-        "sessionExpired": "Die Bourse-Direct-Sitzung ist abgelaufen. Bitte erneut verbinden.",
-        "portfolioIncomplete": "Bourse Direct hat ein unvollständiges Portfolio geliefert. Deine vorhandenen Daten wurden nicht verändert.",
-        "formatChanged": "Bourse Direct hat sein Portfolioformat geändert. Deine vorhandenen Daten wurden nicht verändert.",
-        "invalidData": "Bourse Direct hat widersprüchliche Portfoliodaten geliefert. Deine vorhandenen Daten wurden nicht verändert.",
-        "serverError": "Bourse Direct konnte nicht erreicht werden. Bitte erneut versuchen."
       }
     }
   },

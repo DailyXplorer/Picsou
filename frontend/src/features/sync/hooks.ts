@@ -8,6 +8,7 @@ import {
   finaryApi,
   boursoApi,
   bourseDirectApi,
+  degiroApi,
   amundiApi,
 } from './api'
 import type {
@@ -24,10 +25,12 @@ import type {
 export const syncKeys = {
   all: ['sync'] as const,
   banks: () => [...syncKeys.all, 'banks'] as const,
-  institutions: (q: string) => [...syncKeys.all, 'institutions', q] as const,
+  institutions: (q: string, country: string) => [...syncKeys.all, 'institutions', q, country] as const,
+  countries: () => [...syncKeys.all, 'countries'] as const,
   tr: () => [...syncKeys.all, 'tr'] as const,
   bourso: () => [...syncKeys.all, 'bourso'] as const,
   bourseDirect: () => [...syncKeys.all, 'bourse-direct'] as const,
+  degiro: () => [...syncKeys.all, 'degiro'] as const,
   amundi: () => [...syncKeys.all, 'amundi'] as const,
   exchanges: () => [...syncKeys.all, 'exchanges'] as const,
   wallets: () => [...syncKeys.all, 'wallets'] as const,
@@ -47,11 +50,20 @@ export function useBankSyncStatus() {
   })
 }
 
-export function useSearchInstitutions(query: string) {
+export function useSearchInstitutions(query: string, country: string) {
   return useQuery({
-    queryKey: syncKeys.institutions(query),
-    queryFn: () => bankSyncApi.searchInstitutions(query),
+    queryKey: syncKeys.institutions(query, country),
+    queryFn: () => bankSyncApi.searchInstitutions(query, country),
     enabled: query.length >= 2,
+  })
+}
+
+/** Countries the active bank-sync provider covers, for the country picker. staleTime mirrors the backend's own 6h cache TTL. */
+export function useBankCountries() {
+  return useQuery({
+    queryKey: syncKeys.countries(),
+    queryFn: bankSyncApi.listCountries,
+    staleTime: 6 * 60 * 60 * 1000,
   })
 }
 
@@ -236,6 +248,67 @@ export function useSyncBourso() {
       queryClient.invalidateQueries({ queryKey: syncKeys.bourso() })
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// DEGIRO
+// ---------------------------------------------------------------------------
+
+export function useDegiroSessionStatus() {
+  return useQuery({
+    queryKey: syncKeys.degiro(),
+    queryFn: degiroApi.getStatus,
+    staleTime: 30_000,
+  })
+}
+
+export function useInitiateDegiroAuth() {
+  return useMutation({
+    mutationFn: ({ username, password }: { username: string; password: string }) =>
+      degiroApi.initiateAuth(username, password),
+  })
+}
+
+export function useCompleteDegiroAuth() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ processId, code }: { processId: string; code: string }) =>
+      degiroApi.completeAuth(processId, code),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.degiro() })
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+export function useSyncDegiro() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => degiroApi.sync(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.degiro() })
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    // A sync that meets an expired session flips the stored status to
+    // REAUTH_REQUIRED server-side. Without invalidating on failure too, the
+    // cached status stays "active" until it goes stale and the UI keeps
+    // offering a Sync button that can only fail again.
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.degiro() })
+    },
+  })
+}
+
+export function useClearDegiroSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => degiroApi.clearSession(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.degiro() })
     },
   })
 }

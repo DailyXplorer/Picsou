@@ -49,6 +49,7 @@
 | 2026-07-21 | [Bourse Direct isolated browser sidecar and atomic complete snapshots](./decisions/2026-07-21-bourse-direct-isolated-atomic-sync.md) | Active |
 | 2026-07-19 | [Interactive Brokers via the Flex Web Service (read-only, EOD)](./decisions/2026-07-19-ibkr-flex-web-service.md) | Active |
 | 2026-08-01 | [Value assets from the last known price rather than not at all](./decisions/2026-08-01-last-known-price-fallback.md) | Active |
+| 2026-08-05 | [DEGIRO: session-only, no stored TOTP secret](./decisions/2026-08-05-degiro-session-only-no-stored-totp.md) | Active |
 | 2026-08-09 | [Amundi Épargne Salariale through an isolated browser sidecar](./decisions/2026-08-09-amundi-epargne-salariale-sidecar.md) | Active |
 
 ## Feature notes
@@ -66,6 +67,7 @@
 | Trade Republic | 2026-07-07 | [trade-republic.md](./features/trade-republic.md) |
 | Bourse Direct | 2026-07-21 | [bourse-direct.md](./features/bourse-direct.md) |
 | Interactive Brokers (IBKR) sync | 2026-07-19 | [ibkr-sync.md](./features/ibkr-sync.md) |
+| DEGIRO sync | 2026-08-05 | [degiro-sync.md](./features/degiro-sync.md) |
 | Amundi Épargne Salariale sync | 2026-08-09 | [amundi-epargne-salariale.md](./features/amundi-epargne-salariale.md) |
 | Trade Republic — Holdings deduplication | 2026-05-18 | [trade-republic-holding-deduplication.md](./features/trade-republic-holding-deduplication.md) |
 | ISIN → Ticker conversion | 2026-04-13 | [ISIN_TO_TICKER_CONVERSION.md](./features/ISIN_TO_TICKER_CONVERSION.md) |

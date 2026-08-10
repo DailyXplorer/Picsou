@@ -15,7 +15,8 @@ com.picsou/
 │                   BalanceSnapshot, Goal, GoalManualContribution, GoalContributor,
 │                   Debt, RealEstateMetadata, WalletAddress;
 │                   integrations: Requisition, TradeRepublicSession, CryptoExchangeSession,
-│                   FinarySession, BoursoSession, BourseDirectSession, AmundiSession,
+│                   FinarySession, BoursoSession, BourseDirectSession, DegiroSession,
+│                   AmundiSession,
 │                   PriceSnapshot;
 │                   identity & sharing: AppUser, FamilyMember, UserRole, SharingSettings,
 │                   SharingLevel, SharedResource, UserMfa, UserMfaRecoveryCode,
@@ -28,7 +29,8 @@ com.picsou/
 │                   SchedulerService;
 │                   integrations: SyncService, TradeRepublicSyncService,
 │                   CryptoExchangeSyncService, WalletSyncService, BoursoSyncService,
-│                   BourseDirectSyncService, AmundiSyncService,
+│                   BourseDirectSyncService, DegiroSyncService, DegiroSessionStatusWriter,
+│                   AmundiSyncService,
 │                   FinaryImportService, FinaryApiSyncService;
 │                   identity & family: UserContext, FamilyService, FamilyViewService,
 │                   MfaService, PersistentSessionService, ReAuthService;
@@ -37,16 +39,17 @@ com.picsou/
 │                   EnableBankingKeyPairService
 ├── controller/     REST controllers under /api/ — auth, mfa, sessions, family,
 │                   accounts, transactions, holdings, goals, debts, dashboard, history,
-│                   sync, tr, bourso, bourse-direct, amundi, crypto-exchange, wallet, finary-import,
-│                   finary-api-sync, setup, admin, admin-mfa, me-export, price
+│                   sync, tr, bourso, bourse-direct, degiro, amundi, crypto-exchange, wallet,
+│                   finary-import, finary-api-sync, setup, admin, admin-mfa, me-export, price
 ├── dto/            Request/response records (records are the convention)
 ├── port/           Port interfaces (BankConnectorPort, PriceProviderPort,
 │                   TradeRepublicPort, CryptoExchangePort, WalletPort, BoursoPort,
-│                   BourseDirectPort, AmundiPort)
+│                   BourseDirectPort, DegiroPort, AmundiPort)
 ├── adapter/        Port implementations + util/BitcoinKeyUtils
 │   ├── EnableBankingBankConnector (bank sync)
 │   ├── PowensBankConnector (Powens / Budget Insight — experimental, disabled in 1.0.0)
 │   ├── BoursoAdapter (BoursoBank — disabled in 1.0.0)
+│   ├── DegiroAdapter (DEGIRO — compte-titres sync; requires `degiro-auth` uncommented in docker-compose.yml)
 │   ├── CoinGeckoPriceProvider, YahooFinancePriceProvider (prices)
 │   ├── OpenFigiIsinConverter (ISIN → Yahoo ticker)
 │   ├── TradeRepublicAdapter (broker)
@@ -246,6 +249,7 @@ Computed on the fly from `Debt` (principal, rate, term, fees) — no per-month r
 | Bourse Direct | PEA/CTO sync via internal Python sidecar | `BOURSE_DIRECT_AUTH_URL` |
 | Amundi Épargne Salariale | PEE/PEG/PERCO/PER sync via internal Python sidecar | `AMUNDI_AUTH_URL` |
 | BoursoBank | Bank sync via Python sidecar (**disabled in 1.0.0**) | `BOURSO_AUTH_URL` |
+| DEGIRO | Compte-titres sync via internal Python sidecar (sidecar off by default — uncomment in `docker-compose.yml`) | `DEGIRO_AUTH_URL` |
 | Binance | Crypto exchange balances | Via CryptoExchangePort |
 | Meria | Crypto exchange balances (wallets + staking + lending) | Via CryptoExchangePort |
 | CoinGecko | Crypto prices (free) | No config |
