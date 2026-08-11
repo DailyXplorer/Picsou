@@ -1,6 +1,6 @@
 # Feature: Navigation (Sidebar + Mobile Bottom Nav)
 
-> Last updated: 2026-07-12
+> Last updated: 2026-08-10
 
 ## Context
 
@@ -35,6 +35,14 @@ A fixed bottom bar with the Picsou logo centered and 2 nav items on each side:
 - Active state: `ring-1 ring-border` + foreground icon color
 - Safe area padding for iOS notch: `env(safe-area-inset-bottom)`
 - `AppLayout` adds `pb-20 md:pb-0` on main content to avoid overlap
+
+### Shell shape
+
+Both shells follow the [radius ladder](../conventions/design-system.md#1-shape--the-radius-ladder). The desktop
+`<nav>` is a full-height floating surface, so it takes the **surface** rung (`rounded-4xl`) and
+matches the cards beside it; the mobile bar is a compact 64px dock, so it takes the **panel** rung
+(`rounded-2xl`). Nav rows inherit the **row** rung from the `Item` primitive — don't restate
+`rounded-xl` on them.
 
 ### Active state (shared pattern)
 
