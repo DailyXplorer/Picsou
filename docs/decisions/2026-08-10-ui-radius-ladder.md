@@ -123,9 +123,10 @@ should this box have?" from a judgment call into a lookup.
 
 - **`components/ui/` is hand-edited.** [`CODING_RULES.md`](../CODING_RULES.md) rule 1 forbids editing
   primitives *off their scale*; these edits stay on the `--radius`-derived scale and are an app-wide
-  standard, which [`conventions/frontend.md`](../conventions/frontend.md) already sanctions
-  ("App-wide primitive standards … may live there when the change deliberately applies across the
-  whole application; document those standards in this file"). The cost is that
+  standard, which [`conventions/frontend.md`](../conventions/frontend.md) sanctions — "App-wide
+  primitive standards (control sizing, the radius ladder) may live there when the change
+  deliberately applies across the whole application and is ratified in an ADR; document those
+  standards in `design-system.md`" — a sentence this ADR is the ratification for. The cost is that
   `shadcn add button` will reset `button.tsx` to `rounded-md` and the tier must be re-applied.
 - **Divergence from stock shadcn.** The previous ADR counted "matches the shadcn defaults" as a pro.
   We give that up for twelve files. The theme already diverges (custom `--radius` multipliers,

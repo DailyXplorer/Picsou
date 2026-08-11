@@ -1,6 +1,13 @@
 # Feature: UI radius ladder (shadcn theme radius)
 
 > Last updated: 2026-08-10
+>
+> **Status:** the ladder below is ratified by
+> [ADR 2026-08-10](../decisions/2026-08-10-ui-radius-ladder.md) and applied to the codebase by a
+> separate sweep (split out per [`CODING_RULES.md`](../CODING_RULES.md) rule 0). Until that sweep
+> lands, the primitives named under *Key files* still carry their pre-ladder radii — `button.tsx` is
+> `rounded-md`, `dialog.tsx` is `rounded-xl` — so read this note as the target, not as a description
+> of `main`.
 
 ## Context
 

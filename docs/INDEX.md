@@ -119,6 +119,7 @@
 
 | Topic | File |
 |-------|------|
+| **Design system** (shape, color, type, spacing, components, states) | [design-system.md](./conventions/design-system.md) |
 | REST API | [api-rest.md](./conventions/api-rest.md) |
 | Error handling | [error-handling.md](./conventions/error-handling.md) |
 | Testing | [testing.md](./conventions/testing.md) |

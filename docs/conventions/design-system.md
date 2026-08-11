@@ -259,7 +259,10 @@ delete.
 - **Focus is centralized.** `index.css` applies a `:focus-visible` outline + ring to every
   interactive role. Do **not** add one-off `focus:*` / `focus-visible:*` / `focus-within:*` classes —
   the only sanctioned exception is an element that must *appear* on focus, like the setup skip link.
-- Hit targets follow the control rhythm (`h-10`, icon buttons ≥ `size-9`).
+- Hit targets follow the control rhythm: `h-10` for text controls, and for icon buttons any rung of
+  the `Button` `size="icon"` family (`icon-xs` 32px … `icon-lg` 44px). All of them clear the 24px
+  WCAG 2.1 AA minimum (2.5.8); reserve `icon-xs` for dense toolbars and prefer `icon` (40px) for
+  anything a user hits often or on touch.
 - Icon-only buttons need `aria-label` **and** `title`. Decorative icons need `aria-hidden="true"`.
 - Toggles use `aria-pressed`; segmented radio groups use `role="radiogroup"` + `role="radio"` +
   `aria-checked`; live regions use `aria-live="polite"`; errors use `role="alert"`.
