@@ -55,8 +55,20 @@ its own, ratified for its own sake, or drop the deviation.
 | **Control** | `rounded-lg` | 10 | button, input, select, textarea, segment item, menu item, OTP slot, icon tile (`size-8`…`size-12`), single-line code-copy value |
 | **Micro** | `rounded-md` | 8 | skeleton default, `size-6` tile, treemap cell, small overlay chip |
 | **Hairline** | `rounded-sm` | 6 | checkbox, `size-4` logo |
-| **Circular** | `rounded-full` | — | avatar, switch, badge, status dot, progress bar, step bubble, color swatch, decorative empty-state icon bubble |
+| **Circular** | `rounded-full` | — | *identity* avatar (see below), switch, badge, status dot, progress bar, step bubble, color swatch, decorative empty-state icon bubble |
 | **Chart mark** | `rounded-[2px]` | 2 | chart swatches, legend squares, thin bar segments, tooltip arrow (≤ 10px marks) |
+
+**Two clarifications on that table.**
+
+*Chart marks are the one sanctioned arbitrary value.* `rounded-[2px]` is deliberate, not drift:
+below ~10px every rung on the scale reads as a circle, so a mark that small needs a value off it.
+It is the only `rounded-[…]` allowed in app code.
+
+*Avatars split by what they hold.* An avatar standing for a **person** is circular — that is the
+`Avatar` primitive's default, so inherit it. An avatar used as a **brand or logo tile** takes the
+icon-tile rung instead (`rounded-sm` at `size-4`, `rounded-md` at `size-6`, `rounded-lg` at
+`size-8`…`size-12`), because a logo clipped to a circle loses its mark. The codebase does not apply
+this split consistently yet — see §11.
 
 **The ladder is concentric.** At every nesting step, the parent's radius = the child's radius + the
 padding between them. `TabsList` is `p-1` (4px) at `rounded-xl` (14) holding a `rounded-lg` (10)
@@ -326,6 +338,12 @@ Documented so the next agent doesn't propagate them as if they were the rule:
   appear (18). New work uses `emerald`.
 - **`components/ui/sidebar.tsx` is dead** — no import anywhere in the app, still on stock shadcn
   radii. Apply the ladder only if it is ever wired up.
+- **Avatar shape is split and not yet reconciled.** Person avatars are circular in `MembersSection`
+  (`size-9 rounded-full`) but square in `AppSidebar`'s profile rows (`size-10`/`size-8 rounded-lg`,
+  `size-6 rounded-md`) — deliberate there, since they sit beside nav icon tiles of the same size.
+  Conversely `AccountCard` renders *bank logos* through a circular `Avatar` while `AddAccountModal`
+  renders the same logos square (`size-4 rounded-sm`). Follow §1 for new work; normalising the four
+  existing sites is a visible design change, not a radius fix, so it is deliberately out of scope.
 - **`ErrorState` ships hardcoded English defaults** (`'Error'`, `'Retry'`). Pass translated props
   until it is fixed.
 - **There is no shared `Select` component.** Native `<select>` elements are styled with the control
@@ -333,7 +351,7 @@ Documented so the next agent doesn't propagate them as if they were the rule:
   `PropertyMetadataForm` hold it as a module-local `selectControlClassName`/`selectClassName`, while
   `AddAccountModal` ×2, `FinaryTab` ×2 and `AddPropertyModal` repeat it literally:
 
-  ```
+  ```text
   h-10 w-full rounded-lg border border-input bg-input/20 px-4 text-sm outline-none dark:bg-input/30
   ```
 
@@ -360,8 +378,9 @@ grep -rnE "(text|bg|border)-(gray|slate|zinc|neutral|stone)-[0-9]" src --include
 # Unbounded transitions in app code (should be empty)
 grep -rn "transition-all" src/pages src/components/shared src/components/layout --include='*.tsx'
 
-# Pilled text controls (each hit must be an avatar/switch/badge/dot/swatch)
-grep -rn "rounded-full" src/pages src/components/shared --include='*.tsx'
+# Pilled text controls (each hit must be an avatar/switch/badge/dot/swatch).
+# Scan all of src except the generated primitives, which own the sanctioned pills.
+grep -rn "rounded-full" src --include='*.tsx' | grep -v "^src/components/ui/"
 
 # Inline style objects (each hit must be a genuinely dynamic value)
 grep -rn "style={{" src/pages src/components/shared --include='*.tsx'

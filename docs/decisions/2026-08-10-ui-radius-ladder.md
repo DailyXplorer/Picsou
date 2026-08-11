@@ -102,7 +102,7 @@ already provides.
   - Concentric by construction: container radius = item radius + padding at each nesting step
   - Keeps the card signature and the no-pills principle from the previous ADR intact
 - **Cons**:
-  - Requires on-scale edits to eight `components/ui/` primitives
+  - Requires on-scale edits to twelve `components/ui/` primitives
   - Diverges from stock shadcn defaults, so a future `shadcn add` will reset those files
 
 ## Reasoning
@@ -128,7 +128,7 @@ should this box have?" from a judgment call into a lookup.
   whole application; document those standards in this file"). The cost is that
   `shadcn add button` will reset `button.tsx` to `rounded-md` and the tier must be re-applied.
 - **Divergence from stock shadcn.** The previous ADR counted "matches the shadcn defaults" as a pro.
-  We give that up for eight files. The theme already diverges (custom `--radius` multipliers,
+  We give that up for twelve files. The theme already diverges (custom `--radius` multipliers,
   `rounded-4xl` cards, `h-10`/`px-8` control sizing), so the marginal cost is small.
 - **14 vs 18 on a nested box is a judgment call.** The row/panel split is keyed on whether the box
   is one control tall (row) or a multi-line block (panel). Borderline cases exist; a 4px difference

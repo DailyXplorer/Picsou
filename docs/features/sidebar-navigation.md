@@ -53,7 +53,9 @@ Active nav items keep Lucide icons stroke-only. The item gets `ring-1 ring-borde
 - `frontend/src/components/layout/AppSidebar.tsx` — desktop sidebar with `NavItem`, admin profile switcher, and bottom-pinned account/settings access
 - `frontend/src/components/layout/MobileBottomNav.tsx` — mobile bottom navbar
 - `frontend/src/components/layout/AppLayout.tsx` — renders sidebar (desktop) + bottom nav (mobile)
-- `frontend/src/components/ui/item.tsx` — `Item` / `ItemMedia` / `ItemContent` primitives (do not edit)
+- `frontend/src/components/ui/item.tsx` — `Item` / `ItemMedia` / `ItemContent` primitives. Generated:
+  don't edit, except for the app-wide radius ladder ratified in
+  [ADR 2026-08-10](../decisions/2026-08-10-ui-radius-ladder.md), which sets `Item` to the row rung
 - `frontend/src/i18n/locales/{fr,en}.json` — `nav.*` keys for labels
 - `frontend/src/assets/horizontal-white-picsou.svg` — horizontal wordmark logo used at the top of the desktop sidebar
 - `frontend/src/assets/picsou_logo_white.svg` — icon-only logo used in mobile nav

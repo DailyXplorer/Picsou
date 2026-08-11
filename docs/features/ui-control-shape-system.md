@@ -20,7 +20,9 @@ whole scale from it as multiples, which lands on an evenly-spaced ladder:
 |-------|----|----|----|----|----|----|----|
 | px    | 6  | 8  | 10 | 14 | 18 | 22 | 26 |
 
-Elements pick a rung by **what they are**; they never hardcode a pixel radius or a pill shape:
+Elements pick a rung by **what they are**; they never hardcode a pixel radius or a pill shape. The
+one exception is the chart-mark row below: under ~10px every rung reads as a circle, so
+`rounded-[2px]` is sanctioned there and nowhere else.
 
 | Tier | Class | ≈ px | Applies to |
 |------|-------|------|-----------|
@@ -30,7 +32,7 @@ Elements pick a rung by **what they are**; they never hardcode a pixel radius or
 | **Control** | `rounded-lg` | 10 | button, input, select, textarea, segment item, menu item, OTP slot, icon tile (`size-8`…`size-12`), single-line code-copy value |
 | **Micro** | `rounded-md` | 8 | skeleton default, `size-6` tile, treemap cell, small overlay chip |
 | **Hairline** | `rounded-sm` | 6 | checkbox, `size-4` logo |
-| **Circular** | `rounded-full` | — | avatar, switch, badge, status dot, progress bar, step bubble, color swatch, decorative empty-state icon bubble |
+| **Circular** | `rounded-full` | — | *identity* avatar (see the design system), switch, badge, status dot, progress bar, step bubble, color swatch, decorative empty-state icon bubble |
 | **Chart mark** | `rounded-[2px]` | 2 | chart swatches, legend squares, thin bar segments, tooltip arrow (≤ 10px marks) |
 
 The ladder is **concentric**: at every nesting step, the parent's radius equals the child's radius

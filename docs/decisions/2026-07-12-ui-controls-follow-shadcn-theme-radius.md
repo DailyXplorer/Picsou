@@ -2,7 +2,7 @@
 
 > Date: 2026-07-12
 > Status: ❌ Superseded by [2026-08-10 — One radius ladder for every surface](./2026-08-10-ui-radius-ladder.md)
-
+>
 > **What changed:** the principle below still stands — shape derives from `--radius`, `rounded-full`
 > is reserved for naturally circular elements, and app code never re-shapes a control. Only the
 > specific rungs changed: controls are now `rounded-lg` (not `rounded-md`) and their containers
