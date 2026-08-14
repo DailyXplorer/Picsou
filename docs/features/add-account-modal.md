@@ -1,6 +1,6 @@
 # Feature: Add Account Modal
 
-> Last updated: 2026-07-07
+> Last updated: 2026-08-13
 
 ## Context
 
@@ -73,6 +73,31 @@ Validation is layered:
 
 This closed issue #9: a free-text code like `AMAT` used to throw a `RangeError` from
 `Intl.NumberFormat`, bubble to the root `ErrorBoundary`, and make the account unreachable/undeletable.
+
+### Bank field (manual form)
+
+The manual `AccountForm`'s provider field is a `BankPicker`: free text that also searches the
+institution catalog as you type. Picking a bank sets the field to the institution's name and
+sends its catalog id alongside, which is what lets the backend resolve a logo for an account no
+connector syncs — see [bank-logos.md](./bank-logos.md#the-bank-a-manual-account-names). A loan's
+lender field is the same control on the same form value: a loan's provider *is* its bank.
+
+It never blocks on the search. An unconfigured or failing catalog simply shows no suggestions,
+and the typed name is saved as before.
+
+### Account type labels
+
+`ACCOUNT_TYPES` and `accountTypeLabelKey()` (`frontend/src/lib/constants.ts`) are the only
+list of account types and the only way to get one's translation key. Five call sites used to
+carry their own copy — the two type dropdowns (this modal's manual form and its Finary mapping
+step), `AccountTypeBadge`, `HoldingsCard`, `PortfolioView` and `HoldingDetailModal` — and three
+of them derived the key from the type name (`type.toLowerCase()`, with special cases bolted on
+for `COMPTE_TITRES` and `REAL_ESTATE`).
+
+That derivation only held while every key was the lowercased value. Adding `LIVRET_A` broke it
+immediately: the badge beside the account name rendered the literal string
+`accountTypes.livret_a`. `constants.test.ts` now pins every type to a key that exists in all
+four locales, and the partial maps are gone.
 
 ### SyncPage integration
 

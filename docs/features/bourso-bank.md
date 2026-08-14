@@ -1,6 +1,6 @@
 # Feature: BoursoBank sync
 
-> Last updated: 2026-08-11
+> Last updated: 2026-08-13
 > Status: ✅ **Validated end-to-end against a live BoursoBank account**
 > (2026-08-11) — login, dashboard, PEA with 9 positions, reconciled exactly.
 > See "Verification boundaries" for what that run did and did not exercise.
@@ -32,12 +32,19 @@ why.
 | Imported | Not imported |
 |---|---|
 | Current accounts → `CHECKING` | Loans (`data-summary-loan`) |
-| Livrets, LEP → `SAVINGS` / `LEP` | Accounts BoursoBank aggregates from **other banks** |
+| Livrets → `LIVRET_A`, `LDDS`, `LEP`, `LIVRET_JEUNE`, `PEL`, `CEL`, else `SAVINGS` | Accounts BoursoBank aggregates from **other banks** |
 | PEA, PEA-PME → `PEA` | Transactions |
 | Compte-titres → `COMPTE_TITRES`, with positions | Orders, statements |
 
 **PEA-PME folds into `PEA`**: Picsou has no separate envelope for it, and the
 two share a tax regime and a reporting shape.
+
+**Each regulated passbook keeps its own type.** `account_type()` matches the
+label BoursoBank prints against `_SAVINGS_PATTERNS` (deaccented and uppercased
+first), in order, and falls back to `SAVINGS` for anything unmatched — a house
+passbook such as Livret Bourso+ is not a regulated product. The word boundaries
+are load-bearing: they are what keep "Livret Leplus" from reading as an LEP and
+"Livret Avenir" from reading as a Livret A.
 
 **Third-party accounts are deliberately excluded.** BoursoBank's dashboard also
 lists accounts it aggregates from other banks, tagged with their real bank in
@@ -295,6 +302,14 @@ See [the ADR](../decisions/2026-08-11-boursobank-httpx-sidecar.md).
   shipped enabled. The migration header says so.
 - **The error-code CHECK constraint must track `BoursoErrorCode`.** A code
   missing from it turns a diagnosable failure into a 500 at write time.
+- **`AccountPayload.type` is `accounts_parser.AccountKind`, not its own list.**
+  A kind the parser emits but the contract omits is not a type quibble: pydantic
+  rejects that account and `_collect_accounts` fails the *entire* sync, so one
+  unrecognised passbook loses the whole portfolio. That is how the regulated
+  passbooks first shipped — `_SAVINGS_PATTERNS` learned `LDDS` while the model
+  still allowed five kinds. The alias is single-sourced in the parser and
+  `test_every_kind_the_parser_emits_is_in_the_sidecar_contract` asserts the two
+  agree, because CI runs the tests but no type checker.
 
 ## Verification boundaries
 
@@ -335,8 +350,11 @@ two-section payload shape, and the existence of a separate ISIN feed.
 - the **ISIN-less fallback** and its **collision refusal** — every line on that
   account carried a valid ISIN;
 - a **livret** and a **compte-titres ordinaire** — the account held a current
-  account and a PEA only, so `SAVINGS`, `LEP` and `COMPTE_TITRES` are mapped but
-  unexercised against real markup;
+  account and a PEA only, so `COMPTE_TITRES` and every passbook type
+  (`SAVINGS`, `LEP`, `LIVRET_A`, `LDDS`, `LIVRET_JEUNE`, `PEL`, `CEL`) are
+  mapped but unexercised against *live* markup. The LDDS the parser tests assert
+  on comes from `DASHBOARD_HTML`, which is transcribed from the `bourso-api`
+  reference implementation rather than captured from the validated account;
 - a **foreign-currency line**, which is why the EUR guard is written to refuse
   rather than convert.
 
