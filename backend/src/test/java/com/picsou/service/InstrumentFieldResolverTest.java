@@ -4,6 +4,8 @@ import com.picsou.adapter.OpenFigiIsinConverter;
 import com.picsou.model.TransactionType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -72,5 +74,16 @@ class InstrumentFieldResolverTest {
             resolver.resolve("aapl", null, TransactionType.SELL);
 
         assertThat(r.description()).isEqualTo("Vente AAPL");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "DIVIDEND, Dividende AAPL",
+        "FEE, Frais AAPL"
+    })
+    void fallbackDescription_reflectsTransactionType(TransactionType type, String expectedDescription) {
+        InstrumentFieldResolver.ResolvedInstrument r = resolver.resolve("aapl", null, type);
+
+        assertThat(r.description()).isEqualTo(expectedDescription);
     }
 }
