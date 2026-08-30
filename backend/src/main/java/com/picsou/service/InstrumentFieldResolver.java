@@ -6,8 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * Resolves the instrument fields (ticker, display name, description) of a BUY/SELL
- * transaction from a raw ticker-or-ISIN input. Single source of truth shared by the
+ * Resolves the instrument fields (ticker, display name, description) of a transaction
+ * carrying a ticker or ISIN. Single source of truth shared by the
  * manual-entry service and the CSV importer, so an ISIN row and the equivalent ticker
  * row always collapse to the same position.
  *
@@ -22,19 +22,18 @@ public class InstrumentFieldResolver {
 
     private final OpenFigiIsinConverter openFigiIsinConverter;
 
-    /** Resolved instrument fields for a BUY/SELL transaction. */
     public record ResolvedInstrument(String ticker, String name, String description) {}
 
     /**
-     * Resolves the instrument fields for a BUY/SELL transaction.
+     * Resolves the instrument fields for a transaction carrying a ticker or ISIN.
      *
      * @param tickerOrIsin the raw ticker or ISIN input
      * @param userName     an optional user-supplied display name (wins over the resolved one)
-     * @param side         the transaction side, used to build the fallback description
+     * @param type         the transaction type, used to build the fallback description
      * @return the resolved fields, or {@code null} when the input is blank (a cash transaction,
      *         for which the caller keeps its own description/ticker/name).
      */
-    public ResolvedInstrument resolve(String tickerOrIsin, String userName, TransactionType side) {
+    public ResolvedInstrument resolve(String tickerOrIsin, String userName, TransactionType type) {
         if (tickerOrIsin == null || tickerOrIsin.isBlank()) {
             return null; // cash transaction — no instrument
         }
@@ -54,9 +53,16 @@ public class InstrumentFieldResolver {
             ? userName.trim()
             : resolvedName;
 
+        String fallbackLabel = type == null ? "Achat" : switch (type) {
+            case DEPOSIT, WITHDRAWAL, BUY -> "Achat";
+            case SELL -> "Vente";
+            case DIVIDEND -> "Dividende";
+            case FEE -> "Frais";
+        };
+
         String description = effectiveName != null
             ? effectiveName
-            : (side == TransactionType.SELL ? "Vente " : "Achat ") + resolvedTicker;
+            : fallbackLabel + " " + resolvedTicker;
 
         return new ResolvedInstrument(resolvedTicker, effectiveName, description);
     }

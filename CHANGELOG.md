@@ -191,6 +191,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Dividend and fee transactions no longer look like purchases.** When a ticker has
+  no supplied or resolved name, Picsou now derives the French fallback description
+  from the transaction type. `DIVIDEND` uses `Dividende` and `FEE` uses `Frais`,
+  while buy and sell labels stay unchanged (#108).
 - **Dropdown options were unreadable in dark mode.** Native `<select>` popups
   (account type, currency, bank country, CSV import mapping, property type…)
   don't honour a translucent background — the browser falls back to an opaque

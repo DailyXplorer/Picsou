@@ -1,6 +1,6 @@
 # Feature: Manual Transactions
 
-> Last updated: 2026-07-08
+> Last updated: 2026-08-31
 
 ## Context
 
@@ -62,7 +62,7 @@ On an investment account, the instrument field accepts **either** a Yahoo ticker
 
 - an ISIN entry and the equivalent ticker entry merge into a **single position** (the grouping key is the resolved ticker, not the raw input — this is what kills duplicate positions);
 - Yahoo pricing works (`YahooFinancePriceProvider` rejects raw ISINs);
-- the raw ISIN never surfaces in the transaction row — the service owns the `description` for BUY/SELL (see Gotchas).
+- the resolver owns the description when a ticker or ISIN is supplied. A successfully resolved ISIN is replaced by the Yahoo ticker and never appears in the row (see Gotchas).
 
 A user-supplied "Nom" always wins over the resolved name. The same logic runs for both add and edit (`addTransaction` and `updateTransaction` share `applyInstrumentFields`).
 
@@ -124,7 +124,7 @@ After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the 
 | `backend/src/main/java/com/picsou/model/TransactionType.java` | Enum (DEPOSIT, WITHDRAWAL, BUY, SELL, DIVIDEND, FEE) |
 | `backend/src/main/java/com/picsou/service/HoldingComputeService.java` | Derives holdings (qty, VWAP, **name**) from BUY/SELL transactions |
 | `backend/src/main/java/com/picsou/service/ManualTransactionService.java` | Orchestrates add/edit/delete + re-derivation; persists `fees`; delegates ISIN/ticker/description to `InstrumentFieldResolver` |
-| `backend/src/main/java/com/picsou/service/InstrumentFieldResolver.java` | Shared ISIN→ticker/name + BUY/SELL description builder (reused by the CSV importer) |
+| `backend/src/main/java/com/picsou/service/InstrumentFieldResolver.java` | Shared ISIN→ticker/name resolver and French fallback descriptions by transaction type (reused by the CSV importer) |
 | `backend/src/main/java/com/picsou/imports/TransactionAmountCalculator.java` | Single source of truth for the signed `amount` incl. fees |
 | `backend/src/main/resources/db/migration/V53__transaction_fees.sql` | Adds `transaction.fees` (folds into the PMP) |
 | `backend/src/main/java/com/picsou/adapter/OpenFigiIsinConverter.java` | `isIsin()` detection + `resolve()` ISIN→ticker+name (shared with bank sync) |
@@ -148,7 +148,7 @@ After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the 
 - **Investment account balance is NOT recomputed** from manual transactions. Only the holdings (positions) are derived. The account's `currentBalance` is set by the price scheduler (qty × live price). This is intentional for investment accounts.
 - **Synced transactions cannot be deleted**: The DELETE endpoint checks `isManual`. Attempting to delete a synced transaction returns 403.
 - **Holdings recomputation is full**: Every add/delete triggers a full re-derivation for that account (all tickers). This is fast in practice since investment accounts rarely have hundreds of tickers.
-- **The backend owns the investment description**: For BUY/SELL, `ManualTransactionService` sets the row `description` from the effective name, or `Achat {TICKER}` / `Vente {TICKER}` when no name exists — overriding whatever the client sent. This is what stops a raw ISIN (entered in the Ticker field with a blank Nom) from leaking into the transaction row. Cash transactions keep the client-supplied description.
+- **The backend owns ticker-based descriptions.** `ManualTransactionService` sets the row `description` from the effective name. If no name exists, it uses a French fallback matching the instrument transaction type (`Achat`, `Vente`, `Dividende`, or `Frais`) plus the ticker. This value replaces the client-supplied description. Cash transactions with no ticker keep the client-supplied description.
 
 ## Tests
 

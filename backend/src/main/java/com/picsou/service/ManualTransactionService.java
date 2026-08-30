@@ -117,9 +117,9 @@ public class ManualTransactionService {
     }
 
     /**
-     * Normalizes the instrument fields of a BUY/SELL transaction by delegating to
-     * {@link InstrumentFieldResolver}. No-op for cash transactions (they carry no ticker),
-     * preserving the caller's description.
+     * Normalizes the instrument fields of a transaction carrying a ticker or ISIN by
+     * delegating to {@link InstrumentFieldResolver}. No-op for cash transactions with no
+     * ticker, preserving the caller's description.
      */
     private void applyInstrumentFields(Transaction tx, TransactionRequest req) {
         InstrumentFieldResolver.ResolvedInstrument resolved =
