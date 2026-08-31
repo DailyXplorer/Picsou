@@ -155,7 +155,7 @@ After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the 
 
 - **Investment account balance is NOT recomputed** from manual transactions. Only the holdings (positions) are derived. The account's `currentBalance` is set by the price scheduler (qty × live price). This is intentional for investment accounts.
 - **Synced transactions cannot be deleted**: The DELETE endpoint checks `isManual`. Attempting to delete a synced transaction returns 403.
-- **Holdings recomputation is full**: Every add/delete triggers a full re-derivation for that account (all tickers). This is fast in practice since investment accounts rarely have hundreds of tickers.
+- **Holdings recomputation is full**: Every add, edit, or delete on a manual investment account triggers a full re-derivation for that account (all tickers). Synced accounts skip this step. This is fast in practice since investment accounts rarely have hundreds of tickers.
 - **The backend owns the investment description**: For BUY/SELL, `ManualTransactionService` sets the row `description` from the effective name, or `Achat {TICKER}` / `Vente {TICKER}` when no name exists — overriding whatever the client sent. This is what stops a raw ISIN (entered in the Ticker field with a blank Nom) from leaking into the transaction row. Cash transactions keep the client-supplied description.
 
 ## Tests
