@@ -178,6 +178,21 @@ class TransactionImportServiceTest {
     }
 
     @Test
+    void preview_syncedInvestmentAccount_throws() {
+        Account syncedCto = Account.builder()
+            .id(4L)
+            .type(AccountType.COMPTE_TITRES)
+            .currency("EUR")
+            .isManual(false)
+            .build();
+        when(accountRepository.findByIdAndMemberId(4L, 10L)).thenReturn(Optional.of(syncedCto));
+
+        assertThatThrownBy(() -> service.preview(4L, 10L, file(CSV)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("manual");
+    }
+
+    @Test
     void preview_foreignAccount_throws() {
         when(accountRepository.findByIdAndMemberId(99L, 10L)).thenReturn(Optional.empty());
 
