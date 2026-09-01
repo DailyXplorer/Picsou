@@ -156,6 +156,8 @@
     "transactionDate": "Fecha",
     "buy": "Compra",
     "sell": "Venta",
+    "dividend": "Dividendo",
+    "fee": "Comisión",
     "deposit": "Depósito",
     "withdrawal": "Retirada",
     "description": "Descripción",

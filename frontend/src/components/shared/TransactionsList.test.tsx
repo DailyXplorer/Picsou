@@ -1,12 +1,18 @@
 import '@testing-library/jest-dom'
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { TransactionsList } from './TransactionsList'
 import type { Transaction } from '@/types/api'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string) =>
+      ({
+        'accounts.buy': 'Achat',
+        'accounts.sell': 'Vente',
+        'accounts.dividend': 'Dividende',
+        'accounts.fee': 'Frais',
+      })[key] ?? key,
     i18n: { language: 'fr', resolvedLanguage: 'fr' },
   }),
 }))
@@ -51,5 +57,68 @@ describe('TransactionsList', () => {
 
     expect(screen.getByText(/2026/)).toBeInTheDocument()
     expect(screen.getByText(/2025/)).toBeInTheDocument()
+  })
+
+  it.each([
+    ['BUY', 'Achat'],
+    ['SELL', 'Vente'],
+    ['DIVIDEND', 'Dividende'],
+    ['FEE', 'Frais'],
+  ] satisfies [NonNullable<Transaction['txType']>, string][])(
+    'renders the %s fallback through frontend i18n',
+    (txType, label) => {
+      render(
+        <TransactionsList
+          transactions={[
+            transaction({
+              isManual: true,
+              txType,
+              ticker: 'AAPL',
+              description: 'AAPL',
+            }),
+          ]}
+        />,
+      )
+
+      expect(screen.getByText(`${label} AAPL`)).toBeInTheDocument()
+    },
+  )
+
+  it('keeps a provider description on synced transactions', () => {
+    render(
+      <TransactionsList
+        transactions={[
+          transaction({
+            txType: 'DIVIDEND',
+            ticker: 'AAPL',
+            description: 'Provider dividend payment',
+          }),
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('Provider dividend payment')).toBeInTheDocument()
+    expect(screen.queryByText('Dividende AAPL')).not.toBeInTheDocument()
+  })
+
+  it('searches the localized fallback description', () => {
+    render(
+      <TransactionsList
+        transactions={[
+          transaction({
+            isManual: true,
+            txType: 'DIVIDEND',
+            ticker: 'AAPL',
+            description: 'AAPL',
+          }),
+        ]}
+      />,
+    )
+
+    fireEvent.change(screen.getByPlaceholderText('common.search'), {
+      target: { value: 'Dividende' },
+    })
+
+    expect(screen.getByText('Dividende AAPL')).toBeInTheDocument()
   })
 })

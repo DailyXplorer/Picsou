@@ -88,7 +88,7 @@ class TransactionImportServiceTest {
     @Test
     void executeImport_savesRowsAndRecomputesOnce() {
         when(accountRepository.findByIdAndMemberId(2L, 10L)).thenReturn(Optional.of(pea()));
-        when(instrumentFieldResolver.resolve(any(), any(), any()))
+        when(instrumentFieldResolver.resolve(any(), any()))
             .thenReturn(new InstrumentFieldResolver.ResolvedInstrument("AAPL", "Apple", "Apple"));
 
         String token = service.preview(2L, 10L, file(CSV)).fileToken();
@@ -110,7 +110,7 @@ class TransactionImportServiceTest {
     @Test
     void executeImport_reportsPerRowErrorsAndStillImportsValidRows() {
         when(accountRepository.findByIdAndMemberId(2L, 10L)).thenReturn(Optional.of(pea()));
-        when(instrumentFieldResolver.resolve(any(), any(), any()))
+        when(instrumentFieldResolver.resolve(any(), any()))
             .thenReturn(new InstrumentFieldResolver.ResolvedInstrument("AAPL", "Apple", "Apple"));
 
         // second data row has a non-numeric quantity → skipped, first row imported
