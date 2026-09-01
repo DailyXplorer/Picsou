@@ -1,6 +1,6 @@
 # Feature: Manual Transactions
 
-> Last updated: 2026-08-31
+> Last updated: 2026-09-02
 
 ## Context
 
@@ -111,7 +111,9 @@ All sync services (`FinaryPersistenceHelper`, `BoursoSyncService`) now call `tra
 **Investment accounts (PEA, COMPTE_TITRES, CRYPTO):**
 - Date, BUY/SELL toggle, **Ticker ou ISIN** (a ticker like `IWDA.AS` or a 12-char ISIN like `IE00B4L5Y983`), Name (auto-filled from existing holdings when the ticker matches; otherwise resolved from the ISIN backend-side), Quantity, Price per unit, **Fees (optional, folded into the PMP)**, Total (read-only)
 
-The Transactions list shows a "Manuel" badge on manual entries and a delete button (only for manual entries).
+The Transactions list groups rows by booking date. Headings stay compact for a single-year list;
+when the visible list spans multiple calendar years, every heading includes its year. It also shows
+a manual-entry badge and a delete button, both only on manual entries.
 
 After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the `transactions`, `history`, `account`, and `dashboard` queries.
 
@@ -131,7 +133,7 @@ After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the 
 | `backend/src/main/java/com/picsou/controller/AccountController.java` | POST/DELETE `/accounts/{id}/transactions` |
 | `backend/src/main/java/com/picsou/repository/TransactionRepository.java` | `deleteByAccountIdAndIsManualFalse`, `sumAmountByAccountId`, `findByAccountIdAndTxTypeInOrderByDateAsc` |
 | `frontend/src/components/shared/AddTransactionModal.tsx` | Account-type-aware form modal |
-| `frontend/src/components/shared/TransactionsList.tsx` | Manuel badge + delete button |
+| `frontend/src/components/shared/TransactionsList.tsx` | Date grouping with unambiguous historical years, manual badge, and delete button |
 | `frontend/src/features/accounts/hooks.ts` | `useAddTransaction`, `useDeleteTransaction` |
 
 ## Technical choices
