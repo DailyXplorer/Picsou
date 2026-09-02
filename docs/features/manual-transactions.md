@@ -1,10 +1,12 @@
 # Feature: Manual Transactions
 
-> Last updated: 2026-08-27
+> Last updated: 2026-08-31
 
 ## Context
 
-Picsou supports syncing transactions from external sources (Finary, bank connectors, Trade Republic, crypto exchanges). This feature adds the ability to manually record any transaction — including on accounts that are also synced — and derives balance/holdings from those transactions automatically.
+Picsou syncs transactions from external sources such as Finary, bank connectors, Trade Republic,
+and crypto exchanges. Users can also record transactions manually, including on synced accounts.
+The local transaction ledger derives balances and holdings only for manual accounts.
 
 ## How it works
 
@@ -72,11 +74,17 @@ When a manual transaction is added, edited, or deleted on a **manual** cash acco
 
 ### Synced accounts
 
-Manual transactions on a **synced** cash account (`account.isManual = false` — bank-synced via Enable Banking, Trade Republic, wallet, or exchange accounts) are recorded but never drive the account's balance or snapshot history. Only `isManual` accounts get transaction-derived balances; for synced accounts the balance and snapshots are owned by the provider sync, and rebuilding them from the (usually sparse) manual transaction list would overwrite the balance and delete the provider-written snapshot history. Finary-created accounts have `isManual = true`, so they keep the transaction-derived path. Investment accounts are unaffected: `recomputeHoldings` runs after every manual BUY/SELL regardless of account provenance. The MCP `add_transaction` tool goes through the same service, so it inherits the rule.
+Manual transactions on a **synced** account (`account.isManual = false`) are recorded as
+annotations. They never drive the account's balance, snapshot history, or investment positions.
+This applies to accounts synced through Enable Banking, Trade Republic, wallets, and exchanges.
+Provider sync owns their state, so a local entry cannot overwrite provider-written holdings,
+balances, or snapshots. Finary-created accounts have `isManual = true`, so they keep the
+transaction-derived path. The MCP `add_transaction` tool goes through the same service and
+inherits the rule.
 
 ### Holdings derivation (investment accounts)
 
-`HoldingComputeService.recomputeHoldings(account)` is called after every manual transaction add/delete on a PEA, COMPTE_TITRES, or CRYPTO account:
+`HoldingComputeService.recomputeHoldings(account)` is called after every manual transaction add, edit, or delete on a **manual** PEA, COMPTE_TITRES, or CRYPTO account. Synced investment accounts preserve provider-owned positions when manual transaction annotations change:
 
 1. Fetches all BUY/SELL transactions for the account, ordered by date ASC.
 2. Groups by ticker: `net quantity = Σ(BUY qty) − Σ(SELL qty)`.
@@ -149,11 +157,11 @@ After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the 
 
 - **Investment account balance is NOT recomputed** from manual transactions. Only the holdings (positions) are derived. The account's `currentBalance` is set by the price scheduler (qty × live price). This is intentional for investment accounts.
 - **Synced transactions cannot be deleted**: The DELETE endpoint checks `isManual`. Attempting to delete a synced transaction returns 403.
-- **Holdings recomputation is full**: Every add/delete triggers a full re-derivation for that account (all tickers). This is fast in practice since investment accounts rarely have hundreds of tickers.
+- **Holdings recomputation is full**: Every add, edit, or delete on a manual investment account triggers a full re-derivation for that account (all tickers). Synced accounts skip this step. This is fast in practice since investment accounts rarely have hundreds of tickers.
 - **The backend owns the investment description**: For BUY/SELL, `ManualTransactionService` sets the row `description` from the effective name, or `Achat {TICKER}` / `Vente {TICKER}` when no name exists — overriding whatever the client sent. This is what stops a raw ISIN (entered in the Ticker field with a blank Nom) from leaking into the transaction row. Cash transactions keep the client-supplied description.
 
 ## Tests
 
 - `HoldingComputeServiceTest` — 11 unit tests: BUY-only, multi-BUY VWAP, BUY+SELL, fully-sold position, null ticker/quantity skipping, multiple tickers, existing holding update, plus position name = newest transaction's name and name-preserved-when-transactions-have-none.
-- `ManualTransactionServiceTest` — 11 unit tests: manual cash add (balance + snapshots recomputed), synced cash add (transaction saved, balance/snapshots untouched), investment add (holdings recomputed, for both manual and synced accounts), non-owned account rejection, manual delete, synced-account delete (no reconstruct), synced-transaction delete rejection, not-found rejection, plus ISIN input → resolved ticker/name/description and plain-ticker uppercased with the user "Nom" winning.
+- `ManualTransactionServiceTest` — 11 unit tests: manual cash add (balance + snapshots recomputed), synced cash add (transaction saved, balance/snapshots untouched), manual investment add (holdings recomputed), synced investment add (transaction saved, provider holdings untouched), non-owned account rejection, manual delete, synced-account delete (no reconstruct), synced-transaction delete rejection, not-found rejection, plus ISIN input → resolved ticker/name/description and plain-ticker uppercased with the user "Nom" winning.
 - `OpenFigiIsinConverterTest` — 4 unit tests for the `isIsin()` detector: valid ISINs, case/whitespace normalization, rejects tickers/non-ISIN strings, rejects null/blank.

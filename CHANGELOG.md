@@ -191,6 +191,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Manual transaction annotations can no longer overwrite synced account state (2026-08-31).**
+  Adding, editing, or deleting a manual transaction on a synced account now leaves provider-owned
+  holdings, balance, and snapshots untouched. Transaction-derived state is reserved for manual
+  accounts. CSV transaction import now accepts only manual investment accounts and rejects synced
+  investment accounts before caching a preview or saving rows (#107).
 - **Dropdown options were unreadable in dark mode.** Native `<select>` popups
   (account type, currency, bank country, CSV import mapping, property type…)
   don't honour a translucent background — the browser falls back to an opaque
