@@ -191,6 +191,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Dividend and fee transactions no longer look like purchases.** When a manual
+  transaction has a ticker but no supplied or resolved name, the frontend now derives
+  its translated fallback label from `txType`. The backend persists only the canonical
+  ticker or instrument name, so descriptions no longer embed French UI text (#108).
 - **Manual transaction annotations can no longer overwrite synced account state (2026-08-31).**
   Adding, editing, or deleting a manual transaction on a synced account now leaves provider-owned
   holdings, balance, and snapshots untouched. Transaction-derived state is reserved for manual

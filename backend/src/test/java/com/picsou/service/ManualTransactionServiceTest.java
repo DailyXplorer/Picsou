@@ -377,6 +377,8 @@ class ManualTransactionServiceTest {
 
         TransactionResponse result = manualTransactionService.addTransaction(2L, 10L, req);
 
+        assertThat(result.txType()).isEqualTo(TransactionType.BUY);
+        assertThat(result.description()).isEqualTo("AAPL");
         assertThat(result.fees()).isEqualByComparingTo("1.50");
         verify(holdingComputeService).recomputeHoldings(account);
     }

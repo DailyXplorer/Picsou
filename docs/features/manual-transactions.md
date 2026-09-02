@@ -1,6 +1,6 @@
 # Feature: Manual Transactions
 
-> Last updated: 2026-08-31
+> Last updated: 2026-09-02
 
 ## Context
 
@@ -64,7 +64,9 @@ On an investment account, the instrument field accepts **either** a Yahoo ticker
 
 - an ISIN entry and the equivalent ticker entry merge into a **single position** (the grouping key is the resolved ticker, not the raw input — this is what kills duplicate positions);
 - Yahoo pricing works (`YahooFinancePriceProvider` rejects raw ISINs);
-- the raw ISIN never surfaces in the transaction row — the service owns the `description` for BUY/SELL (see Gotchas).
+- the resolver persists the resolved name or canonical ticker as a language-neutral description.
+  A successfully resolved ISIN is replaced by the Yahoo ticker and never appears in the row.
+  `TransactionResponse.txType` lets the frontend add the localized transaction label (see Gotchas).
 
 A user-supplied "Nom" always wins over the resolved name. The same logic runs for both add and edit (`addTransaction` and `updateTransaction` share `applyInstrumentFields`).
 
@@ -121,7 +123,9 @@ All sync services (`FinaryPersistenceHelper`, `BoursoSyncService`) now call `tra
 
 The Transactions list groups rows by booking date. Headings stay compact for a single-year list;
 when the visible list spans multiple calendar years, every heading includes its year. It also shows
-a manual-entry badge and a delete button, both only on manual entries.
+a manual-entry badge and a delete button, both only on manual entries. For manual instrument rows
+without a name, it combines the `txType` enum with the canonical ticker through frontend i18n.
+Provider descriptions on synced transactions remain unchanged.
 
 After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the `transactions`, `history`, `account`, and `dashboard` queries.
 
@@ -134,14 +138,14 @@ After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the 
 | `backend/src/main/java/com/picsou/model/TransactionType.java` | Enum (DEPOSIT, WITHDRAWAL, BUY, SELL, DIVIDEND, FEE) |
 | `backend/src/main/java/com/picsou/service/HoldingComputeService.java` | Derives holdings (qty, VWAP, **name**) from BUY/SELL transactions |
 | `backend/src/main/java/com/picsou/service/ManualTransactionService.java` | Orchestrates add/edit/delete + re-derivation; persists `fees`; delegates ISIN/ticker/description to `InstrumentFieldResolver` |
-| `backend/src/main/java/com/picsou/service/InstrumentFieldResolver.java` | Shared ISIN→ticker/name + BUY/SELL description builder (reused by the CSV importer) |
+| `backend/src/main/java/com/picsou/service/InstrumentFieldResolver.java` | Shared ISIN→ticker/name resolver with language-neutral persisted descriptions (reused by the CSV importer) |
 | `backend/src/main/java/com/picsou/imports/TransactionAmountCalculator.java` | Single source of truth for the signed `amount` incl. fees |
 | `backend/src/main/resources/db/migration/V53__transaction_fees.sql` | Adds `transaction.fees` (folds into the PMP) |
 | `backend/src/main/java/com/picsou/adapter/OpenFigiIsinConverter.java` | `isIsin()` detection + `resolve()` ISIN→ticker+name (shared with bank sync) |
 | `backend/src/main/java/com/picsou/controller/AccountController.java` | POST/DELETE `/accounts/{id}/transactions` |
 | `backend/src/main/java/com/picsou/repository/TransactionRepository.java` | `deleteByAccountIdAndIsManualFalse`, `sumAmountByAccountId`, `findByAccountIdAndTxTypeInOrderByDateAsc` |
 | `frontend/src/components/shared/AddTransactionModal.tsx` | Account-type-aware form modal |
-| `frontend/src/components/shared/TransactionsList.tsx` | Date grouping with unambiguous historical years, manual badge, and delete button |
+| `frontend/src/components/shared/TransactionsList.tsx` | Localized transaction-type fallbacks, date grouping with unambiguous historical years, manual badge, and delete button |
 | `frontend/src/features/accounts/hooks.ts` | `useAddTransaction`, `useDeleteTransaction` |
 
 ## Technical choices
@@ -157,11 +161,15 @@ After submit, `useAddTransaction` / `useDeleteTransaction` hooks invalidate the 
 
 - **Investment account balance is NOT recomputed** from manual transactions. Only the holdings (positions) are derived. The account's `currentBalance` is set by the price scheduler (qty × live price). This is intentional for investment accounts.
 - **Synced transactions cannot be deleted**: The DELETE endpoint checks `isManual`. Attempting to delete a synced transaction returns 403.
-- **Holdings recomputation is full**: Every add, edit, or delete on a manual investment account triggers a full re-derivation for that account (all tickers). Synced accounts skip this step. This is fast in practice since investment accounts rarely have hundreds of tickers.
-- **The backend owns the investment description**: For BUY/SELL, `ManualTransactionService` sets the row `description` from the effective name, or `Achat {TICKER}` / `Vente {TICKER}` when no name exists — overriding whatever the client sent. This is what stops a raw ISIN (entered in the Ticker field with a blank Nom) from leaking into the transaction row. Cash transactions keep the client-supplied description.
+- **Holdings recomputation is full**: Every add/delete triggers a full re-derivation for that account (all tickers). This is fast in practice since investment accounts rarely have hundreds of tickers.
+- **The backend never localizes ticker-based descriptions.** `ManualTransactionService` stores
+  the effective name, or the canonical ticker when no name exists. The API already exposes
+  `txType`; `TransactionsList` translates that enum for manual ticker rows with no name.
+  Cash transactions with no ticker and synced provider descriptions keep their supplied text.
 
 ## Tests
 
 - `HoldingComputeServiceTest` — 11 unit tests: BUY-only, multi-BUY VWAP, BUY+SELL, fully-sold position, null ticker/quantity skipping, multiple tickers, existing holding update, plus position name = newest transaction's name and name-preserved-when-transactions-have-none.
-- `ManualTransactionServiceTest` — 11 unit tests: manual cash add (balance + snapshots recomputed), synced cash add (transaction saved, balance/snapshots untouched), manual investment add (holdings recomputed), synced investment add (transaction saved, provider holdings untouched), non-owned account rejection, manual delete, synced-account delete (no reconstruct), synced-transaction delete rejection, not-found rejection, plus ISIN input → resolved ticker/name/description and plain-ticker uppercased with the user "Nom" winning.
+- `ManualTransactionServiceTest` — 11 unit tests: manual cash add (balance + snapshots recomputed), synced cash add (transaction saved, balance/snapshots untouched), investment add (holdings recomputed, for both manual and synced accounts), non-owned account rejection, manual delete, synced-account delete (no reconstruct), synced-transaction delete rejection, not-found rejection, plus ISIN input → resolved ticker/name/description and plain-ticker uppercased with the user "Nom" winning.
+- `TransactionsList.test.tsx` — localized BUY, SELL, DIVIDEND, and FEE fallbacks, provider-description preservation, localized search, and date-heading behavior.
 - `OpenFigiIsinConverterTest` — 4 unit tests for the `isIsin()` detector: valid ISINs, case/whitespace normalization, rejects tickers/non-ISIN strings, rejects null/blank.
