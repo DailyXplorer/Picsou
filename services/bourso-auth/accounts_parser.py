@@ -3,7 +3,8 @@
 Two upstream shapes are parsed here:
 
 * the account summary at `/dashboard/liste-comptes`, which is HTML grouped into
-  `data-summary-bank` / `-savings` / `-trading` / `-loan` / `-insurance` sections;
+  `data-summary-bank` / `-savings` / `-trading` / `-loan` / `-insurance` /
+  `-assurance` sections;
 * the trading board's `accounts/summary/{id}` JSON, which carries the cash, the
   portfolio valuation, the account total and every open position.
 

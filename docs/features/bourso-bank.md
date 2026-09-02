@@ -130,7 +130,7 @@ than falling back to DOM order, which is shuffled.
 
 `GET /dashboard/liste-comptes?rumroute=dashboard.new_accounts&_hinclude=1`
 returns HTML grouped into `data-summary-bank` / `-savings` / `-trading` /
-`-loan` / `-insurance`. Balances come out of each card's `aria-label` (`Solde : 11 010,00 €`),
+`-loan` / `-insurance` / `-assurance`. Balances come out of each card's `aria-label` (`Solde : 11 010,00 €`),
 negatives use U+2212 rather than an ASCII hyphen. Insurance sections are
 recognized so their cards can be skipped explicitly, the same way loans are:
 an unparsed card inside a known section still fails the sync, while a card in
