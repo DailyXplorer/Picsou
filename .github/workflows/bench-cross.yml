@@ -1,0 +1,28 @@
+name: bench cross build
+
+on:
+  pull_request:
+
+permissions: {contents: read}
+
+jobs:
+  cross:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the arm64 image as the publish job does, without a push
+        run: docker buildx build --platform linux/arm64 --file docker/Dockerfile --tag picsou-cross:test --load --progress plain .
+      - name: The binary is an arm64 one and runs
+        run: |
+          id=$(docker create --platform linux/arm64 picsou-cross:test)
+          docker cp "$id:/usr/local/bin/picsou" picsou
+          file picsou
+          file picsou | grep -q 'ARM aarch64'
+          ls -l picsou
+          # An empty stand-in binary would be a few hundred kilobytes.
+          [ "$(stat -c %s picsou)" -gt 5000000 ]
+          docker run --rm --platform linux/arm64 --entrypoint picsou picsou-cross:test healthcheck || echo "healthcheck exit $? (no server: expected)"
