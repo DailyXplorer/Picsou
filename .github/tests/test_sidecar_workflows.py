@@ -845,10 +845,11 @@ class CiJobSelectionTest(unittest.TestCase):
                                  [(f"{engine}-{k}", f"{k}/{len(shards)}") for k in range(1, len(shards) + 1)])
         self.assertEqual(len(legs), 1 + sum(counts.values()))
         # tee would hide a failed test without pipefail, which only an explicit `shell: bash` sets.
-        self.assertLess(
-            lines.index("set -o pipefail"),
-            lines.index('make integration-backend DB=${{ matrix.db }} SHARD=${{ matrix.shard }} 2>&1 | tee "$RUNNER_TEMP/tests.txt"'),
-        )
+        shard = next(step["run"].splitlines() for step in job["steps"] if "make integration-backend" in step.get("run", ""))
+        self.assertEqual(shard, [
+            "set -o pipefail",
+            'make integration-backend DB=${{ matrix.db }} SHARD=${{ matrix.shard }} 2>&1 | tee "$RUNNER_TEMP/tests.txt"',
+        ])
         # ci-ok expects the outputs of exactly these legs.
         self.assertIn(
             'python3 .github/scripts/backend_shards.py check "$RUNNER_TEMP/backend-rs" '

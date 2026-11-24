@@ -31,9 +31,9 @@ sequential job and no cache. The repository's Actions cache (10 GB) was already 
   SHARD=k/n`, `.github/scripts/backend_shards.py`). `ci-ok` reads each shard's output and fails
   unless every leg reported, each result line is `ok`, and every test ran exactly once on each
   engine.
-- **CI-only build settings**: no debug information for the backend's test build; 16 codegen
-  units for the desktop release builds, next to the link-time optimisation that was already
-  off; the test PostgreSQL keeps its data in memory.
+- **CI-only build settings**: no debug information for the backend's and the desktop shell's
+  test builds; 16 codegen units for the desktop release builds, next to the link-time
+  optimisation that was already off; the test PostgreSQL keeps its data in memory.
 
 ## Alternatives considered
 

@@ -26,25 +26,36 @@ def select(listing, shard):
     return LISTED.findall(listing)[k - 1 :: n]
 
 
+def legs(arguments):
+    """`postgres=3 sqlite=2` as {engine: shards}."""
+    expected = {}
+    for argument in arguments:
+        engine, _, shards = argument.partition("=")
+        if not engine or engine in expected or not shards.isdigit() or int(shards) < 1:
+            raise ValueError(f"{argument}: expected <engine>=<shards>, each engine once, at least one shard")
+        expected[engine] = int(shards)
+    return expected
+
+
 def problems(reports, expected):
     """`expected` maps an engine to its number of shards. A shard's result line also counts the
     tests it left out, so every shard states how many tests the binary holds."""
     reports = Path(reports)
     wanted = {f"backend-rs-{engine}-{k}" for engine, shards in expected.items() for k in range(1, shards + 1)}
-    present = {path.parent.name for path in reports.glob("*/tests.txt")}
-    found = [f"no output for {name}" for name in sorted(wanted - present)]
-    found += [f"unexpected output: {name}" for name in sorted(present - wanted)]
+    present = {path.name for path in reports.iterdir()} if reports.is_dir() else set()
+    found = [f"unexpected output: {name}" for name in sorted(present - wanted)]
     for engine, shards in sorted(expected.items()):
-        ran, totals = Counter(), set()
-        for name in sorted(wanted & present):
-            if name.rsplit("-", 1)[0] != f"backend-rs-{engine}":
+        ran, totals, before = Counter(), set(), len(found)
+        for name in (f"backend-rs-{engine}-{k}" for k in range(1, shards + 1)):
+            if not (reports / name / "tests.txt").is_file():
+                found.append(f"no output for {name}")
                 continue
             log = (reports / name / "tests.txt").read_text(encoding="utf-8", errors="replace")
-            names, results = RAN.findall(log), RESULT.findall(log)
-            if len(results) != 1 or results[0][0] != "ok":
-                found.append(f"{name}: expected one `test result: ok` line, found {len(results)}")
+            names, statuses = RAN.findall(log), [result[0] for result in RESULT.findall(log)]
+            if statuses != ["ok"]:
+                found.append(f"{name}: expected one `test result: ok` line, found {statuses}")
                 continue
-            passed, failed, ignored, measured, filtered = map(int, results[0][1:])
+            passed, failed, ignored, measured, filtered = map(int, RESULT.search(log).groups()[1:])
             if len(names) != passed + ignored:
                 found.append(f"{name}: {len(names)} test lines for {passed + ignored} tests in the result")
             totals.add(passed + failed + ignored + measured + filtered)
@@ -54,12 +65,10 @@ def problems(reports, expected):
             found.append(f"{engine}: ran in two shards: " + ", ".join(twice))
         if len(totals) > 1:
             found.append(f"{engine}: the shards disagree on the number of tests: {sorted(totals)}")
-        elif totals:
-            total = totals.pop()
-            if len(ran) != total or not total:
-                found.append(f"{engine}: {len(ran)} of {total} tests ran")
-            elif not twice:
-                print(f"{engine}: {total} tests, each ran once in {shards} shards")
+        elif totals and (len(ran) != max(totals) or not max(totals)):
+            found.append(f"{engine}: {len(ran)} of {max(totals)} tests ran")
+        elif len(found) == before:
+            print(f"{engine}: {max(totals)} tests, each ran once in {shards} shards")
     return found
 
 
@@ -72,7 +81,7 @@ def main(argv):
                 return 0
             found = ["no test to select: the listing is empty"]
         elif len(argv) > 2 and argv[0] == "check":
-            found = problems(argv[1], {engine: int(shards) for engine, shards in (arg.split("=") for arg in argv[2:])})
+            found = problems(argv[1], legs(argv[2:]))
         else:
             print(__doc__, file=sys.stderr)
             return 2

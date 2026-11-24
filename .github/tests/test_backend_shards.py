@@ -78,6 +78,17 @@ class CheckTest(unittest.TestCase):
         self.shards("postgres", 3)
         self.assertEqual(self.run_check("postgres=2"), 1)
 
+    def test_fails_on_an_unexpected_folder_even_without_a_test_output(self):
+        self.shards("postgres", 3)
+        (self.reports / "backend-rs-extra").mkdir()
+        self.assertEqual(self.run_check("postgres=3"), 1)
+
+    def test_rejects_legs_that_would_check_nothing(self):
+        self.shards("postgres", 3)
+        for expected in (("postgres=0",), ("postgres=-1",), ("postgres=3", "postgres=1"), ("=3",), ("postgres",)):
+            with self.subTest(expected=expected):
+                self.assertEqual(self.run_check(*expected), 1)
+
     def test_fails_when_a_test_ran_in_two_shards(self):
         self.report("backend-rs-postgres-1", NAMES[0::2] + NAMES[1:2])
         self.report("backend-rs-postgres-2", NAMES[1::2])
