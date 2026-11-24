@@ -1,5 +1,6 @@
 """The backend shards: every listed test lands in one shard, and the check fails unless each ran once."""
 
+import contextlib
 import importlib.util
 import io
 from pathlib import Path
@@ -16,6 +17,14 @@ NAMES = [f"module_{i % 4}::case_{i:02}" for i in range(11)]
 LISTING = "".join(f"{name}: test\n" for name in NAMES) + "\n11 tests, 0 benchmarks\n"
 
 
+def run_select(listing, shard):
+    """The exit code, what the recipe passes to `--exact`, and what reaches the shard's output."""
+    out, err = io.StringIO(), io.StringIO()
+    with mock.patch("sys.stdin", io.StringIO(listing)), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = backend_shards.main(["select", shard])
+    return code, out.getvalue(), err.getvalue()
+
+
 class SelectTest(unittest.TestCase):
     def test_the_shards_partition_the_listing(self):
         for total in range(1, 6):
@@ -24,15 +33,17 @@ class SelectTest(unittest.TestCase):
                 self.assertEqual(sorted(name for shard in shards for name in shard), sorted(NAMES))
                 self.assertLessEqual(max(map(len, shards)) - min(map(len, shards)), 1)
 
-    def test_rejects_a_shard_outside_its_total(self):
-        for shard in ("0/3", "4/3"):
-            with self.subTest(shard=shard), self.assertRaises(ValueError):
-                backend_shards.select(LISTING, shard)
+    def test_prints_the_names_for_cargo_and_again_for_the_check(self):
+        code, out, err = run_select(LISTING, "2/3")
+        self.assertEqual((code, out), (0, " ".join(NAMES[1::3]) + "\n"))
+        self.assertEqual(err, "selected 2/3: " + " ".join(NAMES[1::3]) + "\n")
 
-    def test_an_empty_listing_is_an_error(self):
+    def test_a_shard_outside_its_total_and_an_empty_listing_are_errors(self):
         # A failed build lists nothing: `--exact` with no name would run every test.
-        with mock.patch("sys.stdin", io.StringIO("error: could not compile `picsou`\n")):
-            self.assertEqual(backend_shards.main(["select", "1/2"]), 1)
+        for listing, shard in ((LISTING, "0/3"), (LISTING, "4/3"), ("error: could not compile `picsou`\n", "1/2")):
+            with self.subTest(shard=shard):
+                code, out, _ = run_select(listing, shard)
+                self.assertEqual((code, out), (1, ""))
 
 
 class CheckTest(unittest.TestCase):
@@ -41,12 +52,14 @@ class CheckTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.reports = Path(self._tmp.name)
 
-    def report(self, folder, names, total=len(NAMES), result="ok", passed=None):
-        """What `cargo test` prints for one shard: build lines, one line per test, the result."""
+    def report(self, folder, shard, names, total=len(NAMES), passed=None, failed=0):
+        """A shard's output: the selection, then what `cargo test` prints while the application logs."""
         passed = len(names) if passed is None else passed
-        lines = ["   Compiling picsou v0.1.0", f"running {len(names)} tests"]
-        lines += [f"test {name} ... ok" for name in names]
-        lines += ["", f"test result: {result}. {passed} passed; 0 failed; 0 ignored; 0 measured; {total - passed} filtered out; finished in 1.00s"]
+        lines = [f"selected {shard}: " + " ".join(names), "   Compiling picsou v0.1.0", f"running {len(names)} tests"]
+        # libtest writes the name and the outcome apart: a log line can land between them.
+        lines += [f"test {name} ... 2026-11-24T21:24:18Z  INFO import complete\nok" for name in names]
+        lines += ["", f"test result: ok. {passed} passed; {failed} failed; 0 ignored; 0 measured; "
+                      f"{total - passed - failed} filtered out; finished in 1.00s"]
         self.write(folder, "\n".join(lines) + "\n")
 
     def write(self, folder, text):
@@ -56,10 +69,11 @@ class CheckTest(unittest.TestCase):
 
     def shards(self, engine, total):
         for k in range(1, total + 1):
-            self.report(f"backend-rs-{engine}-{k}", backend_shards.select(LISTING, f"{k}/{total}"))
+            self.report(f"backend-rs-{engine}-{k}", f"{k}/{total}", backend_shards.select(LISTING, f"{k}/{total}"))
 
     def run_check(self, *expected):
-        return backend_shards.main(["check", str(self.reports), *(expected or ("postgres=3", "sqlite=2"))])
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            return backend_shards.main(["check", str(self.reports), *(expected or ("postgres=3", "sqlite=2"))])
 
     def test_passes_when_each_engine_ran_every_test_once(self):
         self.shards("postgres", 3)
@@ -71,7 +85,7 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(self.run_check(), 1)
 
     def test_fails_when_a_shard_is_missing(self):
-        self.report("backend-rs-postgres-1", NAMES[0::2])
+        self.report("backend-rs-postgres-1", "1/2", NAMES[0::2])
         self.assertEqual(self.run_check("postgres=2"), 1)
 
     def test_fails_on_an_output_no_leg_is_expected_to_write(self):
@@ -89,42 +103,36 @@ class CheckTest(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertEqual(self.run_check(*expected), 1)
 
-    def test_fails_when_a_test_ran_in_two_shards(self):
-        self.report("backend-rs-postgres-1", NAMES[0::2] + NAMES[1:2])
-        self.report("backend-rs-postgres-2", NAMES[1::2])
+    def test_fails_when_a_leg_ran_another_shard_than_its_own(self):
+        self.report("backend-rs-sqlite-1", "1/2", NAMES[0::2])
+        self.report("backend-rs-sqlite-2", "1/2", NAMES[0::2])
+        self.assertEqual(self.run_check("sqlite=2"), 1)
+
+    def test_fails_when_a_test_is_in_two_shards(self):
+        self.report("backend-rs-postgres-1", "1/2", NAMES[0::2] + NAMES[1:2])
+        self.report("backend-rs-postgres-2", "2/2", NAMES[1::2])
         self.assertEqual(self.run_check("postgres=2"), 1)
 
     def test_fails_when_the_shards_come_from_different_binaries(self):
-        self.report("backend-rs-sqlite-1", NAMES[0::2])
-        self.report("backend-rs-sqlite-2", NAMES[1::2], total=len(NAMES) + 1)
+        self.report("backend-rs-sqlite-1", "1/2", NAMES[0::2])
+        self.report("backend-rs-sqlite-2", "2/2", NAMES[1::2], total=len(NAMES) + 1)
         self.assertEqual(self.run_check("sqlite=2"), 1)
 
     def test_fails_when_a_shard_stopped_before_its_result(self):
-        # The other shard ran every test: the count alone would pass.
-        self.report("backend-rs-sqlite-1", NAMES)
-        self.write("backend-rs-sqlite-2", "running 5 tests\ntest module_0::case_00 ... ok\n")
+        self.report("backend-rs-sqlite-1", "1/2", NAMES[0::2])
+        self.write("backend-rs-sqlite-2", "selected 2/2: " + " ".join(NAMES[1::2]) + "\nrunning 5 tests\n")
         self.assertEqual(self.run_check("sqlite=2"), 1)
 
-    def test_fails_on_a_failed_result_even_when_every_name_shows_once(self):
-        self.report("backend-rs-sqlite-1", NAMES[0::2], result="FAILED")
-        self.report("backend-rs-sqlite-2", NAMES[1::2])
-        self.assertEqual(self.run_check("sqlite=2"), 1)
-
-    def test_fails_when_the_test_lines_do_not_add_up_to_the_result(self):
-        self.report("backend-rs-sqlite-1", NAMES[:-1], passed=len(NAMES))
-        self.assertEqual(self.run_check("sqlite=1"), 1)
+    def test_fails_on_a_failed_test_and_on_a_selected_test_that_did_not_run(self):
+        for case in ({"failed": 1, "passed": len(NAMES) - 1}, {"passed": len(NAMES) - 1}):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as reports:
+                self.reports = Path(reports)
+                self.report("backend-rs-sqlite-1", "1/1", NAMES, **case)
+                self.assertEqual(self.run_check("sqlite=1"), 1)
 
     def test_fails_when_the_binary_holds_no_test(self):
-        self.report("backend-rs-sqlite-1", [], total=0)
+        self.write("backend-rs-sqlite-1", "selected 1/1: \ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n")
         self.assertEqual(self.run_check("sqlite=1"), 1)
-
-    def test_counts_an_ignored_test_and_one_that_must_panic(self):
-        self.write(
-            "backend-rs-sqlite-1",
-            "test a::slow ... ignored\ntest a::guard - should panic ... ok\n"
-            "test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.10s\n",
-        )
-        self.assertEqual(self.run_check("sqlite=1"), 0)
 
 
 if __name__ == "__main__":
