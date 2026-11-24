@@ -173,7 +173,7 @@ jobs:
     if: needs.changes.outputs.all == 'true' || contains(fromJSON(needs.changes.outputs.jobs), 'backend-rs')
     name: backend-rs (${{ matrix.task }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -316,9 +316,11 @@ jobs:
     defaults:
       run: {working-directory: desktop/src-tauri}
     # Release LTO and a single codegen unit only slow CI; the bundles keep both (desktop-release.yml).
+    # Debug information slows the test build and swells its cache.
     env: &desktop-build-env
       CARGO_PROFILE_RELEASE_LTO: 'off'
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+      CARGO_PROFILE_DEV_DEBUG: '0'
     steps:
       - *checkout
       # The shell's dependencies, compiled: restored by every run, saved by branch pushes only.
