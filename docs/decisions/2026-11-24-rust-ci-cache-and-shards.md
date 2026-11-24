@@ -28,12 +28,13 @@ sequential job and no cache. The repository's Actions cache (10 GB) was already 
   and doc tests), three shards of the integration tests on PostgreSQL and two on SQLite. Each
   leg compiles the crate itself.
 - **A shard is every nth test of the binary's sorted list** (`make integration-backend
-  SHARD=k/n`, `.github/scripts/backend_shards.py`). `ci-ok` reads each shard's output and fails
-  unless every leg reported, each result line is `ok`, and every test ran exactly once on each
-  engine.
-- **CI-only build settings**: no debug information for the backend's test build; 16 codegen
-  units for the desktop release builds, next to the link-time optimisation that was already
-  off; the test PostgreSQL keeps its data in memory.
+  SHARD=k/n`, `.github/scripts/backend_shards.py`). `ci-ok` reads two lines of each shard's
+  output, the tests it selected and its result counts, and fails unless every leg reported, none
+  failed, each ran all it selected, and the selections cover every test exactly once on each
+  engine. It does not read the `test … ok` lines: the application's log lines split them.
+- **CI-only build settings**: no debug information for the backend's and the desktop shell's
+  test builds; 16 codegen units for the desktop release builds, next to the link-time
+  optimisation that was already off; the test PostgreSQL keeps its data in memory.
 
 ## Alternatives considered
 
