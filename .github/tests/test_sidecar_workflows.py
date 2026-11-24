@@ -772,7 +772,7 @@ class CiJobSelectionTest(unittest.TestCase):
     def test_ci_runs_the_make_targets_contributors_run(self):
         jobs = _load(CI_WORKFLOW)["jobs"]
         expected = {
-            "backend-rs": "make test-backend",
+            "backend-rs": "make lint-backend unit-backend",
             "frontend": "make lint-frontend",
             "e2e": "make test-e2e",
             "sidecar-base": "make test-sidecar-base",
@@ -826,6 +826,47 @@ class CiJobSelectionTest(unittest.TestCase):
             lines,
         )
 
+    def test_backend_ci_splits_lint_and_sharded_integration_tests_on_both_engines(self):
+        jobs = _load(CI_WORKFLOW)["jobs"]
+        job = jobs["backend-rs"]
+        legs = job["strategy"]["matrix"]["include"]
+        lines = [line.strip() for step in job["steps"] for line in step.get("run", "").splitlines()]
+
+        self.assertIs(job["strategy"]["fail-fast"], False)
+        self.assertEqual([leg for leg in legs if "shard" not in leg], [{"task": "lint"}])
+        counts = {}
+        for engine, db in (("postgres", None), ("sqlite", "sqlite")):
+            shards = [leg for leg in legs if leg["task"].startswith(engine)]
+            counts[engine] = len(shards)
+            with self.subTest(engine=engine):
+                self.assertEqual({leg.get("db") for leg in shards}, {db})
+                # Every k of k/n once, and the task name ci-ok groups the outputs by.
+                self.assertEqual([(leg["task"], leg["shard"]) for leg in shards],
+                                 [(f"{engine}-{k}", f"{k}/{len(shards)}") for k in range(1, len(shards) + 1)])
+        self.assertEqual(len(legs), 1 + sum(counts.values()))
+        # tee would hide a failed test without pipefail, which only an explicit `shell: bash` sets.
+        self.assertLess(
+            lines.index("set -o pipefail"),
+            lines.index('make integration-backend DB=${{ matrix.db }} SHARD=${{ matrix.shard }} 2>&1 | tee "$RUNNER_TEMP/tests.txt"'),
+        )
+        # ci-ok expects the outputs of exactly these legs.
+        self.assertIn(
+            'python3 .github/scripts/backend_shards.py check "$RUNNER_TEMP/backend-rs" '
+            + " ".join(f"{engine}={count}" for engine, count in counts.items()),
+            _run_commands(jobs["ci-ok"]),
+        )
+
+    def test_rust_caches_are_saved_by_branch_pushes_only(self):
+        # A cache saved by a pull request is visible to that pull request alone and counts
+        # against the repository's 10 GB.
+        steps = [(name, step) for name, job in _load(CI_WORKFLOW)["jobs"].items()
+                 for step in job.get("steps", []) if "rust-cache" in step.get("uses", "")]
+
+        self.assertEqual({name for name, _ in steps}, {"backend-rs", "desktop", "desktop-windows", "desktop-macos"})
+        for name, step in steps:
+            with self.subTest(job=name):
+                self.assertIn("github.event_name == 'push' && github.ref_type == 'branch'", step["with"]["save-if"])
+
     def test_the_demo_playwright_suite_runs_once(self):
         jobs = _load(CI_WORKFLOW)["jobs"]
         running = [name for name, job in jobs.items() if "test:e2e" in _run_commands(job)]
@@ -863,8 +904,7 @@ class JobTimeoutTest(unittest.TestCase):
     FILE_CAP = {"ci.yml": 20, "codeql.yml": 60, "docker.yml": 30, "desktop-release.yml": 40}
     JOB_CAP = {
         ("ci.yml", "e2e"): 30,  # bimodal: most runs take 2 min, the slow tail 9-15 min
-        # Cold every run: clippy 5 min, the test build 9 min, then the suite on PostgreSQL and on SQLite.
-        ("ci.yml", "backend-rs"): 45,
+        ("ci.yml", "backend-rs"): 30,  # a leg with no dependency cache: a 9 min build, then its share of the tests
         ("ci.yml", "desktop"): 40,  # cold Rust build and tests: 19 min
         ("ci.yml", "desktop-windows"): 40,  # cold Rust and bun builds: 25-30 min
         ("ci.yml", "desktop-macos"): 40,  # same builds as Windows, on Apple Silicon
