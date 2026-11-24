@@ -98,11 +98,11 @@ unit-backend:
 
 # DB=sqlite runs on embedded SQLite, PostgreSQL otherwise. CI runs one shard per job and checks
 # their outputs together ran every test once: SHARD=k/n keeps every nth test of the binary's
-# sorted list, from the kth, so a new test needs no entry anywhere. The selection stops the
-# recipe when it is empty: `--exact` with no name would run every test.
+# sorted list, from the kth, so a new test needs no entry anywhere. A failed listing or an empty
+# selection stops the recipe: `--exact` with no name would run every test.
 integration-backend:
-	cd backend-rs && $(if $(SHARD),tests=$$(cargo test --locked --test integration $(TEST) -- --list --format terse \
-	  | python3 ../.github/scripts/backend_shards.py select $(SHARD)) &&) \
+	cd backend-rs && $(if $(SHARD),list=$$(cargo test --locked --test integration $(TEST) -- --list --format terse) \
+	  && tests=$$(printf '%s\n' "$$list" | python3 ../.github/scripts/backend_shards.py select $(SHARD)) &&) \
 	  $(if $(DB),PICSOU_TEST_DB=$(DB) )cargo test --locked --test integration $(if $(SHARD),-- --exact $$tests,$(TEST))
 
 test-frontend: lint-frontend unit-frontend

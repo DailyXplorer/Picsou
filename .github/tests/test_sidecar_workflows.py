@@ -845,10 +845,11 @@ class CiJobSelectionTest(unittest.TestCase):
                                  [(f"{engine}-{k}", f"{k}/{len(shards)}") for k in range(1, len(shards) + 1)])
         self.assertEqual(len(legs), 1 + sum(counts.values()))
         # tee would hide a failed test without pipefail, which only an explicit `shell: bash` sets.
-        self.assertLess(
-            lines.index("set -o pipefail"),
-            lines.index('make integration-backend DB=${{ matrix.db }} SHARD=${{ matrix.shard }} 2>&1 | tee "$RUNNER_TEMP/tests.txt"'),
-        )
+        shard = next(step["run"].splitlines() for step in job["steps"] if "make integration-backend" in step.get("run", ""))
+        self.assertEqual(shard, [
+            "set -o pipefail",
+            'make integration-backend DB=${{ matrix.db }} SHARD=${{ matrix.shard }} 2>&1 | tee "$RUNNER_TEMP/tests.txt"',
+        ])
         # ci-ok expects the outputs of exactly these legs.
         self.assertIn(
             'python3 .github/scripts/backend_shards.py check "$RUNNER_TEMP/backend-rs" '
@@ -904,10 +905,10 @@ class JobTimeoutTest(unittest.TestCase):
     FILE_CAP = {"ci.yml": 20, "codeql.yml": 60, "docker.yml": 30, "desktop-release.yml": 40}
     JOB_CAP = {
         ("ci.yml", "e2e"): 30,  # bimodal: most runs take 2 min, the slow tail 9-15 min
-        ("ci.yml", "backend-rs"): 30,  # a leg with no dependency cache: a 9 min build, then its share of the tests
-        ("ci.yml", "desktop"): 40,  # cold Rust build and tests: 19 min
-        ("ci.yml", "desktop-windows"): 40,  # cold Rust and bun builds: 25-30 min
-        ("ci.yml", "desktop-macos"): 40,  # same builds as Windows, on Apple Silicon
+        # The Rust jobs with no dependency cache; a backend-rs leg then takes 10 min, under the file's cap.
+        ("ci.yml", "desktop"): 40,  # 12-15 min
+        ("ci.yml", "desktop-windows"): 40,  # 18-23 min, the cache save included
+        ("ci.yml", "desktop-macos"): 40,  # 11-16 min
     }
 
     def test_every_job_has_a_bounded_timeout(self):

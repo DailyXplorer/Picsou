@@ -165,16 +165,16 @@ jobs:
           python3 -m pip install pytest
           python3 -m pytest docker/tests/test_proxy_client_ip.py -v
 
-  # The backend (docs/decisions/2026-11-21-rust-backend.md): a lint leg (fmt, clippy, the unit
-  # tests), then the integration tests, the route inventory included, on the PostgreSQL major it
-  # targets and again on embedded SQLite, in shards. ci-ok checks the shards ran every test once
-  # (docs/decisions/2026-11-24-rust-ci-cache-and-shards.md).
+  # The backend (docs/decisions/2026-11-21-rust-backend.md): a lint leg (fmt, clippy, the unit and
+  # doc tests) next to the integration tests, the route inventory included, on the PostgreSQL
+  # major it targets and on embedded SQLite, in shards. ci-ok checks the shards ran every test
+  # once (docs/decisions/2026-11-24-rust-ci-cache-and-shards.md).
   backend-rs:
     needs: changes
     if: needs.changes.outputs.all == 'true' || contains(fromJSON(needs.changes.outputs.jobs), 'backend-rs')
     name: backend-rs (${{ matrix.task }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -317,9 +317,11 @@ jobs:
     defaults:
       run: {working-directory: desktop/src-tauri}
     # Release LTO and a single codegen unit only slow CI; the bundles keep both (desktop-release.yml).
+    # Debug information slows the test build and swells its cache.
     env: &desktop-build-env
       CARGO_PROFILE_RELEASE_LTO: 'off'
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+      CARGO_PROFILE_DEV_DEBUG: '0'
     steps:
       - *checkout
       # The shell's dependencies, compiled: restored by every run, saved by branch pushes only.

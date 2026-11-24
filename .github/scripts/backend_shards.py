@@ -3,9 +3,9 @@
 
 Usage: backend_shards.py select <k>/<n>
            reads `cargo test -- --list --format terse` on stdin and prints every nth test
-           name, starting at the kth
+           name, starting at the kth; repeats them on stderr for the check
        backend_shards.py check <dir> <engine>=<shards>...
-           <dir>/backend-rs-<engine>-<k>/tests.txt is the `cargo test` output of shard k
+           <dir>/backend-rs-<engine>-<k>/tests.txt is the output of shard k
 """
 
 import re
@@ -14,8 +14,10 @@ from collections import Counter
 from pathlib import Path
 
 LISTED = re.compile(r"^(\S+): test$", re.MULTILINE)
-RAN = re.compile(r"^test (\S+)(?: - should panic)? \.\.\. (?:ok|ignored)", re.MULTILINE)
-RESULT = re.compile(r"^test result: (\S+)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", re.MULTILINE)
+# A shard's output is read through these two lines only. libtest writes `test <name> ... ok` in
+# two steps, and a log line of the application under test lands between them now and then.
+SELECTED = re.compile(r"^selected (\d+/\d+): (.+)$", re.MULTILINE)
+COUNTS = re.compile(r"(\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out")
 
 
 def select(listing, shard):
@@ -26,40 +28,52 @@ def select(listing, shard):
     return LISTED.findall(listing)[k - 1 :: n]
 
 
+def legs(arguments):
+    """`postgres=3 sqlite=2` as {engine: shards}."""
+    expected = {}
+    for argument in arguments:
+        engine, _, shards = argument.partition("=")
+        if not engine or engine in expected or not shards.isdigit() or int(shards) < 1:
+            raise ValueError(f"{argument}: expected <engine>=<shards>, each engine once, at least one shard")
+        expected[engine] = int(shards)
+    return expected
+
+
 def problems(reports, expected):
-    """`expected` maps an engine to its number of shards. A shard's result line also counts the
+    """`expected` maps an engine to its number of shards. The counts of a shard include the
     tests it left out, so every shard states how many tests the binary holds."""
     reports = Path(reports)
     wanted = {f"backend-rs-{engine}-{k}" for engine, shards in expected.items() for k in range(1, shards + 1)}
-    present = {path.parent.name for path in reports.glob("*/tests.txt")}
-    found = [f"no output for {name}" for name in sorted(wanted - present)]
-    found += [f"unexpected output: {name}" for name in sorted(present - wanted)]
+    present = {path.name for path in reports.iterdir()} if reports.is_dir() else set()
+    found = [f"unexpected output: {name}" for name in sorted(present - wanted)]
     for engine, shards in sorted(expected.items()):
-        ran, totals = Counter(), set()
-        for name in sorted(wanted & present):
-            if name.rsplit("-", 1)[0] != f"backend-rs-{engine}":
+        ran, totals, before = Counter(), set(), len(found)
+        for k in range(1, shards + 1):
+            name = f"backend-rs-{engine}-{k}"
+            if not (reports / name / "tests.txt").is_file():
+                found.append(f"no output for {name}")
                 continue
             log = (reports / name / "tests.txt").read_text(encoding="utf-8", errors="replace")
-            names, results = RAN.findall(log), RESULT.findall(log)
-            if len(results) != 1 or results[0][0] != "ok":
-                found.append(f"{name}: expected one `test result: ok` line, found {len(results)}")
+            selected, counts = SELECTED.findall(log), COUNTS.findall(log)
+            if [shard for shard, _ in selected] != [f"{k}/{shards}"] or len(counts) != 1:
+                found.append(f"{name}: expected one selection of {k}/{shards} and one result, "
+                             f"found {[shard for shard, _ in selected]} and {len(counts)}")
                 continue
-            passed, failed, ignored, measured, filtered = map(int, results[0][1:])
-            if len(names) != passed + ignored:
-                found.append(f"{name}: {len(names)} test lines for {passed + ignored} tests in the result")
+            names = selected[0][1].split()
+            passed, failed, ignored, measured, filtered = map(int, counts[0])
+            if failed or len(names) != passed + ignored + measured:
+                found.append(f"{name}: {len(names)} tests selected, {passed} passed, {failed} failed, {ignored} ignored")
             totals.add(passed + failed + ignored + measured + filtered)
             ran.update(names)
         twice = sorted(name for name, count in ran.items() if count > 1)
         if twice:
-            found.append(f"{engine}: ran in two shards: " + ", ".join(twice))
+            found.append(f"{engine}: in two shards: " + ", ".join(twice))
         if len(totals) > 1:
             found.append(f"{engine}: the shards disagree on the number of tests: {sorted(totals)}")
-        elif totals:
-            total = totals.pop()
-            if len(ran) != total or not total:
-                found.append(f"{engine}: {len(ran)} of {total} tests ran")
-            elif not twice:
-                print(f"{engine}: {total} tests, each ran once in {shards} shards")
+        elif totals and (len(ran) != max(totals) or not max(totals)):
+            found.append(f"{engine}: {len(ran)} of {max(totals)} tests ran")
+        elif len(found) == before:
+            print(f"{engine}: {max(totals)} tests, each ran once in {shards} shards")
     return found
 
 
@@ -69,10 +83,11 @@ def main(argv):
             names = select(sys.stdin.read(), argv[1])
             if names:
                 print(" ".join(names))
+                print(f"selected {argv[1]}: " + " ".join(names), file=sys.stderr)
                 return 0
             found = ["no test to select: the listing is empty"]
         elif len(argv) > 2 and argv[0] == "check":
-            found = problems(argv[1], {engine: int(shards) for engine, shards in (arg.split("=") for arg in argv[2:])})
+            found = problems(argv[1], legs(argv[2:]))
         else:
             print(__doc__, file=sys.stderr)
             return 2
