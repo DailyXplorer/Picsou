@@ -256,3 +256,5 @@ mod tests {
         assert!(!probe_health("127.0.0.1", slow_port, Duration::from_millis(100)).await);
     }
 }
+
+// bench probe: a source change, as a backend pull request makes.
