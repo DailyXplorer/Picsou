@@ -210,7 +210,10 @@ jobs:
         run: make lint-backend unit-backend
       - name: Integration tests (${{ matrix.db || 'postgres' }}, shard ${{ matrix.shard }})
         if: matrix.task != 'lint'
-        run: make integration-backend DB=${{ matrix.db }} SHARD=${{ matrix.shard }} 2>&1 | tee "$RUNNER_TEMP/tests.txt"
+        # pipefail: without it tee would hide a failed test.
+        run: |
+          set -o pipefail
+          make integration-backend DB=${{ matrix.db }} SHARD=${{ matrix.shard }} 2>&1 | tee "$RUNNER_TEMP/tests.txt"
       - name: Upload the test output
         if: matrix.task != 'lint'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -693,7 +696,7 @@ jobs:
         with: {pattern: "backend-rs-*", path: "${{ runner.temp }}/backend-rs"}
       - name: Every backend integration test ran exactly once on each engine
         if: needs.backend-rs.result == 'success'
-        run: python3 .github/scripts/backend_shards.py check "$RUNNER_TEMP/backend-rs"
+        run: python3 .github/scripts/backend_shards.py check "$RUNNER_TEMP/backend-rs" postgres=3 sqlite=2
 
   # Images are only published after every release-blocking CI job is green, and
   # only on a push to main or a version tag — not on pull requests or release branches.

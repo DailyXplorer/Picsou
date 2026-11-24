@@ -834,18 +834,27 @@ class CiJobSelectionTest(unittest.TestCase):
 
         self.assertIs(job["strategy"]["fail-fast"], False)
         self.assertEqual([leg for leg in legs if "shard" not in leg], [{"task": "lint"}])
+        counts = {}
         for engine, db in (("postgres", None), ("sqlite", "sqlite")):
             shards = [leg for leg in legs if leg["task"].startswith(engine)]
+            counts[engine] = len(shards)
             with self.subTest(engine=engine):
                 self.assertEqual({leg.get("db") for leg in shards}, {db})
                 # Every k of k/n once, and the task name ci-ok groups the outputs by.
                 self.assertEqual([(leg["task"], leg["shard"]) for leg in shards],
                                  [(f"{engine}-{k}", f"{k}/{len(shards)}") for k in range(1, len(shards) + 1)])
-        self.assertIn(
-            'make integration-backend DB=${{ matrix.db }} SHARD=${{ matrix.shard }} 2>&1 | tee "$RUNNER_TEMP/tests.txt"',
-            lines,
+        self.assertEqual(len(legs), 1 + sum(counts.values()))
+        # tee would hide a failed test without pipefail, which only an explicit `shell: bash` sets.
+        self.assertLess(
+            lines.index("set -o pipefail"),
+            lines.index('make integration-backend DB=${{ matrix.db }} SHARD=${{ matrix.shard }} 2>&1 | tee "$RUNNER_TEMP/tests.txt"'),
         )
-        self.assertIn('python3 .github/scripts/backend_shards.py check "$RUNNER_TEMP/backend-rs"', _run_commands(jobs["ci-ok"]))
+        # ci-ok expects the outputs of exactly these legs.
+        self.assertIn(
+            'python3 .github/scripts/backend_shards.py check "$RUNNER_TEMP/backend-rs" '
+            + " ".join(f"{engine}={count}" for engine, count in counts.items()),
+            _run_commands(jobs["ci-ok"]),
+        )
 
     def test_rust_caches_are_saved_by_branch_pushes_only(self):
         # A cache saved by a pull request is visible to that pull request alone and counts
